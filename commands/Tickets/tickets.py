@@ -4,6 +4,7 @@ from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View
+from assets.ticketCreated import count as ticketCreated
 
 class Select(discord.ui.Select):
     def __init__(self, placeholder, options):
@@ -92,23 +93,40 @@ class CreateTicketButton(discord.ui.Button):
         return message.channel == chn and message.content != ""
 
       if "question" in x.lower():
-        embed = discord.Embed(title="What do you need help for?", description=f"You are now talking with an automatic AI chatbot. Describe your question in a detained manner. Include punctuation when you finish your sentence to minimize misunderstanding.\n\n_The answers provided by the bot are just for reference purposes and may not fully accurate._", color=0xADD8E6)
-        embed.set_footer(text="If you believe that the bot cannot help you with what you want, type \"quit\" to terminate automatic response and get help from our staff member instead.")
-        await chn.send(embed=embed)
+        embed = discord.Embed(title="What do you need help for?", description=f"Describe your question or issue in a detained manner. We are happy to help!", color=0xADD8E6)
+        # embed.set_footer(text="If you believe that the bot cannot help you with what you want, type \"quit\" to terminate automatic response and get help from our staff member instead.")
+        # await chn.send(embed=embed)
   
-        while True:
-          answer = await interaction.client.wait_for('message', check=check)
-          if answer.content.lower() == "quit":
-            await answer.delete()
-            await asyncio.sleep(1)
-            await chn.send(":x: Stopped automatic response")
-            break
-          else:
-            await chn.send(request(answer.content, interaction.guild.id))
+        # while True:
+        #   answer = await interaction.client.wait_for('message', check=check)
+        #   if answer.content.lower() == "quit":
+        #     await answer.delete()
+        #     await asyncio.sleep(1)
+        #     await chn.send(":x: Stopped automatic response")
+        #     break
+        #   else:
+        #     await chn.send(request(answer.content, interaction.guild.id))
       
       elif "role application" in x.lower() and interaction.guild.id == 717029019270381578:
         
-        embed = discord.Embed(title="What role are you applying for?", description=f"<@&943486837559791618> \n> - Must have 100+ followers/subscribers on Twitch/YouTube\n> Send channel link for verification\n\n<@&815132429189644318> \n> - Demonstrate excellent talent in drawing or painting, digital or not\n> - Send 5 pieces of your work to showcase your artistic talent\n\n<@&1049100647884132443>\n> - Please close this ticket and head over to <#1049118482987499540> instead. ", color=0xADD8E6)
+        embed = discord.Embed(title="What role are you applying for?", description=f"""
+**<@&943486837559791618> 
+**➥ Must have 100+ followers/subscribers on Twitch/YouTube
+➥ Send channel link for verification
+
+**<@&815132429189644318>
+**➥ Demonstrate excellent talent in drawing or painting, digital or not
+➥ Send 5 pieces of your work to showcase your artistic talent
+
+**<@&1049100647884132443>
+**➥ Send your server advertisement and invite link and we will determine your eligibility
+
+**<@&996707492853710888> 
+➥** Put **__discord.gg/traveler__** on your status
+➥ After that, you will automatically have the role!
+
+_Note that there are more roles listed in <#993144339268120586>!_
+""", color=0xADD8E6)
         await chn.send(embed=embed)
       
       elif "rule" in x.lower() and interaction.guild.id == 717029019270381578:
@@ -118,8 +136,64 @@ class CreateTicketButton(discord.ui.Button):
       
       elif "perk" in x.lower() and interaction.guild.id == 717029019270381578:
         
-        embed = discord.Embed(title="", description=f"Please send screenshots of rule-breaking actions, link potential channels or users to speed up our investigation!", color=0xADD8E6)
+        embed = discord.Embed(title="Want to obtain perks?", description=f"Let us know specifically which perk(s) you are eligible for by providing proof.", color=0xADD8E6)
         await chn.send(embed=embed)
+
+      elif "screenshot" in x.lower() and interaction.guild.id == 717029019270381578:
+        embed = discord.Embed(title="List of special roles", description="""
+**If you wish to apply for the following roles, please send corresponding __screenshot(s)__ proving you deserve the role!**
+
+**<@&987249271403343893> 
+➥** Have a great knowledge about builds *(Mods will determine whether you're eligible or not)*
+
+**<@&993360929808990248> 
+➥** Have at least one C6 5☆ character or R5 5☆ Weapon
+
+**<@&993402036529930290> 
+➥** Have 36 star Abyss in current rotation  
+
+**<@&1066923619030143006> 
+➥** Reach player level 10 in Genius Invokation TCG!
+
+**<@&1066921990482563183> 
+➥** Have 90% or more exploration in Mondstadt
+
+**<@&1066921995796742216> 
+➥** Have 90% or more exploration in Liyue
+
+**<@&1066923029961130004> 
+➥** Have 90% or more exploration in Inazuma
+
+**<@&1066923137335296142> 
+➥** Have 90% or more exploration in Sumeru""")
+        await chn.send(embed=embed)
+
+      elif "partner" in x.lower() and interaction.guild.id == 717029019270381578:
+        embed = discord.Embed(color=0x41FF00)
+        embed.set_author(name="Partnership Information", icon_url="https://static.wikia.nocookie.net/discord/images/3/31/Partner.png/")
+        embed.add_field(name="🖊️ Partner Requirements ", value="""If your server has __at least 100 members__, you qualify for a partnership with our server. This includes your server advertisement being posted in <#1083740146794516530> along with our advertisement being posted in your server's partnership channel, both without any pings!
+
+- The server by any means must follow Discord TOS and any other applicable laws
+- The server must be friendly and non-toxic overall
+- The server should be SFW and suitable for all ages
+- The server must be Genshin related. Servers that are mainly or only for "advertising" and "giveaways" are not acceptable
+  """, inline=True)
+        embed.add_field(name=":ballot_box_with_check: Partner Benefits", value=""" - You must share our server events if we ever host one (we would also be glad to do the same in return)
+- We may host any collaboration giveaways/events together in the future
+  """, inline=False)
+        embed2 = discord.Embed(title="Want to become a server partner?", description=f"Paste your server's advertisement and invite link here!", color=0x41FF00)
+        await chn.send(embeds=[embed, embed2])
+      
+      duplicate = ticketCreated
+      duplicate += 1
+      f = open(f"./assets/ticketCreated.py", "w")
+      f.write(f"count = {duplicate}")
+      f.close()
+
+      chn = interaction.client.get_channel(1030892842308091987)
+      await chn.send(embed=discord.Embed(description=f"""**{interaction.guild.name}** has created a ticket."""))
+      
+        
 
 
 class CreateTicketButtonView(discord.ui.View):
@@ -206,7 +280,11 @@ class ConfirmCloseTicketButtons(discord.ui.View):
     await interaction.message.delete()
     msg = await interaction.channel.send(embed=embed)
     await asyncio.sleep(5)
-    user = interaction.guild.get_member(int(interaction.channel.topic))
+    left = False
+    try:
+      user = interaction.guild.get_member(int(interaction.channel.topic))
+    except Exception:
+      left = True
     
     ref = db.reference("/Tickets")
     tickets = ref.get()
@@ -215,22 +293,29 @@ class ConfirmCloseTicketButtons(discord.ui.View):
         LOGCHANNEL_ID = value["Log Channel ID"]
         break
     log = interaction.guild.get_channel(LOGCHANNEL_ID)
-    
-    embed = discord.Embed(title="Ticket closed", description=f"Ticket created by {user.mention} is closed by {interaction.user.mention}", color=0xE44D41)
-    embed.set_author(name=f"{user.name}#{user.discriminator}", icon_url=user.avatar.url)
-    embed.timestamp = datetime.datetime.utcnow()
-    embed.set_footer(text=f"User ID: {user.id}")
+    if left == False:
+      embed = discord.Embed(title="Ticket closed", description=f"Ticket created by {user.mention} is closed by {interaction.user.mention}", color=0xE44D41)
+      embed.set_author(name=f"{user.name}#{user.discriminator}", icon_url=user.avatar.url)
+      embed.timestamp = datetime.datetime.utcnow()
+      embed.set_footer(text=f"User ID: {user.id}")
+    else:
+      embed = discord.Embed(title="Ticket closed", description=f"Ticket created by a member who has left the server is closed by {interaction.user.mention}", color=0xE44D41)
+      embed.timestamp = datetime.datetime.utcnow()
     await log.send(embed=embed)
     embed = discord.Embed(title="Ticket closed", description=f"Your ticket in **{interaction.guild.name}** is now closed.", color=0xE44D41)
     embed.timestamp = datetime.datetime.utcnow()
     embed.set_footer(text=f"You can always create a new ticket for additional assistance!")
     try:
       await user.send(embed=embed)
+      await interaction.channel.set_permissions(user, send_messages=False, read_messages=False, attach_files=False)
     except Exception:
       pass
-    await interaction.channel.set_permissions(user, send_messages=False, read_messages=False, attach_files=False)
+
     await msg.delete()
-    embed = discord.Embed(title="", description="Ticket is closed and no longer visible to the member.", color=0xE44D41)
+    if left == False:
+      embed = discord.Embed(title="", description="Ticket is closed and no longer visible to the member.", color=0xE44D41)
+    else:
+      embed = discord.Embed(title="", description="Member left the server. Ticket is closed still.", color=0xE44D41)
     await interaction.channel.send(embed=embed)
     embed = discord.Embed(title="", description="```ADMIN CONTROLS PANEL```", color=0xE44D41)
     await interaction.channel.send(embed=embed, view=TicketAdminButtons())

@@ -12,9 +12,12 @@ from partnership.nopingpartnership import ConfirmView as cv
 from partnership.nopingpartnership import SelectView as sv
 from replit import db as replit_db
 from commands.CafeOnly.staff import ApplyForStaff, AcceptRejectButton
-from commands.CafeOnly.team import TeamSelectionButtons
+from commands.CafeOnly.team import TeamSelectionButtons, JanTeamChallenge
+from commands.onMemberJoin import WelcomeBtnView
 
 cred = credentials.Certificate("./assets/fischl-beta-firebase-adminsdk-pir1k-798a85c249.json")
+# fischl-beta-firebase-adminsdk-pir1k-798a85c249
+# fischl-backup-firebase-adminsdk-wq5ya-e31d81e586
 default_app = firebase_admin.initialize_app(cred, {
 	'databaseURL':"https://fischl-beta-default-rtdb.firebaseio.com"
 })
@@ -56,6 +59,8 @@ class Fischl(commands.Bot):
     self.add_view(ApplyForStaff())
     self.add_view(AcceptRejectButton())
     self.add_view(TeamSelectionButtons())
+    self.add_view(JanTeamChallenge())
+    self.add_view(WelcomeBtnView())
 
   async def status_task(self):
     timeout = 5
@@ -82,7 +87,8 @@ class Fischl(commands.Bot):
 keepOnline()
 bot = Fischl()
 
-try:
-  bot.run(os.environ['TOKEN']) 
-except Exception:
-  os.system("kill 1")
+# try:
+#   bot.run(os.environ['TOKEN']) 
+# except Exception:
+#    os.system("kill 1")
+bot.run(os.environ['TOKEN']) 

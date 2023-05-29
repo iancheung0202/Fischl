@@ -29,7 +29,7 @@ class OnWelcomeMemberJoin(commands.Cog):
     ref = db.reference("/Welcome")
     welcome = ref.get()
 
-    welcomeChannel = False
+    welcomeChannel = found = False
     file = embed = None
 
     for key, val in welcome.items():
@@ -69,9 +69,18 @@ class OnWelcomeMemberJoin(commands.Cog):
             if welcomeImageEnabled:
               filename = await createWelcomeMsg(member, bg=f"./assets/Welcome Image Background/{member.guild.id}.png")
               file = discord.File(filename)
+        # break
 
-        channel = self.client.get_channel(welcomeChannel)
-        await channel.send(script(val['Message Content'], member, member.guild), embed=embed, file=file)
+          channel = self.client.get_channel(welcomeChannel)
+          await channel.send(script(val['Message Content'], member, member.guild), embed=embed, file=file)
+          # embed = discord.Embed(description=f'Sample message sent to <#{welcomeChannel}>', colour=0x00FF00)
+          # embed.timestamp = datetime.datetime.utcnow()
+          # await interaction.followup.send(embed=embed, ephemeral=True)
+    #       found = True
+    # if not found:
+    #   embed = discord.Embed(title="Welcome message not enabled!", description=f'This server does not have welcome message enabled! Use </welcome setup:1043590008667385876> to enable first.', colour=0xFF0000)
+    #   embed.timestamp = datetime.datetime.utcnow()
+    #   await interaction.followup.send(embed=embed, ephemeral=True)
       
   
 

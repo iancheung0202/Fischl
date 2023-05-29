@@ -13,7 +13,6 @@ class Select(discord.ui.Select):
       topic = ""
       sticky = ""
       welcome = ""
-      faq = ""
       
       for command in self.list:
         if "ticket" in command.name:
@@ -30,14 +29,14 @@ class Select(discord.ui.Select):
             else:
               welcome = f"{welcome}\n\n<:blank:1036792889121980426><:reply:1036792837821435976> `{subcommand.name}` - {subcommand.description}"
               
-        elif "topic" in command.name:
-          for subcommand in command.options:
-            if subcommand.type == discord.AppCommandOptionType.subcommand:
-              topic = f"{topic}\n\n</{command.name} {subcommand.name}:{command.id}>\n<:reply:1036792837821435976> {subcommand.description}"
-              for sub_command in subcommand.options:
-                topic = f"{topic}\n<:blank:1036792889121980426><:reply:1036792837821435976> `{sub_command.name}` - {sub_command.description}"
-            else:
-              topic = f"{topic}\n\n<:blank:1036792889121980426><:reply:1036792837821435976> `{subcommand.name}` - {subcommand.description}"
+        # elif "topic" in command.name:
+        #   for subcommand in command.options:
+        #     if subcommand.type == discord.AppCommandOptionType.subcommand:
+        #       topic = f"{topic}\n\n</{command.name} {subcommand.name}:{command.id}>\n<:reply:1036792837821435976> {subcommand.description}"
+        #       for sub_command in subcommand.options:
+        #         topic = f"{topic}\n<:blank:1036792889121980426><:reply:1036792837821435976> `{sub_command.name}` - {sub_command.description}"
+        #     else:
+        #       topic = f"{topic}\n\n<:blank:1036792889121980426><:reply:1036792837821435976> `{subcommand.name}` - {subcommand.description}"
               
         elif "sticky" in command.name:
           for subcommand in command.options:
@@ -47,13 +46,6 @@ class Select(discord.ui.Select):
                 sticky = f"{sticky}\n<:blank:1036792889121980426><:reply:1036792837821435976> `{sub_command.name}` - {sub_command.description}"
             else:
               sticky = f"{sticky}\n\n<:blank:1036792889121980426><:reply:1036792837821435976> `{subcommand.name}` - {subcommand.description}"
-
-        elif "faq" in command.name:
-          for subcommand in command.options:
-            if subcommand.type == discord.AppCommandOptionType.subcommand:
-              faq = f"{faq}\n\n</{command.name} {subcommand.name}:{command.id}>\n<:reply:1036792837821435976> {subcommand.description}"
-            else:
-              faq = f"{faq}\n\n<:blank:1036792889121980426><:reply:1036792837821435976> `{subcommand.name}` - {subcommand.description}"
               
         elif "partnership" not in command.name and "team" not in command.name:
           utility = f"{utility} \n\n{command.mention}\n<:reply:1036792837821435976> {command.description}"
@@ -68,8 +60,8 @@ class Select(discord.ui.Select):
         self.lyst = [
           [utility, "Utility Commands", "🛠️", "The following slash commands are used for basic functions that many bots offer. These commands are accessible to everyone in the server."],
           [ticket, "Ticket System", "🎫", "The following commands are used to setup and deal with tickets. To start using tickets instantly, use </ticket setup:1036382520033415195> and the bot will guide you through the procedures of setting up your ticket mailbox! Note that these commands are only available to members with Administrator permission, meaning only Admins can close/delete tickets."],
-          [faq, "FAQ", "🙋", "The following slash commands are for setting up FAQs for your server. This is a GPT-powered function that helps you automate your community and integrate the live chatbot feature in under minutes. It is a powerful tool that can answer members' questions based on pre-defined answers or its own knowledge. The answers provided by the bot are just for reference purposes and may not fully accurate. The bot will see if your question matches one of the FAQs in the server and provide answers from there, otherwise, it will just answer the question on its own based on various sources. To setup FAQs, you may need Administrator permissions.\n\nTo use this chatbot function, simply ping <@732422232273584198> with your question!\n> e.g. `@Fischl give me statistics of diluc in genshin impact.`"],
-          [topic, "Topic Commands", "🗣️", "The following commands are used to keep your server chat engaged and active by issuing random Genshin Impact topics to chat on! You could also contribute to our bot's topic database!"],
+          # [faq, "FAQ", "🙋", "The following slash commands are for setting up FAQs for your server. This is a GPT-powered function that helps you automate your community and integrate the live chatbot feature in under minutes. It is a powerful tool that can answer members' questions based on pre-defined answers or its own knowledge. The answers provided by the bot are just for reference purposes and may not fully accurate. The bot will see if your question matches one of the FAQs in the server and provide answers from there, otherwise, it will just answer the question on its own based on various sources. To setup FAQs, you may need Administrator permissions.\n\nTo use this chatbot function, simply ping <@732422232273584198> with your question!\n> e.g. `@Fischl give me statistics of diluc in genshin impact.`"],
+          # [topic, "Topic Commands", "🗣️", "The following commands are used to keep your server chat engaged and active by issuing random Genshin Impact topics to chat on! You could also contribute to our bot's topic database!"],
           [sticky, "Sticky Messages", "🫧", "The following slash commands are for setting up sticky messages in different channels. Sticky messages will be stayed at the bottom of the channel no matter what messages are sent afterwards. This function is especially useful when you need give your members a heads up on how to use this chat channel or what they need to know before going ahead and sending any messages. To setup sticky messages, you may need Administrator permissions."],
           [welcome, "Welcome Messages", "👋", "The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. To setup welcome messages, you may need Administrator permissions."]
         ]
@@ -100,7 +92,7 @@ class HelpPanel(discord.ui.View):
   async def overview(self, interaction: discord.Interaction, button: discord.ui.Button):
     embed = discord.Embed(title="Fischl Help", description=f"""Fischl is a Genshin-based Discord bot with lots of functions for Genshin Impact servers, namely a convenient ticket system and a random Genshin conversation starter. The bot also comes with a lot of utility-based features such as implementing sticky messages, generating welcome cards, or even creating customized Genshin-font texts.
     """, color=0x1DBCEB)
-    embed.add_field(name="<:cafe:1037524442902966343> Support Server", value=f"Head over to our [support server](https://discord.gg/DKJj3GRbhb) if you have any suggestions, questions or bug reports! :writing_hand:", inline=True)
+    embed.add_field(name="<:cafe:1037524442902966343> Support Server", value=f"Head over to our [support server](https://discord.gg/traveler) if you have any suggestions, questions or bug reports! :writing_hand:", inline=True)
     embed.add_field(name="<:slash:1037445915348324505> Command Usage", value=f"This bot uses [slash commands](https://discord.com/blog/welcome-to-the-new-era-of-discord-apps). Type `/` to see the list of available bot commands.", inline=True)
     await interaction.response.edit_message(embed=embed, view=HelpPanel(self.list))
 
@@ -196,11 +188,22 @@ class Help(commands.Cog):
     
     embed = discord.Embed(title="Fischl Help", description=f"""Fischl is a Genshin-based Discord bot with lots of functions for Genshin Impact servers, namely a convenient ticket system and a random Genshin conversation starter. The bot also comes with a lot of utility-based features such as implementing sticky messages, generating welcome cards, or even creating customized Genshin-font texts.
     """, color=0x1DBCEB)
-    embed.add_field(name="<:cafe:1037524442902966343> Support Server", value=f"Head over to our [support server](https://discord.gg/DKJj3GRbhb) if you have any suggestions, questions or bug reports! :writing_hand:", inline=True)
+    embed.add_field(name="<:cafe:1037524442902966343> Support Server", value=f"Head over to our [support server](https://discord.gg/traveler) if you have any suggestions, questions or bug reports! :writing_hand:", inline=True)
     embed.add_field(name="<:slash:1037445915348324505> Command Usage", value=f"This bot uses [slash commands](https://discord.com/blog/welcome-to-the-new-era-of-discord-apps). Type `/` to see the list of available bot commands.", inline=True)
 
     await interaction.followup.send(embed=embed, view=HelpPanel(list))
-    
+
+# class OnCommand(commands.Cog): 
+#   def __init__(self, bot):
+#     self.client = bot
+  
+#   @commands.Cog.listener() 
+#   async def on_app_command_completion(self, interaction, command):
+#     chn = self.client.get_channel(1030892842308091987)
+#     embed = discord.Embed(description=f"""Slash command: """)
+#     await chn.send(interaction.user.mention)
+#     await chn.send(command.name)
 
 async def setup(bot: commands.Bot) -> None:
   await bot.add_cog(Help(bot))
+  # await bot.add_cog(OnCommand(bot))

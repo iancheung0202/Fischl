@@ -20,10 +20,14 @@ class AskAI(commands.Cog):
     interaction: discord.Interaction,
     query: str
   ) -> None:
-    await interaction.response.defer(thinking=True)
+    await interaction.response.defer(thinking=True, ephemeral=True)
+    try:
     
-    answer = request(query,interaction.guild.id)
-    await interaction.followup.send(embed=discord.Embed(title=query, description=answer))
+      answer = request(query,interaction.guild.id)
+      await interaction.followup.send(embed=discord.Embed(title=query, description=answer))
+    except Exception:
+      await interaction.followup.send(embed=discord.Embed(title="RateLimitError", description="The bot has exceeded its current quota, so this command is unavailable as of now.", color=discord.Color.red()))
+      
     
 
 async def setup(bot: commands.Bot) -> None:

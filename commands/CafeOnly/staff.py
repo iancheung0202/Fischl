@@ -1,8 +1,10 @@
-import discord, firebase_admin, random, datetime
+import discord, firebase_admin, random, datetime, asyncio
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
 from assets.appliedMod import users as appliedMods
+from ai import simple_get
+from discord.ui import Button, View
 
 class AcceptRejectButton(discord.ui.View):
   def __init__(self):
@@ -49,9 +51,10 @@ class ApplyForStaff(discord.ui.View):
     lvl100 = interaction.guild.get_role(765485751680892958)
     requiredLevel = [lvl5, lvl10, lvl20, lvl35, lvl40, lvl50, lvl69, lvl75, lvl90, lvl100]
     if not (any(role in requiredLevel for role in interaction.user.roles) or interaction.guild.get_role(1058526486967095296) in interaction.user.roles):
-      await interaction.response.send_message(":x: You are not qualified for the application! You have to be at least **level 5** or have the exclusive <@&1058526486967095296> role obtainable in <#1021089283555217589>.", ephemeral=True)
+      await interaction.response.send_message(":x: You are not qualified for the application! You have to be at least **level 5** or have the exclusive <@&1058526486967095296> role obtainable in <#1107010468440186970>.", ephemeral=True)
       raise Exception()
     else:
+    # if True:
       duplicate = appliedMods
       if int(interaction.user.id) in duplicate:
         await interaction.response.send_message(":x: You have already applied for moderator previously. Please wait until the next moderator application is open!", ephemeral=True)
@@ -63,7 +66,7 @@ class ApplyForStaff(discord.ui.View):
       q3 = "How much time can you devote to moderating the server?"
       q4 = "Do you have any past moderation experiences in Discord servers? If yes, please tell us about it."
       q5 = "If a new member was spamming emojis in chat for the first time, what will you do?"
-      q6 = "How do you handle disagreements between members? Include examples."
+      q6 = "How will you handle potential disagreements between members? Give a brief example."
       q7 = "Why should we choose you as part of the Genshin Impact Cafe staff team? How can you benefit our community?"
       q8 = "Do you have any basic knowledge about Genshin? If yes, mention your adventure rank."
       q9 = "Can you help members who need help in builds and co-ops?"
@@ -130,54 +133,72 @@ class ApplyForStaff(discord.ui.View):
       await interaction.user.send(embed=embed)
       lastwords = await interaction.client.wait_for('message', check=check)
       
-      chn = interaction.client.get_channel(942710312191287318)
-      embed = discord.Embed(title="New Submitted Mod Application", description=f"""
-      From {interaction.user.mention}
-      
-      **{q1}**
-      {username.content}
-      
-      **{q2}**
-      {age.content}
-      
-      **{q3}**
-      {where.content}
-      
-      **{q4}**
-      {mod.content}
-      
-      **{q5}**
-      {firstspam.content}
-      
-      **{q6}**
-      {argue.content}
-      
-      **{q7}**
-      {whymod.content}
-      
-      **{q8}**
-      {genshin.content}
-      
-      **{q9}**
-      {help.content}
-      
-      **{q10}**
-      {grow.content}
-      
-      **{q11}**
-      {lastwords.content}
-      
-      """, color=0xFFFF00)
-      await chn.send(f"Applicant ID: `{interaction.user.id}`",embed=embed,view=AcceptRejectButton())
+      chn = interaction.client.get_channel(1083848942334246933)
+      try:
+        embed = discord.Embed(title="New Submitted Staff Application", description=f"""
+        From {interaction.user.mention}
+        
+        **{q1}**
+        {username.content}
+        
+        **{q2}**
+        {age.content}
+        
+        **{q3}**
+        {where.content}
+        
+        **{q4}**
+        {mod.content}
+        
+        **{q5}**
+        {firstspam.content}
+        
+        **{q6}**
+        {argue.content}
+        
+        **{q7}**
+        {whymod.content}
+        
+        **{q8}**
+        {genshin.content}
+        
+        **{q9}**
+        {help.content}
+        
+        **{q10}**
+        {grow.content}
+        
+        **{q11}**
+        {lastwords.content}
+        
+        """, color=0xFFFF00)
+        await chn.send(f"Applicant ID: `{interaction.user.id}`",embed=embed,view=AcceptRejectButton())
+    
+        embed = discord.Embed(title="Application Submitted", description="All done! You will be notified shortly after our management team has finished reviewing your application! Thank you for applying, and stay tuned!", color=0x00FF00)
+        await interaction.user.send(embed=embed)
+        duplicate.append(int(interaction.user.id))
+        f = open(f"./assets/appliedMod.py", "w")
+        f.write(f"users = {duplicate}")
+        f.close()
+      except Exception:
+        embed = discord.Embed(title="Sorry something went wrong :warning: ", description="This is likely due to the fact that your application is too long. Please make sure all of your responses **do not exceed a total of 3000 characters**. Trim your response and try again at <#1083848742312104026>.\n\nIf this issue persists, please contact our owner and bot developer <@692254240290242601>.", color=discord.Color.red())
+        await interaction.user.send(embed=embed)
   
-      embed = discord.Embed(title="Application Submitted", description="All done! You will be notified shortly after our management team has finished reviewing your application! Thank you for applying, and stay tuned!", color=0x00FF00)
-      await interaction.user.send(embed=embed)
-      duplicate.append(int(interaction.user.id))
-      f = open(f"./assets/appliedMod.py", "w")
-      f.write(f"users = {duplicate}")
-      f.close()
       
+class ServerLeaveButton(discord.ui.View):
+  def __init__(self):
+    super().__init__(timeout=None)
 
+  @discord.ui.button(label='Leave', style=discord.ButtonStyle.green, custom_id='leaveserver')
+  async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+    try:
+      serverID = int(interaction.message.embeds[0].description.split("**")[4])
+      server = interaction.client.get_guild(serverID)
+      await server.leave()
+      await interaction.response.send_message(f"I left {server.name}")
+    except Exception as e:
+      await interaction.response.send_message(f"Something went wrong...\n```{e}```", ephemeral=True)
+    
 
 class StaffRoaster(commands.Cog): 
   def __init__(self, bot):
@@ -188,7 +209,18 @@ class StaffRoaster(commands.Cog):
     if message.author == self.client.user or message.author.bot == True: 
         return
 
-    if message.content == "-allservers":
+    if message.author.id == 692254240290242601 and message.content == "-leaveservers":
+      for guild in self.client.guilds:
+        name = guild.name
+        
+        if len(guild.members) < 100:
+          await guild.leave()
+
+          await message.channel.send(f"Left {name}")
+          await asyncio.sleep(10)
+        
+
+    if message.author.id == 692254240290242601 and message.content == "-allservers":
       for guild in self.client.guilds:
         embed = discord.Embed(description=f"""
         **Server Name:** {guild.name}
@@ -202,9 +234,45 @@ class StaffRoaster(commands.Cog):
         embed.timestamp = datetime.datetime.utcnow()
         try:
           server_invite = await guild.text_channels[0].create_invite(max_age = 0, max_uses = 0)
-          await message.channel.send(f"{server_invite}", embed=embed)
+          await message.channel.send(f"{server_invite}", embed=embed, view=ServerLeaveButton())
         except Exception:
           await message.channel.send(f"`SERVER DISABLED INVITE CREATION`", embed=embed)
+      
+    
+    if message.author.id == 692254240290242601 and message.content == "-removefischlinvites":
+      for server in self.client.guilds:
+        try:
+          invites = await server.invites()
+          for invite in invites:
+            if invite.inviter.id == 732422232273584198:
+              await invite.delete()
+              await message.channel.send(f"Deleted `{invite.code}` in **{server.name}**")
+        except Exception as e:
+          await message.channel.send(f"```{e}```")
+
+          
+
+    # if message.content == "-hiasdasd":
+    #   user_ids = [973865405162586142, 954888790936281208, 1026905370339311626, 694577524906131577, 972396084884299776, 903888000382042132, 160598923692605440, 256136853529427970, 734444388897521685, 664771352099815424, 979058712129974306, 979060883705712640, 729754187977457704, 868409564243054634, 834559940185292831, 994954661436063815, 739336359977943100, 1039070138135228447, 263880949069119498, 922532641624957038, 942263196138500106]
+    #   await message.channel.send("Ok.")
+    #   for id in user_ids:
+    #     content = ""
+    #     member = await self.client.fetch_user(id)
+    #     # member = guild.get_member(973865405162586142)
+    #     # if member.dm_channel is not None:
+    #     await member.create_dm()
+    #     async for message in member.dm_channel.history():
+    #       if message.author != self.client.user:
+    #         content += f"{message.content}\n"
+    #     # else:
+    #     #   print("No DMs found")
+        
+    #     print(f"```----------------------```\n{member} ({member.id})\n\n{content}\n")
+
+    if message.content == "-hiasdasd":
+      
+      role = message.guild.get_role(753869940162953357)
+      await message.author.add_roles(role)
           
     if message.guild.id == 717029019270381578 and message.content == "-staff":
       roles = [753869940162953357, 1000968269836058694, 748840161240023040, 748778830910586970, 828624806839844965, 814390209034321920]
@@ -234,10 +302,32 @@ class StaffRoaster(commands.Cog):
     #       randomRole = message.guild.get_role(randomRoles)
     #       await member.add_roles(randomRole)
     #       await message.channel.send(f"Added `{randomRole.name}` to `{member}`")
+
+    elif message.guild.id == 783528750474199041 and message.content == "-create100automodruletogetthebadgelmao":
+      await message.guild.create_automod_rule("Fischl", discord.AutoModRuleEventType.message_send, discord.AutoModRuleTriggerType.keyword)
+      
     
     elif message.guild.id == 717029019270381578 and message.content == "-staffapp":
-      embed = discord.Embed(title="Staff Application Details & Guidelines", description="<:Sayu_run:939198088021692416> Wondering how you can stand a chance of becoming a staff in this server? You just need to answer some questions by **clicking the button below**!\n\n🔸 __**Here are the requirements for being a moderator:**__\n\n> **» Try to get online 2 hrs+ a day <:LisaHappy:934375597768048672>**\n> **» Be at least level 5 in the server <:LisaHappy:934375597768048672>**\n> **» Be friendly and non-toxic <:VentiPraying:939047828204978187>**\n> **» Help users on builds/co-op <:xiangling_drool:999894293286227988>**\n> **» Guide and help members if they're having trouble <:PaimonHeart:939049883321643078>**\n> **» Give constructive suggestions to the server and be active in chat <:Yoimiy_yay:999892161929682974>**\n\n🔹 If you met the requirements and got accepted, you will be given the <@&814390209034321920> role to start off. Promotions and demotions afterwards will be done accordingly.", color=0xFFA500)
+      embed = discord.Embed(title="Staff Application Details & Guidelines", description="<:Sayu_run:939198088021692416> Wondering how you can stand a chance of becoming a staff in this server? You just need to answer some questions by **clicking the button below**!\n\n🔸 __**Here are the requirements for being a moderator:**__\n\n> **» Try to get online 2 hrs+ a day <:LisaHappy:934375597768048672>**\n> **» Be friendly and non-toxic <:VentiPraying:939047828204978187>**\n> **» Help users on builds/co-op <:xiangling_drool:999894293286227988>**\n> **» Guide and help members if they're having trouble <:PaimonHeart:939049883321643078>**\n> **» Give constructive suggestions to the server and be active in chat <:Yoimiy_yay:999892161929682974>**\n\n:sparkles: *You have to be at least **level 5** or have the exclusive <@&1058526486967095296> role obtainable in <#1107010468440186970>.*\n\n🔹 If we believe you will meet the requirements and accepted you, you will be given the <@&814390209034321920> role to start off. Promotions and demotions afterwards will be done accordingly.", color=0xFFA500)
       await message.channel.send(embed=embed, view=ApplyForStaff())
+      
+    elif message.guild.id == 717029019270381578 and message.content == "-dmallpartners":
+      role = message.guild.get_role(1049100647884132443);
+      count = 0
+      for member in role.members:
+        try:
+          embed = discord.Embed(title="Attention all server partners!", description="""**This is an important message from Genshin Impact Cafe.** If you have re-partnered with us, you may ignore this message. 
+          
+:warning: Please refer to https://discord.com/channels/717029019270381578/1083757565009199214/1096100255612809379 for further details.""", color=discord.Color.blurple())
+          button = Button(label="Read Announcement", style=discord.ButtonStyle.link, url="https://discord.com/channels/717029019270381578/1083757565009199214/1096100255612809379")
+          view = View()
+          view.add_item(button)
+          await member.send(embed=embed,view=view)
+          count += 1
+        except Exception:
+          pass
+      await message.reply(count+" messages sent.")
+      
 
 async def setup(bot): 
   await bot.add_cog(StaffRoaster(bot))

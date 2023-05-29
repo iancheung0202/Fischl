@@ -89,7 +89,7 @@ class ConfirmView(discord.ui.View):
     guild = interaction.client.get_guild(self.serverID) 
     options = []
     for category in guild.categories:
-      options.append(discord.SelectOption(label=category.name, value=category.id, emoji="#️⃣"))
+      options.append(discord.SelectOption(label=category.name, value=category.id, emoji="<:channel:1069401720238657587>"))
     view = View()
     view.add_item(CategorySelect(options, self.serverID))
     view.add_item(ChannelSelect(options, self.serverID, disabled=True))
@@ -106,12 +106,12 @@ class CategorySelect(discord.ui.Select):
         options = []
         for category in guild.categories:
           if category == Category:
-            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="#️⃣", default=True))
+            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="<:channel:1069401720238657587>", default=True))
           else:
-            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="#️⃣"))
+            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="<:channel:1069401720238657587>"))
         options2 = []
         for channel in Category.text_channels:
-          options2.append(discord.SelectOption(label=channel.name, value=channel.id, emoji="#️⃣"))
+          options2.append(discord.SelectOption(label=channel.name, value=channel.id, emoji="<:channel:1069401720238657587>"))
         view = View()
         view.add_item(CategorySelect(options, self.serverID))
         view.add_item(ChannelSelect(options2, self.serverID, int(selectedValue)))
@@ -132,15 +132,15 @@ class ChannelSelect(discord.ui.Select):
         options = []
         for category in guild.categories:
           if category == Category:
-            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="#️⃣", default=True))
+            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="<:channel:1069401720238657587>", default=True))
           else:
-            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="#️⃣"))
+            options.append(discord.SelectOption(label=category.name, value=category.id, emoji="<:channel:1069401720238657587>"))
         options2 = []
         for channel in Category.text_channels:
           if chn == channel:
-            options2.append(discord.SelectOption(label=channel.name, value=channel.id, emoji="#️⃣", default=True))
+            options2.append(discord.SelectOption(label=channel.name, value=channel.id, emoji="<:channel:1069401720238657587>", default=True))
           else:
-                        options2.append(discord.SelectOption(label=channel.name, value=channel.id, emoji="#️⃣"))
+                        options2.append(discord.SelectOption(label=channel.name, value=channel.id, emoji="<:channel:1069401720238657587>"))
         view = View()
         view.add_item(CategorySelect(options, self.serverID))
         view.add_item(ChannelSelect(options2, self.serverID, int(self.categoryID)))

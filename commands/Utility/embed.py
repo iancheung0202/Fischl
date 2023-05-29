@@ -30,7 +30,7 @@ class modal(discord.ui.Modal, title = "Setup Embed Message"):
             except:
               color = discord.Color.blurple()
 
-    if self.embedtitle == None and self.description == None:
+    if tit == "" and desc == "":
       embed = None
     else:
       embed = discord.Embed(title=tit, description=desc, color=color)

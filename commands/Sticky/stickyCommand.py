@@ -53,9 +53,10 @@ class Sticky(commands.GroupCog, name="sticky"):
     for key, value in data.items():
       ref.push().set(value)
 
-    embed = discord.Embed(title="Sticky message enabled!", description=f'This function allows a message to always stick to the bottom of the channel, which means no matter what, and how many messages are sent in the channel, this message is always going to be the last message in the channel. This is especially useful when you\'d like members to be notified what (not) to do in a channel instantly.\n\nIf you update the message content, you could use </sticky enable:1036382520033415196> again. If you no longer wish to use this function, use </sticky disable:1036382520033415196>.', colour=0x00FF00)
+    embed = discord.Embed(title="Sticky message enabled!", description=f'This function allows a message to always stick to the bottom of the channel, which means no matter what, and how many messages are sent in the channel, this message is always going to be the last message in the channel. This is especially useful when you would like members to be notified what (not) to do in a channel instantly.\n\nIf you update the message content, you could use </sticky enable:1036382520033415196> again. If you no longer wish to use this function, use </sticky disable:1036382520033415196>.', colour=0x00FF00)
     embed.timestamp = datetime.datetime.utcnow()
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    await channel.edit(topic=str(channel.topic)+" <:sticky:1100214185197043772>")
     
 
   @app_commands.command(
@@ -93,10 +94,12 @@ class Sticky(commands.GroupCog, name="sticky"):
       embed = discord.Embed(title="Sticky message disabled!", description=f'Sad to see you go. If you change your mind at anytime, you could use </sticky enable:1036382520033415196> to enable sticky messages again.', colour=0xFF0000)
       embed.timestamp = datetime.datetime.utcnow()
       await interaction.response.send_message(embed=embed, ephemeral=True)
+      await channel.edit(topic=str(channel.topic).replace(" <:sticky:1100214185197043772>", " "))
     else:
       embed = discord.Embed(title="Sticky message is not enabled!", description=f'What are you thinking? Sticky message is currently not even enabled in this channel. To enable the function, use </sticky enable:1036382520033415196>.', colour=0xFFFF00)
       embed.timestamp = datetime.datetime.utcnow()
       await interaction.response.send_message(embed=embed, ephemeral=True)
+      
 
 async def setup(bot: commands.Bot) -> None:
   await bot.add_cog(Sticky(bot))

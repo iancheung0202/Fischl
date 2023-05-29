@@ -292,11 +292,11 @@ from discord.ui import Button, View
 #     await interaction.response.edit_message(content=str(self.msg), embed=embed, view=view)
       
 
-class PartnershipView(discord.ui.View):
-    def __init__(self, *, timeout = None):
-      super().__init__(timeout=timeout)
-      self.add_item(RefreshButton())
-      self.add_item(ServerButton())
+# class PartnershipView(discord.ui.View):
+#     def __init__(self, *, timeout = None):
+#       super().__init__(timeout=timeout)
+#       self.add_item(RefreshButton())
+#       self.add_item(ServerButton())
 
 class Partnership(commands.GroupCog, name="partnership"):
   def __init__(self, bot: commands.Bot) -> None:
@@ -304,11 +304,11 @@ class Partnership(commands.GroupCog, name="partnership"):
     super().__init__()
 
   @app_commands.command(
-    name = "start",
-    description = "Starts partnering"
+    name = "panel",
+    description = "Sends the partnership panel"
   )
   @app_commands.checks.has_permissions(administrator=True)
-  async def partnership_button(
+  async def partnership_panel(
     self,
     interaction: discord.Interaction
   ) -> None:
@@ -351,4 +351,4 @@ _If your server does not or no longer fulfills the aforementioned requirements, 
       await interaction.response.send_message("Sent!", ephemeral=True)
 
 async def setup(bot: commands.Bot) -> None:
-  await bot.add_cog(Partnership(bot), guilds=[discord.Object(id=717029019270381578)])
+  await bot.add_cog(Partnership(bot))
