@@ -162,10 +162,9 @@ https://discord.gg/NhtyFAC9w3?event=1102054015568728156""")
             # await asyncio.sleep(1)
             # await bipsomsg.delete()
 
-            selectyourteam = self.client.get_channel(1083866201773588571)
-            selectmsg = await selectyourteam.send(member.mention)
-            await asyncio.sleep(1)
-            await selectmsg.delete()
+            exclusiveRoles = self.client.get_channel(1083739346944933948)
+            exclusivemsg = await exclusiveRoles.send(member.mention)
+            await exclusivemsg.delete()
 
             # giveaway = self.client.get_channel(1083634013287219240)
             # gwmsg = await giveaway.send(member.mention)

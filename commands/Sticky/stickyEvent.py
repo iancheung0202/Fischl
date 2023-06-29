@@ -30,43 +30,39 @@ class OnMessage(commands.Cog):
         
     if type(message.channel) == discord.channel.TextChannel:
       if message.channel.topic != None and "<:sticky:1100214185197043772>" in message.channel.topic:
-        print(True)
-    # print(f"In {message.guild.name} by {message.author.name} sent {message.content}")
-
-    # ----- STICKY MESSAGE ----- #
-      ref = db.reference("/Sticky Messages")
-      stickies = ref.get()
-  
-      for key, val in stickies.items():
-        if val['Channel ID'] == message.channel.id:
-          messageContent = val["Message Content"]
-          # try:
-          # await asyncio.sleep(2)
-          oldMsg = await message.channel.fetch_message(val["Message ID"])
-          await oldMsg.delete()
-          # except Exception:
-          #   pass
-          # await asyncio.sleep(2)
-          # if message.channel.id == 1051748060616736789:
-          #   view = View()
-          #   view.add_item(CreateTicketButton("Submit Answer", "✍️", discord.ButtonStyle.blurple))
-          #   msg = await message.channel.send(messageContent, view=view)
-          # else:
-          if True:
-            
-            msg = await message.channel.send(messageContent)
-          db.reference('/Sticky Messages').child(key).delete()
-          data = {
-            message.channel.id: {
-              "Channel ID": message.channel.id,
-              "Message ID": msg.id,
-              "Message Content": messageContent
+        ref = db.reference("/Sticky Messages")
+        stickies = ref.get()
+    
+        for key, val in stickies.items():
+          if val['Channel ID'] == message.channel.id:
+            messageContent = val["Message Content"]
+            # try:
+            # await asyncio.sleep(2)
+            oldMsg = await message.channel.fetch_message(val["Message ID"])
+            await oldMsg.delete()
+            # except Exception:
+            #   pass
+            # await asyncio.sleep(2)
+            # if message.channel.id == 1051748060616736789:
+            #   view = View()
+            #   view.add_item(CreateTicketButton("Submit Answer", "✍️", discord.ButtonStyle.blurple))
+            #   msg = await message.channel.send(messageContent, view=view)
+            # else:
+            if True:
+              
+              msg = await message.channel.send(messageContent)
+            db.reference('/Sticky Messages').child(key).delete()
+            data = {
+              message.channel.id: {
+                "Channel ID": message.channel.id,
+                "Message ID": msg.id,
+                "Message Content": messageContent
+              }
             }
-          }
-      
-          for key, value in data.items():
-            ref.push().set(value)
-          break
+        
+            for key, value in data.items():
+              ref.push().set(value)
+            break
   
 
 async def setup(bot): 

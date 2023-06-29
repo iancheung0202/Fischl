@@ -15,7 +15,7 @@ def script(string, user, guild):
   if "{server}" in string:
     string = string.replace("{server}", guild.name)
   if "{user}" in string:
-    string = string.replace("{user}", f"{user.name}#{user.discriminator}")
+    string = string.replace("{user}", f"{user.name}")
   if "{count}" in string:
     string = string.replace("{count}", guild.member_count)
   if "{count-th}" in string:

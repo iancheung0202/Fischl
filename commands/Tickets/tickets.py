@@ -53,12 +53,12 @@ class CreateTicketButton(discord.ui.Button):
           await interaction.followup.send(content=f"You already had your ticket created at <#{channel.id}>.", ephemeral=True)
           raise Exception()
   
-      chn = await interaction.guild.create_text_channel(f"{interaction.user.name}#{interaction.user.discriminator}", category=category)
+      chn = await interaction.guild.create_text_channel(f"{interaction.user.name}", category=category)
       await chn.edit(topic=interaction.user.id)
       await chn.set_permissions(interaction.user, send_messages=True, read_messages=True, attach_files=True)
       log = interaction.guild.get_channel(LOGCHANNEL_ID)
       embed = discord.Embed(title="Ticket created", description=f"**{interaction.user.mention} created a new ticket <t:{int(float(time.mktime(chn.created_at.timetuple())))}:R>!**", color=discord.Colour.green())
-      embed.set_author(name=f"{interaction.user.name}#{interaction.user.discriminator}", icon_url=interaction.user.avatar.url)
+      embed.set_author(name=f"{interaction.user.name}", icon_url=interaction.user.avatar.url)
       embed.timestamp = datetime.datetime.utcnow()
       embed.set_footer(text=f"User ID: {interaction.user.id}")
       
@@ -125,7 +125,7 @@ class CreateTicketButton(discord.ui.Button):
 ➥** Put **__discord.gg/traveler__** on your status
 ➥ After that, you will automatically have the role!
 
-_Note that there are more roles listed in <#993144339268120586>!_
+_Note that there are more roles listed in <#1083739346944933948>. You can use `=specialroles` to view here too!_
 """, color=0xADD8E6)
         await chn.send(embed=embed)
       
@@ -237,7 +237,7 @@ class TicketAdminButtons(discord.ui.View):
     log = interaction.guild.get_channel(LOGCHANNEL_ID)
     
     embed = discord.Embed(title="Ticket reopened", description=f"Ticket created by {user.mention} is reopened by {interaction.user.mention}", color=0xFFFF00)
-    embed.set_author(name=f"{user.name}#{user.discriminator}", icon_url=user.avatar.url)
+    embed.set_author(name=f"{user.name}", icon_url=user.avatar.url)
     embed.timestamp = datetime.datetime.utcnow()
     embed.set_footer(text=f"User ID: {user.id}")
     button = Button(style=discord.ButtonStyle.link, label="View Ticket",  url=f"https://discord.com/channels/{interaction.guild.id}/{interaction.channel.id}")
@@ -295,7 +295,7 @@ class ConfirmCloseTicketButtons(discord.ui.View):
     log = interaction.guild.get_channel(LOGCHANNEL_ID)
     if left == False:
       embed = discord.Embed(title="Ticket closed", description=f"Ticket created by {user.mention} is closed by {interaction.user.mention}", color=0xE44D41)
-      embed.set_author(name=f"{user.name}#{user.discriminator}", icon_url=user.avatar.url)
+      embed.set_author(name=f"{user.name}", icon_url=user.avatar.url)
       embed.timestamp = datetime.datetime.utcnow()
       embed.set_footer(text=f"User ID: {user.id}")
     else:
