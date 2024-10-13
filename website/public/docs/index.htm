@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en" class="js">
+
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+   <meta name="viewport" content="width=device-width,initial-scale=1">
+   <link rel="shortcut icon" href="https://fm-genshin-cafe.github.io/fischl/assets/icon.png">
+   <meta name="generator" content="mkdocs-1.1.2, mkdocs-material-5.5.0">
+   <title>Commands - Fischl Documentation</title>
+   <link rel="stylesheet" href="./assets/main.css">
+   <link rel="stylesheet" href="./assets/palette.css">
+   <meta name="theme-color" content="#546e7a">
+   <link href="https://fonts.gstatic.com/" rel="preconnect" crossorigin="">
+   <link rel="stylesheet" href="./assets/style.css">
+   <style>
+      body,
+      input {
+         font-family: "Roboto", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif
+      }
+
+      code,
+      kbd,
+      pre {
+         font-family: "Fira Mono", SFMono-Regular, Consolas, Menlo, monospace
+      }
+   </style>
+   <script>window.ga = window.ga || function () { (ga.q = ga.q || []).push(arguments) }, ga.l = +new Date, ga("create", "UA-126357432-1", "auto"), ga("set", "anonymizeIp", !0), ga("send", "pageview"), document.addEventListener("DOMContentLoaded", function () { document.forms.search && document.forms.search.query.addEventListener("blur", function () { if (this.value) { var e = document.location.pathname; ga("send", "pageview", e + "?q=" + this.value) } }) }), document.addEventListener("DOMContentSwitch", function () { ga("send", "pageview", document.location.pathname) })</script>
+   <style type="text/css">
+      button.btn[data-v-0a2a5063] {
+         display: inline-block;
+         font-weight: 300;
+         line-height: 1.25;
+         text-align: center;
+         white-space: nowrap;
+         vertical-align: middle;
+         user-select: none;
+         border: 1px solid transparent;
+         cursor: pointer;
+         letter-spacing: 1px;
+         transition: all .15s ease
+      }
+
+      button.btn.btn-sm[data-v-0a2a5063] {
+         padding: .4rem .8rem;
+         font-size: .8rem;
+         border-radius: .2rem
+      }
+
+      button.btn.btn-primary[data-v-0a2a5063] {
+         color: #fff;
+         background-color: #45C8F1;
+         border-color: #45C8F1
+      }
+
+      button.btn.btn-outline-primary[data-v-0a2a5063] {
+         color: #45C8F1;
+         background-color: transparent;
+         border-color: #45C8F1
+      }
+
+      button.btn.btn-danger[data-v-0a2a5063] {
+         color: #fff;
+         background-color: #FF4949;
+         border-color: #FF4949
+      }
+
+      .text-muted[data-v-0a2a5063] {
+         color: #8492A6
+      }
+
+      .text-center[data-v-0a2a5063] {
+         text-align: center
+      }
+
+      .drop-down-enter[data-v-0a2a5063],
+      .drop-down-leave-to[data-v-0a2a5063] {
+         transform: translateX(0) translateY(-20px);
+         transition-timing-function: cubic-bezier(0.74, 0.04, 0.26, 1.05);
+         opacity: 0
+      }
+
+      .drop-down-enter-active[data-v-0a2a5063],
+      .drop-down-leave-active[data-v-0a2a5063] {
+         transition: all .15s
+      }
+
+      .move-left-enter[data-v-0a2a5063],
+      .move-left-leave-to[data-v-0a2a5063] {
+         transform: translateY(0) translateX(-80px);
+         transition-timing-function: cubic-bezier(0.74, 0.04, 0.26, 1.05);
+         opacity: 0
+      }
+
+      .move-left-enter-active[data-v-0a2a5063],
+      .move-left-leave-active[data-v-0a2a5063] {
+         transition: all .15s
+      }
+
+      .shake[data-v-0a2a5063] {
+         animation: shake-data-v-0a2a5063 0.82s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+         transform: translate3d(0, 0, 0)
+      }
+
+      @keyframes shake-data-v-0a2a5063 {
+
+         10%,
+         90% {
+            transform: translate3d(-1px, 0, 0)
+         }
+
+         20%,
+         80% {
+            transform: translate3d(2px, 0, 0)
+         }
+
+         30%,
+         50%,
+         70% {
+            transform: translate3d(-4px, 0, 0)
+         }
+
+         40%,
+         60% {
+            transform: translate3d(4px, 0, 0)
+         }
+      }
+
+      .pulse[data-v-0a2a5063] {
+         animation: pulse-data-v-0a2a5063 2s ease infinite
+      }
+
+      @keyframes pulse-data-v-0a2a5063 {
+         0% {
+            opacity: .7
+         }
+
+         50% {
+            opacity: .4
+         }
+
+         100% {
+            opacity: .7
+         }
+      }
+
+      .flash-once[data-v-0a2a5063] {
+         animation: flash-once 3.5s ease 1
+      }
+
+      @keyframes fade-up-data-v-0a2a5063 {
+         0% {
+            transform: translate3d(0, 10px, 0);
+            opacity: 0
+         }
+
+         100% {
+            transform: translate3d(0, 0, 0);
+            opacity: 1
+         }
+      }
+
+      .fade-in[data-v-0a2a5063] {
+         animation: fade-in-data-v-0a2a5063 .3s ease-in-out
+      }
+
+      @keyframes fade-in-data-v-0a2a5063 {
+         0% {
+            opacity: 0
+         }
+
+         100% {
+            opacity: 1
+         }
+      }
+
+      .spin[data-v-0a2a5063] {
+         animation-name: spin-data-v-0a2a5063;
+         animation-duration: 2000ms;
+         animation-iteration-count: infinite;
+         animation-timing-function: linear
+      }
+
+      @keyframes spin-data-v-0a2a5063 {
+         from {
+            transform: rotate(0deg)
+         }
+
+         to {
+            transform: rotate(360deg)
+         }
+      }
+
+      .bounceIn[data-v-0a2a5063] {
+         animation-name: bounceIn-data-v-0a2a5063;
+         transform-origin: center bottom;
+         animation-duration: 1s;
+         animation-fill-mode: both;
+         animation-iteration-count: 1
+      }
+
+      @keyframes bounceIn-data-v-0a2a5063 {
+
+         0%,
+         20%,
+         40%,
+         60%,
+         80%,
+         100% {
+            -webkit-transition-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
+            transition-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1)
+         }
+
+         0% {
+            opacity: 1;
+            -webkit-transform: scale3d(0.8, 0.8, 0.8);
+            transform: scale3d(0.8, 0.8, 0.8)
+         }
+
+         20% {
+            -webkit-transform: scale3d(1.1, 1.1, 1.1);
+            transform: scale3d(1.1, 1.1, 1.1)
+         }
+
+         40% {
+            -webkit-transform: scale3d(0.9, 0.9, 0.9);
+            transform: scale3d(0.9, 0.9, 0.9)
+         }
+
+         60% {
+            opacity: 1;
+            -webkit-transform: scale3d(1.03, 1.03, 1.03);
+            transform: scale3d(1.03, 1.03, 1.03)
+         }
+
+         80% {
+            -webkit-transform: scale3d(0.97, 0.97, 0.97);
+            transform: scale3d(0.97, 0.97, 0.97)
+         }
+
+         100% {
+            opacity: 1;
+            -webkit-transform: scale3d(1, 1, 1);
+            transform: scale3d(1, 1, 1)
+         }
+      }
+
+      @keyframes dots-data-v-0a2a5063 {
+
+         0%,
+         20% {
+            color: rgba(0, 0, 0, 0);
+            text-shadow: 0.25em 0 0 rgba(0, 0, 0, 0), 0.5em 0 0 rgba(0, 0, 0, 0)
+         }
+
+         40% {
+            color: #8492A6;
+            text-shadow: 0.25em 0 0 rgba(0, 0, 0, 0), 0.5em 0 0 rgba(0, 0, 0, 0)
+         }
+
+         60% {
+            text-shadow: 0.25em 0 0 #8492A6, 0.5em 0 0 rgba(0, 0, 0, 0)
+         }
+
+         80%,
+         100% {
+            text-shadow: .25em 0 0 #8492A6, .5em 0 0 #8492A6
+         }
+      }
+
+      @keyframes recording-data-v-0a2a5063 {
+         0% {
+            box-shadow: 0px 0px 5px 0px rgba(173, 0, 0, 0.3)
+         }
+
+         65% {
+            box-shadow: 0px 0px 5px 5px rgba(173, 0, 0, 0.3)
+         }
+
+         90% {
+            box-shadow: 0px 0px 5px 5px rgba(173, 0, 0, 0)
+         }
+      }
+
+      html[data-v-0a2a5063] {
+         max-height: 500px
+      }
+
+      body[data-v-0a2a5063] {
+         margin: 0;
+         font-size: 100%;
+         color: #3C4858;
+         width: 350px;
+         max-height: 500px
+      }
+
+      a[data-v-0a2a5063] {
+         text-decoration: none;
+         color: #45C8F1
+      }
+
+      h1[data-v-0a2a5063],
+      h2[data-v-0a2a5063],
+      h3[data-v-0a2a5063],
+      h4[data-v-0a2a5063] {
+         margin-top: 0
+      }
+
+      .container_selected_area[data-v-0a2a5063] {
+         padding: 0px;
+         position: fixed;
+         z-index: 2147483647;
+         top: 0px;
+         left: 0px;
+         right: 0px;
+         bottom: 0px;
+         display: none;
+         visibility: hidden
+      }
+
+      .container_selected_area.active[data-v-0a2a5063] {
+         visibility: visible;
+         display: block
+      }
+
+      .container_selected_area .label[data-v-0a2a5063] {
+         font-family: "Didact Gothic Regular", sans-serif;
+         font-size: 22px;
+         text-align: center;
+         padding-top: 15px
+      }
+
+      .container_selected_area .area[data-v-0a2a5063] {
+         border: 1px solid #1e83ff;
+         background: rgba(30, 131, 255, 0.1);
+         display: none;
+         position: fixed;
+         z-index: 2147483647;
+         box-sizing: border-box
+      }
+
+      .container_selected_area .area.active[data-v-0a2a5063] {
+         display: block;
+         top: 0px;
+         left: 0px
+      }
+
+      .hide[data-v-0a2a5063] {
+         display: none
+      }
+   </style>
+   <!-- OG -->
+   <meta property="og:url" content="https://fm-genshin-cafe.github.io/fischl/docs/">
+   <meta property="og:site_name" content="Fischl">
+   <!-- descriptions -->
+   <meta property="og:description"
+      content="It is a multi-purpose and Genshin-based bot ready to enhance and boost up your Discord server. The bot has many useful features like ticket system, chat reviver, music, and a lot more fun and utility commands.">
+   <meta name="description"
+      content="It is a multi-purpose and Genshin-based bot ready to enhance and boost up your Discord server. The bot has many useful features like ticket system, chat reviver, music, and a lot more fun and utility commands.">
+   <!-- end descriptions -->
+   <meta property="og:title" content="Commands - Fischl Documentation">
+   <!-- embed message second line big text title -->
+   <meta property="og:image" content="https://fm-genshin-cafe.github.io/fischl/assets/icon.png">
+   <!-- embed message image -->
+   <meta name="theme-color" content="#5D77E5"> <!-- embed message side color -->
+   <meta property="og:type" content="website">
+</head>
+
+<body dir="ltr" data-md-color-scheme="preference" data-md-color-primary="blue-grey" data-md-color-accent="cyan"
+   data-new-gr-c-s-check-loaded="14.991.0" data-gr-ext-installed="">
+   <script>matchMedia("(prefers-color-scheme: dark)").matches && document.body.setAttribute("data-md-color-scheme", "slate")</script>
+   <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+   <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+   <label class="md-overlay" for="__drawer"></label>
+   <div data-md-component="announce">
+   </div>
+   <header class="md-header" data-md-component="header" data-md-state="">
+      <nav class="md-header-nav md-grid" aria-label="Header">
+         <a href="#" title="Fischl Documentation" class="md-header-nav__button md-logo"
+            aria-label="Fischl Documentation">
+            <img src="https://fm-genshin-cafe.github.io/fischl/assets/icon.png" alt="logo"
+               style="border-radius: 50%; border:1px solid white">
+         </a>
+         <label class="md-header-nav__button md-icon" for="__drawer">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+               <path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2z"></path>
+            </svg>
+         </label>
+         <div class="md-header-nav__title" data-md-component="header-title" data-md-state="">
+            <div class="md-header-nav__ellipsis">
+               <span class="md-header-nav__topic md-ellipsis">
+                  Fischl Documentation
+               </span>
+               <span class="md-header-nav__topic md-ellipsis">
+                  Commands
+               </span>
+            </div>
+         </div>
+      </nav>
+   </header>
+   <div class="md-container" data-md-component="container">
+      <nav class="md-tabs md-tabs--active" aria-label="Tabs" data-md-component="tabs" data-md-state="">
+         <div class="md-tabs__inner md-grid">
+         </div>
+      </nav>
+      <main class="md-main" data-md-component="main">
+         <div class="md-main__inner md-grid">
+            <div class="md-sidebar md-sidebar--primary" data-md-component="navigation" style="height: 484px;">
+               <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                     <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+                        <ul class="md-nav__list">
+                           <nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+                              <label class="md-nav__title" for="__toc">
+                                 <span class="md-nav__icon md-icon">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                       <path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12z">
+                                       </path>
+                                    </svg>
+                                 </span>
+                                 Categories
+                              </label>
+                              <hr>
+                              <ul class="md-nav__list">
+                                 <li class="md-nav__item">
+                                    <a href="#general-utilities" class="md-nav__link">
+                                       General Utilities
+                                    </a>
+                                 </li>
+                                 <li class="md-nav__item">
+                                    <a href="#fun-commands" class="md-nav__link">
+                                       Fun Commands
+                                    </a>
+                                 </li>
+                                 <li class="md-nav__item">
+                                    <a href="#useful-functions" class="md-nav__link">
+                                       Useful Functions
+                                    </a>
+                                 </li>
+                              </ul>
+                           </nav>
+                           <li class="md-nav__item">
+                              <a href="https://docs.carl.gg/moderation/moderation/" title="Moderation"
+                                 class="md-nav__link">
+                                 Moderation
+                              </a>
+                           </li>
+                        </ul>
+                     </nav>
+                  </div>
+               </div>
+            </div>
+            <div class="md-content">
+               <article class="md-content__inner md-typeset">
+                  <h1 id="automod">Commands</h1>
+                  <div class="admonition info">
+                     <p class="admonition-title">Who are we?</p>
+                     <p>Fischl is a highly versatile multi-function Genshin-based bot for Discord which started
+                        development in 2022.
+                        It allows private support channels, which we call tickets, between your staff team and
+                        individuals who look for help.
+                        We also offer features such as music, suggestiosn, utilities, chat and fun commands.
+                        It’s highly customizable, giving you the freedom to be the perfect fit for your server.
+                        There is no need for complex setup procedures, or multiple commands to make simple actions. You
+                        can easily interact with the bot using Discord slash commands.
+                        With over 50 active servers, 32,000 happy users, and over 1,000+ tickets to date, you can trust
+                        Fischl is going to be a great addition to your server.
+                     </p>
+                  </div>
+                  <h3 id="general-utilities">Utility</h3>
+                  <details class="tldr" open="open">
+                     <summary>Utility</summary>
+                     <div class="md-typeset__scrollwrap">
+                        <div class="md-typeset__table">
+                           <table>
+                              <thead>
+                                 <tr>
+                                    <th align="left">Command</th>
+                                    <th align="left">Example</th>
+                                    <th align="left">Usage</th>
+                                 </tr>
+                              </thead>
+                              <tbody>
+                                 <tr>
+                                    <td align="left"><strong>user &lt;user&gt;</strong></td>
+                                    <td align="left"><code>/user user:@miko</code></td>
+                                    <td align="left">Shows the details of a server member</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>color &lt;hex&gt;</strong></td>
+                                    <td align="left"><code>/color hex:#a9a9a9</code></td>
+                                    <td align="left">Visualize a hex color</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>invite</strong></td>
+                                    <td align="left"><code>/invite</code></td>
+                                    <td align="left">Invite the bot to your server</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>topic</strong></td>
+                                    <td align="left"><code>/topic</code></td>
+                                    <td align="left">Get a random Genshin topic to chat on</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>text &lt;color&gt; &lt;phrase&gt;</strong></td>
+                                    <td align="left"><code>/text color:#a9a9a9 phrase:i love genshin</code></td>
+                                    <td align="left">Generates texts with Genshin-styled font</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>ping</strong></td>
+                                    <td align="left"><code>/ping</code></td>
+                                    <td align="left">Get the bot latency</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>server</strong></td>
+                                    <td align="left"><code>/server</code></td>
+                                    <td align="left">Shows the details of the current server</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>help</strong></td>
+                                    <td align="left"><code>/help</code></td>
+                                    <td align="left">View all the bot's commands</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>embed</strong></td>
+                                    <td align="left"><code>/embed</code></td>
+                                    <td align="left">Creates a custom embed message</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>editembed</strong></td>
+                                    <td align="left"><code>/editembed</code></td>
+                                    <td align="left">Edits a custom embed message</td>
+                                 </tr>
+                                 <tr>
+                                    <td align="left"><strong>sendcodes</strong></td>
+                                    <td align="left"><code>/sendcodes codes:WTQ2E83WS869,2SRKFQ2YSMVV,5A92W9JZBLCH role:@Genshin News Ping</code></td>
+                                    <td align="left">Sends a message for Genshin redemption codes with links and buttons</td>
+                                 </tr>
+                              </tbody>
+                           </table>
+                        </div>
+                     </div>
+                  </details>
+                  <details class="example" open="open">
+                     <summary id="fun-commands">2023 Cafe Summer Festival Commands</summary>
+                     <p>These are some commands made only for the time being:</p>
+                     <ul>
+                        <li><code><strong>/mora</strong></code> - Check a user's mora inventory in the 2023 Cafe Summer Festival. </li>
+                        <li><code><strong>/lb</strong></code> - Check the mora leaderboard in the 2023 Cafe Summer Festival.</li>
+                        <li><code><strong>/donate</strong></code> - Donate your mora to another user. </li>
+                     </ul>
+                  </details>
+                  <h3 id="useful-functions">Useful Functions</h3>
+                  <div class="admonition tldr">
+                     <p class="admonition-title">Useful Functions</p>
+                     <div class="tabbed-set" data-tabs="1:7">
+                        <input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio"><label
+                           for="__tabbed_1_1">Tickets</label>
+                        <div class="tabbed-content">
+                           <p>The following commands are used to setup and deal with tickets. To start using tickets
+                              instantly, use <code>/ticket setup</code> and the bot will guide you through the
+                              procedures of setting up your ticket mailbox! Note that these commands are only available
+                              to members with Administrator permission, meaning only Admins can close/delete tickets.
+                           </p>
+                           <div class="md-typeset__scrollwrap">
+                              <div class="md-typeset__table">
+                                 <table>
+                                    <thead>
+                                       <tr>
+                                          <th align="left">Command</th>
+                                          <th align="left">Example</th>
+                                          <th align="left">Usage</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       <tr>
+                                          <td align="left"><strong>ticket reset</strong></td>
+                                          <td align="left"><code>/ticket reset</code></td>
+                                          <td align="left">Reset the settings of ticket in the server</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket setup</strong></td>
+                                          <td align="left"><code>/ticket setup</code></td>
+                                          <td align="left">Setup ticket function in the server</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket addrole</strong></td>
+                                          <td align="left"><code>/ticket addrole</code></td>
+                                          <td align="left">Add a role that can see and manage tickets</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket removerole</strong></td>
+                                          <td align="left"><code>/ticket removerole</code></td>
+                                          <td align="left">Remove a role that can see and manage tickets</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket notify</strong></td>
+                                          <td align="left"><code>/ticket notify</code></td>
+                                          <td align="left">Send a DM to the ticket author notifying the ticket needs
+                                             their attention</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket delete</strong></td>
+                                          <td align="left"><code>/ticket delete</code></td>
+                                          <td align="left">Deletes an existing ticket channel</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket close</strong></td>
+                                          <td align="left"><code>/ticket close</code></td>
+                                          <td align="left">Closes the current ticket and prevents ticket author from
+                                             viewing the ticket</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket button</strong></td>
+                                          <td align="left"><code>/ticket button</code></td>
+                                          <td align="left">Creates a ticket panel with buttons</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>ticket dropdown</strong></td>
+                                          <td align="left"><code>/ticket dropdown</code></td>
+                                          <td align="left">Creates a ticket panel with dropdown menu</td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </div>
+                        </div>
+                        <!--<input id="__tabbed_1_4" name="__tabbed_1" type="radio"><label for="__tabbed_1_4">Suggestion
+                           System</label>
+                        <div class="tabbed-content">
+                           <p>The following slash commands are for setting up a suggestion system for your server where
+                              memebers can offer suggestions to your server and your admins can manage their suggestions
+                              easily. All messages sent in a suggestion channel will be regarded as a suggestion and the
+                              bot will turn the message to an embed message with reactions and buttons. Note that
+                              members Administrator can only manage suggestions and the bot will ignore their messages
+                              sent in the channel. To setup the suggestion system, you may need Administrator
+                              permissions.</p>
+                           <div class="md-typeset__scrollwrap">
+                              <div class="md-typeset__table">
+                                 <table>
+                                    <thead>
+                                       <tr>
+                                          <th align="left">Command</th>
+                                          <th align="left">Example</th>
+                                          <th align="left">Usage</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       <tr>
+                                          <td align="left"><strong>suggestionchannel add &lt;channel&gt;</strong></td>
+                                          <td align="left"><code>/suggestionchannel remove channel:suggestion</code>
+                                          </td>
+                                          <td align="left">Sets a channel to be a suggestion channel of the server.</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>suggestionchannel remove &lt;channel&gt;</strong>
+                                          </td>
+                                          <td align="left"><code>/suggestionchannel remove channel:suggestion</code>
+                                          </td>
+                                          <td align="left">Removes a channel to be a suggestion channel of the server.
+                                          </td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </div>
+                        </div>-->
+                        <input id="__tabbed_1_4" name="__tabbed_1" type="radio"><label for="__tabbed_1_4">Q&A with Fischl</label>
+                        <div class="tabbed-content">
+                           <p>This is live chatbot feature that you could easily integrate in your server, powered by Google Bard. It is a powerful tool that can answer members' questions based on its own (Google's) knowledge. The answers provided by the bot are just for reference purposes and may not fully accurate.
+                           </p>
+                           <p>You can also simply ping the bot with your question in chat to use this chatbot feature.</p>
+                           <div class="md-typeset__scrollwrap">
+                              <div class="md-typeset__table">
+                                 <table>
+                                    <thead>
+                                       <tr>
+                                          <th align="left">Command</th>
+                                          <th align="left">Example</th>
+                                          <th align="left">Usage</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       <tr>
+                                          <td align="left"><strong>ask</strong></td>
+                                          <td align="left"><code>/ask query:what's the time now</code></td>
+                                          <td align="left">Asks the bot anything from writing a story, an essay, to answering complicated questions</td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </div>
+                        </div>
+
+                        <input id="__tabbed_1_5" name="__tabbed_1" type="radio"><label for="__tabbed_1_5">Sticky
+                           Messages</label>
+                        <div class="tabbed-content">
+                           <p>The following slash commands are for setting up sticky messages in different channels.
+                              Sticky messages will be stayed at the bottom of the channel no matter what messages are
+                              sent afterwards. This function is especially useful when you need give your members a
+                              heads up on how to use this chat channel or what they need to know before going ahead and
+                              sending any messages. To setup sticky messages, you may need Administrator permissions.
+                           </p>
+                           <div class="md-typeset__scrollwrap">
+                              <div class="md-typeset__table">
+                                 <table>
+                                    <thead>
+                                       <tr>
+                                          <th align="left">Command</th>
+                                          <th align="left">Example</th>
+                                          <th align="left">Usage</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       <tr>
+                                          <td align="left"><strong>sticky enable &lt;message&gt;
+                                                &lt;channel&gt;</strong></td>
+                                          <td align="left">
+                                             <code>/sticky enable message:this channel is used for emergency purposes only channel:#general</code>
+                                          </td>
+                                          <td align="left">Enable sticky messages in a channel</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>sticky disable &lt;channel&gt;</strong></td>
+                                          <td align="left"><code>/sticky disable channel:#general</code></td>
+                                          <td align="left">Disable sticky messages in a channel</td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </div>
+                        </div>
+
+                        <input id="__tabbed_1_9" name="__tabbed_1" type="radio"><label
+                           for="__tabbed_1_9">Welcome Messages</label>
+                        <div class="tabbed-content">
+                           <p>The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. To setup welcome messages, you may need Administrator permissions.
+                           </p>
+                           <div class="md-typeset__scrollwrap">
+                              <div class="md-typeset__table">
+                                 <table>
+                                    <thead>
+                                       <tr>
+                                          <th align="left">Command</th>
+                                          <th align="left">Example</th>
+                                          <th align="left">Usage</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody>
+                                       <tr>
+                                          <td align="left"><strong>welcome setup</strong></td>
+                                          <td align="left"><code>/welcome setup</code></td>
+                                          <td align="left">Initalize welcome function in the server</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>welcome disable</strong></td>
+                                          <td align="left"><code>/welcome disable</code></td>
+                                          <td align="left">Disable welcome function in the server</td>
+                                       </tr>
+                                       <tr>
+                                          <td align="left"><strong>welcome sample</strong></td>
+                                          <td align="left"><code>/welcome sample</code></td>
+                                          <td align="left">Sends a sample welcome message</td>
+                                       </tr>
+                                    </tbody>
+                                 </table>
+                              </div>
+                           </div>
+                        </div>
+
+                     </div>
+                  </div>
+               </article>
+            </div>
+         </div>
+      </main>
+      <footer class="md-footer">
+         <div class="md-footer-meta md-typeset">
+            <div class="md-footer-meta__inner md-grid">
+               <div class="md-footer-copyright">
+                  <div class="md-footer-copyright__highlight">
+                     Copyright &copy;
+                     <script>document.write(new Date().getFullYear());</script> | All rights reserved
+                  </div>
+                  Made with
+                  <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+                     Material for MkDocs
+                  </a>
+               </div>
+               <br />
+               <div class="md-social">
+                  <div class="nouridio"><small>Website created by <a href="https://iancheung.dev"> Ian
+                           Cheung</a></small>
+                  </div>
+               </div>
+            </div>
+         </div>
+      </footer>
+   </div>
+   <script src="./assets/vendor.js"></script>
+   <script src="./assets/bundle.js"></script>
+   <script id="__lang"
+      type="application/json">{"clipboard.copy": "Copy to clipboard", "clipboard.copied": "Copied to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.result.placeholder": "Type to start searching", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents"}</script>
+   <input type="file" id="" name="file" style="display: none;">
+   <div data-v-0a2a5063="" class="container_selected_area"
+      style="cursor: url(&quot;chrome-extension://ialiedlpfknneamnbemcgmaboleiccdd/assets/images/cursor-imagen.svg&quot;) 9 9, crosshair;">
+      <div data-v-0a2a5063="" class="area"></div>
+   </div>
+   <style>
+      .tb_button {
+         padding: 1px;
+         cursor: pointer;
+         border-right: 1px solid #8b8b8b;
+         border-left: 1px solid #FFF;
+         border-bottom: 1px solid #fff;
+      }
+
+      .tb_button.hover {
+         border: 2px outset #def;
+         background-color: #f8f8f8 !important;
+      }
+
+      .ws_toolbar {
+         z-index: 100000
+      }
+
+      .ws_toolbar .ws_tb_btn {
+         cursor: pointer;
+         border: 1px solid #555;
+         padding: 3px
+      }
+
+      .tb_highlight {
+         background-color: yellow
+      }
+
+      .tb_hide {
+         visibility: hidden
+      }
+
+      .ws_toolbar img {
+         padding: 2px;
+         margin: 0px
+      }
+   </style>
+</body>
+
+</html>

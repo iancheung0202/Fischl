@@ -1,0 +1,4 @@
+Deploy: firebase deploy --only hosting:fischlbot
+
+
+Preview: firebase hosting:channel:deploy fischlbot
