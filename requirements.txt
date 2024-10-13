@@ -1,0 +1,16 @@
+discord.py
+discord 
+Flask 
+bs4 
+requests
+firebase-admin
+emoji
+aiohttp
+async-timeout
+Pillow 
+asyncio
+genshin
+pytz
+pandas
+essential_generators
+matplotlib
