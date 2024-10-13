@@ -1,0 +1,83 @@
+import discord, time, datetime, firebase_admin
+from discord import app_commands
+from discord.ext import commands
+from firebase_admin import db
+import pandas as pd
+import matplotlib.pyplot as plt
+
+class Leaderboard(commands.Cog):
+  def __init__(self, bot: commands.Bot) -> None:
+    self.bot = bot
+
+  @app_commands.command(
+    name = "lb",
+    description = "Check the leaderboard for the 2024 Summer Team Challenge"
+  )
+  async def mora(
+    self,
+    interaction: discord.Interaction
+  ) -> None:
+    
+    if interaction.guild.id != 717029019270381578:
+      await interaction.response.send_message("This command is only for the event happening in discord.gg/traveler")
+      raise Exception()
+        
+    ref = db.reference("/2024 Summer Mora")
+    summer = ref.get()
+  
+    dict_lb = []
+    try:
+      for key, val in summer.items():
+        dict_lb.append({'User ID': val['User ID'], 'Mora': val['Mora']})
+    except Exception:
+      pass
+      
+    df = pd.DataFrame(dict_lb)
+    df = df.sort_values(by="Mora", ascending=False)
+    def id_to_team(id):
+      team = None
+      user = interaction.guild.get_member(id)
+      if user == None:
+        return "N/A"
+      for role in user.roles:
+        if "team" in role.name.lower() and "art" not in role.name.lower() and "event" not in role.name.lower():
+          team = role.name
+          break
+      if team is not None:
+        return team
+      else:
+        return "N/A"
+
+    df["Team"] = df["User ID"].map(id_to_team)
+    item = []
+    for team in df['Team'].unique():
+      f = df[(df['Team'] == team)]["Mora"].sum()
+      item.append({"Team Name": team, "Mora": f})
+
+    lb_df = pd.DataFrame(item)
+    lb_df = lb_df.sort_values(by= "Mora", ascending = True)
+
+    # Define a color map for each team
+    color_map = {
+        "Team Mondstadt": "#65dba9",
+        "Team Liyue": "#f3be15",
+        "Team Inazuma": "#7b38df",
+        "Team Sumeru": "#208B4C",
+        "Team Fontaine": "#2470d7",
+        "N/A": "#808080"
+    }
+
+    plot = lb_df.plot.barh(title="Mora Earned by Each Team (from minigames ONLY)", x="Team Name", y="Mora", color=[color_map[team] for team in lb_df["Team Name"]])
+    fig = plot.get_figure()
+    fig.savefig("assets/summer2024lb.png", bbox_inches='tight')
+    
+    chn = interaction.client.get_channel(1026968305208131645)
+    msg = await chn.send(file=discord.File("assets/summer2024lb.png"))
+    url = msg.attachments[0].url
+    embed = discord.Embed(color=discord.Color.random())
+    embed.set_image(url=url)
+    await interaction.response.send_message(content=f"{df.iloc[:3]}", embed=embed)
+    
+
+async def setup(bot: commands.Bot) -> None:
+  await bot.add_cog(Leaderboard(bot))

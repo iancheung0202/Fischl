@@ -1,0 +1,40 @@
+# https://replit.com/@iancheung0202/Genshin#main.py
+
+import discord, time, datetime, asyncio, genshin
+from discord import app_commands
+from discord.ext import commands
+
+class Profile(commands.Cog):
+  def __init__(self, bot: commands.Bot) -> None:
+    self.bot = bot
+
+  @app_commands.command(
+    name = "profile",
+    description = "Shows the details of a Genshin profile"
+  )
+  @app_commands.describe(
+    uid = "Genshin UID",
+  )
+  async def user(
+    self,
+    interaction: discord.Interaction,
+    uid: int
+  ) -> None:
+    cookies = {"ltuid": 119480035, "ltoken": "cnF7TiZqHAAvYqgCBoSPx5EjwezOh1ZHoqSHf7dT"}
+    GenshinClient = genshin.Client(cookies)
+
+    user = await GenshinClient.get_full_genshin_user(uid)
+    embed = discord.Embed(title=f"Genshin Profile of {user.info.nickname}")
+    embed.add_field(name="Adventure Rank", value=user.info.level)
+    embed.add_field(name="Days Active", value=user.stats.days_active)
+    embed.add_field(name="Characters", value=f"{user.stats.characters} / 85")
+    explorations = ""
+    for x in user.explorations:
+      explorations += f"**{x.name}**: Level {x.level} ({x.explored}% explored)\n"
+    embed.description = explorations
+    embed.set_thumbnail(url=user.characters[0].icon)
+    await interaction.response.send_message(content="*:warning: This command is yet to be fully developed.*", embed=embed)
+    
+
+async def setup(bot: commands.Bot) -> None:
+  await bot.add_cog(Profile(bot))

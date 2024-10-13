@@ -1,0 +1,43 @@
+import discord, firebase_admin, datetime, asyncio, time, emoji, random, os, string
+from firebase_admin import db
+from discord import app_commands
+from discord.ext import commands
+from discord.ui import Button, View
+
+class modal(discord.ui.Modal):
+  def __init__(self, nick, title="Request Nickname Change"):
+    super().__init__(title="Request Nickname Change")
+    self.nick = nick
+    self.nickname = discord.ui.TextInput(label="Insert your new nickname", style=discord.TextStyle.short, placeholder="", required=True, default=self.nick)
+    self.add_item(self.nickname)
+
+  async def on_submit(self, interaction:discord.Interaction):
+    pass
+
+class NicknameApproveButton(discord.ui.View):
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(label='Request Nickname Change', style=discord.ButtonStyle.blurple, custom_id='nicknamechange')
+  async def nickname_change(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await interaction.response.send_modal(modal(nick=interaction.user.nick))
+    
+
+class NicknameApprove(commands.Cog): 
+  def __init__(self, bot):
+    self.client = bot
+  
+  @commands.Cog.listener() 
+  async def on_message(self, message):
+    if message.author == self.client.user or message.author.bot == True: 
+        return
+    
+    if (message.content == "-nicknameapprovepanel"):
+        embed = discord.Embed(title="🎉 Congratulations, you won a x1 welkin just by chatting. 🎉", description="<a:moneydance:1227425759077859359> You are one of the lucky few!!! **You must create a ticket in <#1083745974402420846> within 30 minutes indicating that you wish to claim the prize.** Your chance will be automatically forfeited if you did not create a ticket within 30 mins.\n\nTo successfully claim your prize, screenshot **this message** and send it in the ticket.", color=discord.Colour.random())
+        
+        await message.channel.send(embed=embed, view=NicknameApproveButton())
+        
+
+async def setup(bot: commands.Bot) -> None:
+  await bot.add_cog(NicknameApprove(bot))
+
