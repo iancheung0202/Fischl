@@ -1,0 +1,125 @@
+import discord, datetime, asyncio, time, emoji
+from discord import app_commands
+from discord.ext import commands
+from discord.ui import Button, View
+
+class Submit(discord.ui.View):
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(label='Start Quiz', style=discord.ButtonStyle.grey, custom_id='startquiz', emoji="📝")
+  async def startapp(self, interaction: discord.Interaction, button: discord.ui.Button):
+    from assets.attemptedVoice import users as attemptedVoice
+    duplicate = attemptedVoice
+    if int(interaction.user.id) in duplicate:
+      await interaction.response.send_message(":x: You can only attempt the quiz once!", ephemeral=True)
+      raise Exception()
+    try:
+      embed = discord.Embed(title="Guess The Voice - Team Challenge | Genshin Impact Cafe", description="""🎤 We've got a fun challenge lined up for us In July - "Guess the Voice - Team Challenge", where competitors listen to different voicelines from Genshin characters and try to guess which character they belong to. 🎮🎉
+""", color=discord.Color.blurple())
+      await interaction.user.send(embed=embed)
+      ableToDM = True
+    except Exception:
+      await interaction.response.send_message("Please turn on Direct Messages to access the quiz.\n`User Settings > Privacy & Safety > Allow direct messages from server members`", ephemeral=True)
+      ableToDM = False
+      
+    if ableToDM:
+      await interaction.response.send_message(":envelope_with_arrow: Please proceed to your DMs to attempt the quiz.", ephemeral=True)
+      
+      duplicate.append(int(interaction.user.id))
+      f = open(f"./assets/attemptedVoice.py", "w")
+      f.write(f"users = {duplicate}")
+      f.close()
+
+      ROOT = "./assets/voices/"
+
+      files = [
+        "VO_Jean_About_Us_-_Oath.mp3",
+        "VO-Diluc-Good-Afternoon_9dcc2d14d10545e66f799beda33dd6.mp3", 
+        "VO-Eula-Receiving-a-Gift-03_61bd39bbd5ca9d4860f936b23e81f6.mp3", 
+        "VO-Fischl-Chat-Whispers-of-Destiny_5bd07fee891bf176acfa74c57c93ec.mp3", 
+        "VO_Bennett_Good_Morning.mp3",
+        "VO_Keqing_When_the_Sun_Is_Out.mp3",
+        "VO_Albedo_Feelings_About_Ascension_-_03.mp3",
+        "VO_Xingqiu_Chat_-_Literature.mp3",
+        "VO-Kaveh-When-It-Rains_075d7d60b6c4a60f02199ec0e7b6a7.mp3", 
+        "VO-Noelle-Receiving-a-Gift-03_9bec6fda866921bc83e0063cbea117.mp3",
+        "VO_Tartaglia_Good_Afternoon.mp3",
+        "VO_Dori_Feelings_About_Ascension_-_02.mp3",
+        "VO-Qiqi-About-Qiqi_d994bcbc8b35be3282ccb47a1b8ae9.mp3", 
+        "VO_Zhongli_Receiving_a_Gift_-_01.mp3",
+        "VO-Sucrose-Chat-Organization_824b662a8fab04c82aa676e8ddf306.mp3"]
+
+      correctAnswers = ["jean", "diluc", "eula", "fischl", "bennett", "keqing", "albedo", "xingqiu", "kaveh", "noelle", "tartaglia", "dori", "qiqi", "zhongli", "sucrose"]
+      
+      answers = []
+      
+      def check(message):
+        return message.author == interaction.user and isinstance(message.channel, discord.DMChannel)
+
+      for x in range(len(files)):
+        embed = discord.Embed(title=f"Question {x+1} of {len(files)}", description="Who's this character?", color=0xADD8E6)
+        embed.set_footer(text="You have 30 seconds to answer each question. The answers are NOT case sensitive.")
+        await interaction.user.send(embed=embed, file=discord.File(f"{ROOT}{files[x]}", filename="voice.mp3"))
+        try:
+          answer = await interaction.client.wait_for('message', check=check, timeout=30)
+        except asyncio.TimeoutError:
+          answer = "`EXCEEDED_TIME_LIMIT`"
+          await interaction.user.send(embed=discord.Embed(title=f"Uh oh", description="You have exceeded the `30 seconds` time limit for each question. Better luck next time.", color=discord.Color.red()))
+        if answer != "`EXCEEDED_TIME_LIMIT`":
+          answer = answer.content
+        answers.append(answer.lower().strip())
+
+      chn = interaction.client.get_channel(1131691838642851900)
+
+      print(answers)
+      print(correctAnswers)
+      
+      string = ""
+      score = 0
+      for correctAnswer in correctAnswers:
+        answer = answers[correctAnswers.index(correctAnswer)]
+        string += f"{correctAnswers.index(correctAnswer)+1}. {answer}"
+        if answer == correctAnswer:
+          print(answer + " is the same as " + correctAnswer)
+          string += " ✅\n"
+          score += 1
+        else:
+          print(answer + " is NOT the same as " + correctAnswer)
+          string += " ❌\n"
+
+      team = "None"
+      color = discord.Color.blurple()
+      for role in interaction.user.roles:
+        if "Team" in role.name:
+          team = role.name
+          color = role.color
+
+      await chn.send(f"**User Mention:** {interaction.user.mention}\n**User ID:** `{interaction.user.id}`\n**Team:** `{team}`", embed=discord.Embed(title=f"Score: {score}/{len(files)}", description=string, color=color))
+      embed = discord.Embed(title="Quiz Submitted", description="Congratulations! You have successfully attempted the quiz. Thank you for your support and dedication to your respective teams. Your team leaders are very proud of you! Stay tuned for the winning team announcement soon!", color=0x00FF00)
+      await interaction.user.send(embed=embed)
+        
+  
+
+    
+
+class GuessTheVoice(commands.Cog): 
+  def __init__(self, bot):
+    self.client = bot
+  
+  @commands.Cog.listener() 
+  async def on_message(self, message):
+    if message.author == self.client.user or message.author.bot == True: 
+        return
+
+    if message.content == "-guessthevoice":
+      await message.channel.send(embed=discord.Embed(title="Guess The Voice - Team Challenge | Genshin Impact Cafe", description="""🎤 We've got a fun challenge lined up for you here - "Guess the Voice - Team Challenge", where you listen to different voicelines from Genshin characters and try to guess which character they belong to! 🎮🎉 You can only attempt the quiz once.
+
+If the bot goes offline or becomes unresponsive during your attempt, please ping <@692254240290242601> in your team chat channel and send the screenshot of your last few DMs with Fischl. He will then manually let you attempt the quiz again.
+""", color=discord.Color.blurple()), view=Submit())
+          
+
+    
+
+async def setup(bot): 
+  await bot.add_cog(GuessTheVoice(bot))

@@ -1,0 +1,141 @@
+import discord, firebase_admin, datetime, asyncio, time, emoji, random, os, string
+from firebase_admin import db
+from discord import app_commands
+from discord.ext import commands
+from discord.ui import Button, View
+from PIL import Image, ImageDraw, ImageFont
+from essential_generators import DocumentGenerator
+from Bard import Chatbot
+
+async def addCandy(userID, add=1):
+  ref = db.reference("/Oct Challenge")
+  randomevents = ref.get()
+
+  ogcandy = 0
+  try:
+    for key, val in randomevents.items():
+      if val['User ID'] == userID:
+        ogcandy = val['Candy']
+        db.reference('/Oct Challenge').child(key).delete()
+        break
+  except Exception:
+    pass
+
+  new = ogcandy + add
+  print(new)
+  data = {
+    "Participant": {
+      "User ID": userID,
+      "Candy": new,
+    }
+  }
+
+  for key, value in data.items():
+    ref.push().set(value)
+
+### --- PICK UP THE CANDY --- ###
+
+class PickUpButton(discord.ui.Button):
+    def __init__(self, disabled=False):
+        super().__init__(emoji="🍬", 
+ style=discord.ButtonStyle.grey, disabled=disabled)
+    async def callback(self, interaction: discord.Interaction):
+      await interaction.response.edit_message(content="", embed=discord.Embed(title=f"Pick up the candy - 🍬", description=f"{interaction.user.mention} picked up the `🍬` candy first.", color=discord.Color.gold()), view=PickUpView(disabled=True))
+      await addCandy(interaction.user.id, 1)
+      
+class PickUpView(discord.ui.View):
+    def __init__(self, disabled=False):
+        super().__init__(timeout=None)
+        self.add_item(PickUpButton(disabled))
+    
+async def pickUpCandy(channel, client):
+  await channel.send(embed=discord.Embed(title=f"Pick up the candy - 🍬", description=f"First to react to the `🍬` emoji gets the candy!", color=discord.Color.fuchsia()), view=PickUpView())
+
+### --- DEBT RELIEF --- ###
+
+class DebtReliefButton(discord.ui.Button):
+    def __init__(self, disabled=False):
+        super().__init__(emoji="✋", 
+ style=discord.ButtonStyle.grey, disabled=disabled)
+    async def callback(self, interaction: discord.Interaction):
+
+      ref = db.reference("/Oct Challenge")
+      randomevents = ref.get()
+
+      moraAmount = 0
+      for key, val in randomevents.items():
+          if val['User ID'] == interaction.user.id:
+              moraAmount = val['Candy']
+              break
+
+      if not(moraAmount < 0):
+        await interaction.response.send_message(f"This is only for people in debt. You already have **{moraAmount}** 🍬.", ephemeral=True)
+        raise Exception
+      if random.choice(["pos", "pos" "neg"]) == "pos":
+        await interaction.response.edit_message(content="", embed=discord.Embed(title=f"Your application is approved 🍬🍬", description=f"{interaction.user.mention}'s debt relief application is approved by the **G**lobal **I**nvestment for Debt **C**ontrol program. They earned 2 🍬🍬.", color=discord.Color.green()), view=DebtReliefView(disabled=True))
+        await addCandy(interaction.user.id, 2)
+      else:
+        await interaction.response.edit_message(content="", embed=discord.Embed(title=f"Your application is declined!", description=f"The **G**lobal **I**nvestment for Debt **C**ontrol program does not like how {interaction.user.mention} keeps gambling when you know you are out of candies.", color=discord.Color.red()), view=DebtReliefView(disabled=True))
+
+class DebtReliefView(discord.ui.View):
+    def __init__(self, disabled=False):
+        super().__init__(timeout=None)
+        self.add_item(DebtReliefButton(disabled))
+
+async def debtRelief(channel, client):
+  await channel.send(embed=discord.Embed(title=f"A debt relief program 🍬🍬 is happening.", description=f"**Only** a debtor can apply for the **G**lobal **I**nvestment for Debt **C**ontrol program, but they might not approve your application...", color=discord.Color.fuchsia()), view=DebtReliefView())
+
+### --- TRICK OR TREAT--- ###
+
+class PickUpIceCreamButton(discord.ui.Button):
+    def __init__(self, disabled=False):
+        super().__init__(emoji="🍬", 
+ style=discord.ButtonStyle.grey, disabled=disabled)
+    async def callback(self, interaction: discord.Interaction):
+      if random.choice(["pos", "neg"]) == "neg":
+        await interaction.response.edit_message(content="", embed=discord.Embed(title=f"A wild 🍬 has appeared.", description=f"Unfortunately, {interaction.user.mention} fell for the trap and lost a 🍬 candy.", color=discord.Color.red()), view=PickUpIceCreamView(disabled=True))
+        await addCandy(interaction.user.id, -1)
+      else:
+        await interaction.response.edit_message(content="", embed=discord.Embed(title=f"A wild 🍬 has appeared.", description=f"{interaction.user.mention} picked up the 🍬 candy first! Phew, no traps.", color=discord.Color.green()), view=PickUpIceCreamView(disabled=True))
+        await addCandy(interaction.user.id, 1)
+      
+class PickUpIceCreamView(discord.ui.View):
+    def __init__(self, disabled=False):
+        super().__init__(timeout=None)
+        self.add_item(PickUpIceCreamButton(disabled))
+    
+async def trickOrTreat(channel, client):
+  await channel.send(embed=discord.Embed(title=f"A wild 🍬 has appeared.", description=f"First to react can gain that candy, **BUT** it might also be a trap. \nIt's simply a 50/50 chance.", color=discord.Color.fuchsia()), view=PickUpIceCreamView())
+
+class TheEventItself(commands.Cog): 
+  def __init__(self, bot):
+    self.client = bot
+  
+  @commands.Cog.listener() 
+  async def on_message(self, message):
+    if message.author == self.client.user or message.author.bot == True: 
+        return
+      
+    # if False:
+    if (message.channel.id == 1104212482312122388 and message.id % 20 == 0) or (message.author.id == 692254240290242601 and message.content == "summonevent"):
+      chn = self.client.get_channel(1104212482312122388)
+      
+      events = [
+        pickUpCandy,
+        trickOrTreat,
+        pickUpCandy,
+        trickOrTreat,
+        pickUpCandy,
+        trickOrTreat,
+        pickUpCandy,
+        trickOrTreat,
+        debtRelief,
+        debtRelief
+      ]
+      
+      event = random.choice(events)
+      await event(chn, self.client)
+        
+
+async def setup(bot: commands.Bot) -> None:
+  await bot.add_cog(TheEventItself(bot))
