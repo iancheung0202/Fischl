@@ -1,8 +1,8 @@
 # Fischl — Genshin Impact-Themed Discord Bot
 
-![Fischl Logo](https://fischl.app/logo.png)
+![Fischl Banner](https://cdn.discordapp.com/banners/732422232273584198/5497f2c50fa371e0caa533ff9f16a7be.png)
 
-Fischl is a multi-purpose, Genshin Impact-themed Discord bot designed to enhance your server with a variety of features. Whether you're managing a community or just looking to add some flair, Fischl offers tools to keep your server engaging and organized.
+Fischl is a multi-purpose, Genshin Impact-themed Discord bot designed to enhance your server with a variety of features. If you're managing a community or just looking to add some flair, Fischl offers tools to keep your server engaging and organized.
 
 ## Features
 
@@ -13,11 +13,8 @@ Fischl is a multi-purpose, Genshin Impact-themed Discord bot designed to enhance
 * **🎮 Chat Minigames**: Spawns random mini-games in active chats to keep your server engaged.
 * **🤝 Partnership Panels**: Streamline and manage server partnerships efficiently with organized request threads and custom panel embeds.
 * **🎂 Birthday Wishes**: Celebrates your server members’ birthdays with messages from their favorite Genshin Impact characters.
-* **🔒 Channel Guard**: Protect important channels with rules acknowledgment. Users must confirm understanding before participating.
-* **🧠 AI Assistant**: Leverages AI to provide intelligent responses and assistance within your server.
 * **📚 Genshin Font Generator**: Create stylized text resembling the Genshin Impact font for use in your server.
 * **📌 Sticky Messages**: Pin important messages that remain visible across channels.
-* **🎨 Customizable Commands**: Tailor commands to fit your server's unique needs and preferences.
 
 ## Installation
 
@@ -42,10 +39,8 @@ Please ensure your code adheres to the existing style and includes appropriate t
 
 ## Support
 
-If you encounter issues or have questions, join our support server:
-
-👉 [Fischl Support Server](https://discord.gg/kaycd3fxHh)
+If you encounter issues or have questions, join our [support server](https://discord.gg/kaycd3fxHh).
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](https://opensource.org/license/mit) for details.
+This project is licensed under the [MIT License](https://opensource.org/license/mit).
