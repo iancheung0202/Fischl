@@ -38,7 +38,6 @@ async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
     header = embed_config.get('header', {})
     footer = embed_config.get('footer', {})
 
-    # Header embed
     header_embed = discord.Embed(
         title=header.get('title', None),
         description=header.get('description', None),
@@ -55,14 +54,12 @@ async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
     if 'image' in header:
         header_embed.set_image(url=header['image'])
 
-    # Category embeds
     category_embeds = []
     for cat_name, cat_data in categories.items():
         category_partners = [p for p in partners.values() if p.get('category') == cat_name]
         if not category_partners:
             continue
 
-        # Sort partners lexicographically by name
         sorted_partners = sorted(category_partners, key=lambda x: x['name'].lower())
         lines = []
         for p in sorted_partners:
