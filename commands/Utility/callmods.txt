@@ -1,0 +1,54 @@
+import discord, datetime
+from discord import app_commands
+from discord.ext import commands
+
+class ConfirmCallMods(discord.ui.View):
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(label='Yes', style=discord.ButtonStyle.green, custom_id='yescallmods')
+  async def yescallmods(self, interaction: discord.Interaction, button: discord.ui.Button):
+    messages = [message async for message in interaction.channel.history(limit=5)]
+    lastMsg = messages[0]
+    staffchn = interaction.guild.get_channel(1113510247806537940)
+    embed = discord.Embed(title=f":rotating_light: Someone is calling the mods in {interaction.channel.mention}", description=f"[Jump to surrounding messages]({lastMsg.jump_url})", color=0xFF0000)
+    embed.add_field(name="Context", value=interaction.message.embeds[0].fields[0].value, inline=True)
+    embed.add_field(name="Reporter", value=f"{interaction.user.mention}", inline=True)
+    embed.add_field(name="Reporter ID", value=f"`{interaction.user.id}`", inline=True)
+    await staffchn.send("<@&1302107917557825637> *Please send a message here saying you are handling it to avoid duplicate punishments!*", embed=embed)
+    embed = discord.Embed(title="Report Sent", description=f"Mods are on their way as we speak.", color=0x008000)
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    await interaction.response.edit_message(embed=embed, view=None)
+    
+
+  @discord.ui.button(label='No', style=discord.ButtonStyle.red, custom_id='nocallmods')
+  async def nocallmods(self, interaction: discord.Interaction, button: discord.ui.Button):
+    embed = discord.Embed(title="Action Cancelled", description=f"Alright {interaction.user.mention}! I will not call the mods!", color=0xFF0000)
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    await interaction.response.edit_message(embed=embed, view=None)
+
+class CallMods(commands.Cog):
+  def __init__(self, bot: commands.Bot) -> None:
+    self.bot = bot
+
+  @app_commands.command(
+    name = "callmods",
+    description = "Report an emergency that demands immediate attention from our staff members"
+  )
+  @app_commands.describe(
+    context = "Provide some context of the issue",
+  )
+  async def callmods(
+    self,
+    interaction: discord.Interaction,
+    context: str,
+  ) -> None:
+    if interaction.guild.id != 717029019270381578:
+      await interaction.response.send_message("This function is not usable in this guild.", ephemeral=True)
+    embed=discord.Embed(title="Are you sure you want to call the mods? :warning:", description="No matter the severity of the issue, you should feel obliged to click `Yes`. This function is usually used for reporting inappropriate content or heated arguments in the chat **at the current moment**. However, trolling or misusing this function will result in severe disciplinary actions.", color=0xFFFF00)
+    embed.add_field(name="Context", value=context, inline=True)
+    await interaction.response.send_message(embed=embed, view=ConfirmCallMods(), ephemeral=True)
+    
+
+async def setup(bot: commands.Bot) -> None:
+  await bot.add_cog(CallMods(bot))
