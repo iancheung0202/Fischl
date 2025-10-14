@@ -1,7 +1,5 @@
 # Fischl - Your All-in-One Hoyoverse Utility Discord Bot
 
-![Fischl Logo](https://cdn.discordapp.com/avatars/732422232273584198/624035e5e9a841bfd3020e35a0a5c0a0.png)
-![Discord](https://discord.com/api/guilds/783528750474199041/widget.png)
 ![Fischl Servers](https://img.shields.io/badge/200+-guilds-blue)
 ![Fischl Members](https://img.shields.io/badge/300,000++-members-green)
 
