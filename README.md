@@ -1,6 +1,8 @@
-# Fischl — Genshin Impact-Themed Discord Bot
+# Fischl - Your All-in-One Hoyoverse Utility Discord Bot
 
-![Fischl Banner](https://cdn.discordapp.com/banners/732422232273584198/5497f2c50fa371e0caa533ff9f16a7be.png)
+![Fischl Logo](https://cdn.discordapp.com/avatars/732422232273584198/624035e5e9a841bfd3020e35a0a5c0a0.png)
+[![Discord](https://discord.com/api/guilds/783528750474199041/widget.png)][discord]
+![Fischl Servers](https://img.shields.io/badge/200+-guilds-blue)
 
 Fischl is a multi-purpose, Genshin Impact-themed Discord bot designed to enhance your server with a variety of features. If you're managing a community or just looking to add some flair, Fischl offers tools to keep your server engaging and organized.
 
@@ -43,4 +45,11 @@ If you encounter issues or have questions, join our [support server](https://dis
 
 ## License
 
-This project is licensed under the [MIT License](https://opensource.org/license/mit).
+Fischl is **proprietary software**.
+
+* You may use Fischl only through **inviting the official Discord bot**.
+* **Self-hosting, cloning, or redistributing the bot is strictly prohibited**.
+* You are welcome to **contribute via GitHub pull requests**, but these contributions **cannot be used to create a separate instance of Fischl**.
+
+All rights reserved.
+
