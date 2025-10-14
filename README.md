@@ -1,7 +1,7 @@
 # Fischl - Your All-in-One Hoyoverse Utility Discord Bot
 
 ![Fischl Servers](https://img.shields.io/badge/200+-guilds-blue)
-![Fischl Members](https://img.shields.io/badge/300,000++-members-green)
+![Fischl Members](https://img.shields.io/badge/300,000+-members-green)
 
 Fischl is a multi-purpose, Genshin Impact-themed Discord bot designed to enhance your server with a variety of features. If you're managing a community or just looking to add some flair, Fischl offers tools to keep your server engaging and organized.
 
