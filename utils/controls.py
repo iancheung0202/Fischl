@@ -2,11 +2,9 @@ import os
 import sys
 import asyncio
 import base64
-from aiohttp import web
 
-AUTH_USER = "ian"
-AUTH_PASS = "fischlisthebest"
-API_KEY = "8AE7589FG7F75746548DCB869B"
+from aiohttp import web
+from assets.secret import AUTH_USER, AUTH_PASS, API_KEY
 
 class BotControlServer:
     def __init__(self, bot, host="0.0.0.0", port=8086):

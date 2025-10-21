@@ -30,14 +30,14 @@ async def day_autocomplete(
     current: str,
 ):
     if current == "":
-        return [app_commands.Choice(name=days[x], value=days[x]) for x in range(25)]
+        return [app_commands.Choice(name=str(days[x]), value=str(days[x])) for x in range(25)]
     else:
         list = []
         for day in days:
             if current.lower() in day.lower():
                 list.append(day)
         list = list[:25]
-        return [app_commands.Choice(name=x, value=x) for x in list]
+        return [app_commands.Choice(name=str(x), value=str(x)) for x in list]
 
 
 async def character_autocomplete(
