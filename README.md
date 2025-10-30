@@ -7,15 +7,15 @@ Fischl is a multi-purpose, Genshin Impact-themed Discord bot designed to enhance
 
 ## Features
 
-* **🎫 Ticket System**: Facilitates private support channels between your staff and members seeking assistance.
-* **🧩 Co-Op System**: Organizes Genshin co-op requests, preventing clutter in your channels.
-* **🎉 Welcomer**: Greets new members with custom welcome images, helping them feel at home.
-* **💬 Topic Generator**: Provides random Genshin Impact topics to keep your server's chat lively.
-* **🎮 Chat Minigames**: Spawns random mini-games in active chats to keep your server engaged.
-* **🤝 Partnership Panels**: Streamline and manage server partnerships efficiently with organized request threads and custom panel embeds.
-* **🎂 Birthday Wishes**: Celebrates your server members’ birthdays with messages from their favorite Genshin Impact characters.
-* **📚 Genshin Font Generator**: Create stylized text resembling the Genshin Impact font for use in your server.
-* **📌 Sticky Messages**: Pin important messages that remain visible across channels.
+* **Ticket System**: Facilitates private support channels between your staff and members seeking assistance.
+* **Co-Op System**: Organizes Genshin co-op requests, preventing clutter in your channels.
+* **Welcomer**: Greets new members with custom welcome images, helping them feel at home.
+* **Topic Generator**: Provides random Genshin Impact topics to keep your server's chat lively.
+* **Chat Minigames**: Spawns random mini-games in active chats to keep your server engaged.
+* **Partnership Panels**: Streamline and manage server partnerships efficiently with organized request threads and custom panel embeds.
+* **Birthday Wishes**: Celebrates your server members’ birthdays with messages from their favorite Genshin Impact characters.
+* **Genshin Font Generator**: Create stylized text resembling the Genshin Impact font for use in your server.
+* **Sticky Messages**: Pin important messages that remain visible across channels.
 
 ## Installation
 
