@@ -50,6 +50,6 @@ class Fischl(commands.AutoShardedBot):
 
         print(f"CPU Usage: {psutil.cpu_percent()}%")
         print(f"Memory Usage: {psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024} MB ({psutil.Process(os.getpid()).memory_percent()}%)")
-
+ 
 bot = Fischl()
 bot.run(DISCORD_TOKEN)
