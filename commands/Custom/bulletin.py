@@ -45,9 +45,21 @@ class CustomCommands(commands.Cog):
             await chn.send(
                 embeds=[embed1, embed2]
             )
-            for user in interaction.guild.get_role(1313053449549512704).members:
-                await user.remove_roles(interaction.guild.get_role(1313053449549512704))
-            await text_user.add_roles(interaction.guild.get_role(1313053449549512704))
+            role = interaction.guild.get_role(1313053449549512704)
+            db_path = f"/Weekly Leaderboard/{interaction.guild.id}"
+            prev_winner_id = db.reference(db_path).get()
+
+            # Remove role from previous winner if they exist
+            if prev_winner_id:
+                prev_member = await interaction.guild.fetch_member(int(prev_winner_id))
+                if prev_member and role in prev_member.roles:
+                    await prev_member.remove_roles(role)
+
+            # Add role to new winner
+            await text_user.add_roles(role)
+
+            # Update database with new winner
+            db.reference(db_path).set(str(text_user.id))
             await interaction.response.send_message(
                 content="The following embed is sent to <#1312858564695687310>:",
                 embeds=[embed1, embed2],

@@ -3294,6 +3294,7 @@ class MoraChestView(discord.ui.View):
             print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
 
+            return 
             await interaction.followup.send(
                 embed=discord.Embed(
                     title="",
@@ -3308,8 +3309,7 @@ class MoraChestView(discord.ui.View):
                 ).set_footer(text="Why are we doing this? We just launched our brand new profile website and dashboard! Check them out!"),
                 ephemeral=True,
                 view=View().add_item(Button(label="Complete your daily challenge", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
-            )
-            return  
+            ) 
         
             await interaction.followup.send(
                 embed=discord.Embed(

@@ -154,6 +154,32 @@ class LeaksAccessCelestial(discord.ui.View):
                 ephemeral=True,
             )
 
+    @discord.ui.button(
+        label="ZZZ Leaks",
+        style=discord.ButtonStyle.red,
+        custom_id="zzzleaksaccesscelestial",
+    )
+    async def zzzleaksaccesscelestial(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        alreadyHave = False
+        for role in interaction.user.roles:
+            if "Access ZZZ Leaks" == role.name:
+                alreadyHave = True
+        role = discord.utils.get(interaction.guild.roles, name="Access ZZZ Leaks")
+        if alreadyHave:
+            await interaction.user.remove_roles(role)
+            await interaction.response.send_message(
+                "You **no longer** have the <@&1428330808174841918> role, and you can no longer access Zenless Zone Zero leaks.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message(
+                "You have **obtained** the <@&1428330808174841918> role. You can now access Zenless Zone Zero leaks at <#1428330534093983744> and discuss them at <#1428824981114060844>!",
+                ephemeral=True,
+            )
+
 class StaffRoster(commands.Cog):
     def __init__(self, bot):
         self.client = bot
@@ -164,6 +190,7 @@ class StaffRoster(commands.Cog):
             return
 
         if message.guild.id == 1168706427435622410 and message.content == "-staff":
+            await message.guild.chunk()
             msg = ""
             for roleID in roles:
                 role = message.guild.get_role(roleID)
@@ -192,7 +219,7 @@ class StaffRoster(commands.Cog):
         if message.guild.id == 1168706427435622410 and message.content == "-leaksaccess":
             await message.delete()
             embed = discord.Embed(
-                title="<:Raidenjoy:995502902271545407> Select below to gain access to leaks-related channels!",
+                title="<:RaidenJam:1343391073439060028> Select below to gain access to leaks-related channels!",
                 description="By selecting the button(s), you acknowledge that leaked content remains unverified, subject to changes, and is against Hoyoverse's and/or Kuro Games' Terms of Service. We kindly request maintaining a respectful manner when discussing leaks. Please do not spread misinformation or share any unauthorized leaks, as it may result in a permanent removal of your access to the leaks channel.\n\n> **If you wish to remove your access to the leaks channel, you can simply click on the button(s) again.**",
                 color=0x2B2C31,
             )

@@ -185,6 +185,10 @@ class CreateTicketButton(discord.ui.Button):
             await chn.set_permissions(
                 interaction.user, send_messages=True, read_messages=True, attach_files=True
             )
+            if interaction.guild.id == 791534106919305226 and "Club/Clan Applications" in topic:
+                club_president_role = interaction.guild.get_role(1429160134084661429)
+                if club_president_role:
+                    await chn.set_permissions(club_president_role, send_messages=True, read_messages=True, attach_files=True)
         except Exception:
             await interaction.followup.send(
                 content=f"<:no:1036810470860013639> **I'm missing permissions to create or edit text channels!** \nPlease make sure my role has `MANAGE_CHANNELS` permissions.", ephemeral=True

@@ -34,7 +34,7 @@ async def day_autocomplete(
     else:
         list = []
         for day in days:
-            if current.lower() in day.lower():
+            if current.lower() in str(day).lower():
                 list.append(day)
         list = list[:25]
         return [app_commands.Choice(name=str(x), value=str(x)) for x in list]
@@ -200,7 +200,7 @@ class Birthday(commands.GroupCog, name="birthday"):
                 ephemeral=True,
             )
             return
-        if day not in days:
+        if int(day) not in days:
             await interaction.response.send_message(
                 embed=discord.Embed(
                     description="<:no:1036810470860013639> **Invalid day.** Please search and select from the menu.",
@@ -267,7 +267,7 @@ class Birthday(commands.GroupCog, name="birthday"):
         )
         icon_link = characters_dict[character]['icon']
         embed.set_thumbnail(url=icon_link)
-
+        embed.set_footer(text="Missing your favorite character? Join discord.gg/BXkc8CC4uJ and let us know!")
         await interaction.response.send_message(embed=embed)
     @birthday_set.error
     async def birthday_set_error(self, interaction: discord.Interaction, error: Exception):

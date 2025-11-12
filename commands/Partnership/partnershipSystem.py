@@ -64,7 +64,7 @@ async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
         lines = []
         for p in sorted_partners:
             if p['invite'].isdigit(): # Bot application ID
-                print(p['invite'].isdigit())
+                # print(p['invite'].isdigit())
                 line = f"{cat_data.get('prefix', '')} [{p['name']}](https://discord.com/oauth2/authorize?client_id={p['invite']}) {cat_data.get('suffix', '')}"
                 lines.append(line)
             else:
@@ -351,7 +351,7 @@ class Partner(commands.GroupCog, name="partner"):
 
             try:
                 code = self.invite_link.value.split('/')[-1]
-                print(code)
+                # print(code)
 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
@@ -1372,7 +1372,7 @@ class Partner(commands.GroupCog, name="partner"):
         else:
             try:
                 code = invite_link.split('/')[-1]
-                print(code)
+                # print(code)
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         f'https://discord.com/api/v9/invites/{code}',
