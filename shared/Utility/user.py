@@ -21,7 +21,7 @@ class User(commands.Cog):
         if user is None:
             user = interaction.user
 
-        if len(user.roles) > 1:
+        if hasattr(user, "roles") and len(user.roles) > 1:
             sorted_roles = [role for role in sorted(user.roles, key=lambda role: role.position, reverse=True) if role.id != interaction.guild.default_role.id]
             roles_str = ""
             total_length = 0
