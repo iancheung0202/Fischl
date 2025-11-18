@@ -417,14 +417,14 @@ class EmbedMainView(View):
         else:
             await self.original_interaction.edit_original_response(content=content, embed=embed, view=self)
     
-    @discord.ui.button(label="Embed", style=discord.ButtonStyle.primary, emoji="📝")
+    @discord.ui.button(label="Embed", style=discord.ButtonStyle.secondary, emoji="📝")
     async def edit_embed(self, interaction: discord.Interaction, button: Button):
         modal = EmbedModal(self.editor)
         await interaction.response.send_modal(modal)
         await modal.wait()
         await self.update_message()
     
-    @discord.ui.button(label="Media", style=discord.ButtonStyle.primary, emoji="🖼️")
+    @discord.ui.button(label="Media", style=discord.ButtonStyle.secondary, emoji="🖼️")
     async def edit_media(self, interaction: discord.Interaction, button: Button):
         modal = MediaModal(self.editor)
         await interaction.response.send_modal(modal)
@@ -889,28 +889,42 @@ class TemplateSelectView(View):
         self.user_id = user_id
         self.guild_id = guild_id
         self.template_data = {}
-        self.load_templates()
+        # Template loading requires awaiting async API calls (fetch_user).
+        # We no longer call load_templates() here because __init__ is synchronous.
+        # Callers should await `await view.load_templates()` after instantiation.
     
-    def load_templates(self):
-        """Load templates from Firebase"""
+    async def load_templates(self):
+        """Asynchronously load templates from Firebase and populate the view's Select.
+
+        Callers must await this after constructing the view, e.g.:
+            view = TemplateSelectView(...)
+            await view.load_templates()
+            await interaction.response.edit_message(..., view=view)
+        """
         try:
             ref = db.reference(f"Embed Templates/{self.guild_id}")
             templates = ref.get() or {}
-            
+
             options = []
             for template_id, data in templates.items():
                 name = data.get("name", "Unnamed Template")
                 owner_id = data.get("template_owner")
                 is_owner = owner_id == self.user_id
-                
+
                 option_label = f"{name} {'(Yours)' if is_owner else ''}"
+                try:
+                    owner = await self.cog.bot.fetch_user(owner_id) if owner_id is not None else None
+                    owner_display = str(owner) if owner else 'Unknown'
+                except Exception:
+                    owner_display = 'Unknown'
+
                 options.append(discord.SelectOption(
                     label=option_label[:100],
                     value=template_id,
-                    description=f"By {self.cog.bot.get_user(owner_id) or 'Unknown'}" if not is_owner else "Your template"
+                    description=(f"By {owner_display}" if not is_owner else "Your template")
                 ))
                 self.template_data[template_id] = data
-            
+
             if options:
                 select = Select(placeholder="Choose a template...", options=options)
                 select.callback = self.select_template
@@ -923,7 +937,7 @@ class TemplateSelectView(View):
                     disabled=True
                 )
                 self.add_item(select)
-                
+
         except Exception as e:
             print(f"Error loading templates: {e}")
     
@@ -981,6 +995,8 @@ class EmbedCommand(commands.Cog):
             @discord.ui.button(label="Create from Template", style=discord.ButtonStyle.secondary)
             async def from_template(self, inter: discord.Interaction, button: Button):
                 view = TemplateSelectView(self.cog, inter.user.id, inter.guild_id)
+                # Populate templates asynchronously before sending the view so fetch_user can be awaited
+                await view.load_templates()
                 await inter.response.edit_message(embed=discord.Embed(title="Choose a Template", description="Select a template from the list below. You can only edit your own templates, but can view others' templates and save as your own.", color=discord.Color.blue()), view=view)
         
         embed = discord.Embed(
@@ -1087,8 +1103,9 @@ class EmbedCommand(commands.Cog):
                         
                         view = EmbedMainView(self.cog, editor, interaction)
                         await view.update_message(interaction)
-                
                 view = EditTemplateSelectView(self.cog, inter.user.id, inter.guild_id, self.target_message)
+                # Populate templates asynchronously before sending the view
+                await view.load_templates()
                 await inter.response.edit_message(embed=discord.Embed(title="Choose a Template", description="Select a template from the list below. The template content will be applied to edit the selected message.", color=discord.Color.blue()), view=view)
         
         embed = discord.Embed(
@@ -1184,8 +1201,9 @@ async def edit_embed_context_menu(interaction: discord.Interaction, message: dis
                     
                     view = EmbedMainView(self.cog, editor, interaction)
                     await view.update_message(interaction)
-            
             view = EditTemplateSelectView(self.cog, inter.user.id, inter.guild_id, self.target_message)
+            # Populate templates asynchronously before sending the view
+            await view.load_templates()
             await inter.response.edit_message(embed=discord.Embed(title="Choose a Template", description="Select a template from the list below. The template content will be applied to edit the selected message.", color=discord.Color.blue()), view=view)
     
     embed = discord.Embed(

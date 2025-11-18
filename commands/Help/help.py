@@ -46,7 +46,7 @@ class Select(discord.ui.Select):
             "ticket": {
                 "title": "Tickets",
                 "emoji": "🎫",
-                "description": "The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use </ticket setup:1254927191129456641> and the bot will guide you through the procedures of setting up your ticket system!",
+                "description": "The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use </ticket settings:1254927191129456641> and the bot will guide you through the procedures of setting up your ticket system!",
                 "condition": lambda cmd: "ticket" in cmd.name,
                 "formatter": simple_formatter
             },
