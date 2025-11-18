@@ -91,7 +91,16 @@ class EmbedEditor:
     def from_dict(cls, user_id, guild_id, data, template_id=None):
         editor = cls(user_id, guild_id)
         editor.message_content = data.get("message_content", "")
-        editor.embed_data = data.get("embed_data", editor.embed_data)
+        
+        default_embed_data = editor.embed_data.copy()
+        loaded_embed_data = data.get("embed_data", {})
+        editor.embed_data = default_embed_data
+        for key, value in loaded_embed_data.items():
+            if isinstance(value, dict) and key in editor.embed_data and isinstance(editor.embed_data[key], dict):
+                editor.embed_data[key].update(value)
+            else:
+                editor.embed_data[key] = value
+        
         editor.button_links = data.get("button_links", [])
         editor.template_owner = data.get("template_owner")
         editor.template_id = template_id
@@ -339,6 +348,20 @@ class SaveModal(Modal):
     
     async def on_submit(self, interaction: discord.Interaction):
         template_name = self.children[0].value
+        
+        ref_base = db.reference(f"Embed Templates/{interaction.guild_id}")
+        templates = ref_base.get() or {}
+        total_templates = len(templates)
+        user_templates = sum(1 for data in templates.values() if data.get("template_owner") == interaction.user.id)
+        
+        if total_templates >= 25:
+            await interaction.response.send_message("Server template limit reached (25). Cannot save new template.", ephemeral=True)
+            return
+        
+        if user_templates >= 4:
+            await interaction.response.send_message("User template limit reached (4). Cannot save new template.", ephemeral=True)
+            return
+        
         template_id = str(uuid.uuid4())[:8]
         
         ref = db.reference(f"Embed Templates/{interaction.guild_id}/{template_id}")
@@ -382,6 +405,11 @@ class EmbedMainView(View):
         for child in self.children:
             if hasattr(child, 'label') and child.label == "Post":
                 child.label = "Update" if self.editor.edit_mode else "Post"
+        
+        if self.editor.template_id and self.editor.template_owner == self.editor.user_id:
+            delete_button = discord.ui.Button(label="Delete Template", style=discord.ButtonStyle.danger, emoji="🗑️", row=1)
+            delete_button.callback = self.delete_template
+            self.add_item(delete_button)
     
     async def update_message(self, interaction: discord.Interaction = None):
         embed = self.editor.to_embed()
@@ -473,6 +501,15 @@ class EmbedMainView(View):
         else:
             view = PostEmbedView(self.cog, self.editor, self.original_interaction)
             await view.update_message(interaction)
+    
+    async def delete_template(self, interaction: discord.Interaction, button: discord.ui.Button):
+        ref = db.reference(f"Embed Templates/{interaction.guild_id}/{self.editor.template_id}")
+        ref.delete()
+        self.editor.template_id = None
+        self.editor.template_owner = None
+        self.remove_item(button)
+        await interaction.response.send_message("<:yes:1036811164891480194> Template deleted successfully!", ephemeral=True)
+        await self.update_message()
 
 class FieldsEditorView(View):
     def __init__(self, cog, editor: EmbedEditor, original_interaction: discord.Interaction):

@@ -502,6 +502,22 @@ class SaveModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         panel_name = self.children[0].value
         
+        if self.editor.panel_type == "dropdown" and len(self.editor.options) > 25:
+            await interaction.response.send_message("Dropdown panels can have a maximum of 25 options.", ephemeral=True)
+            return
+        
+        if self.editor.panel_type == "button" and len(self.editor.buttons) > 5:
+            await interaction.response.send_message("Button panels can have a maximum of 5 buttons.", ephemeral=True)
+            return
+        
+        if self.is_save_as or not self.editor.panel_id:
+            ref_base = db.reference(f"Ticket Panels/{interaction.guild_id}/{self.editor.panel_type}")
+            panels = ref_base.get() or {}
+            if len(panels) >= 25:
+                panel_type_name = "dropdown" if self.editor.panel_type == "dropdown" else "button"
+                await interaction.response.send_message(f"Server {panel_type_name} panel limit reached (25). Cannot save new panel.", ephemeral=True)
+                return
+        
         if self.is_save_as or not self.editor.panel_id:
             panel_id = str(uuid.uuid4())[:8]
         else:
@@ -667,6 +683,10 @@ class DropdownOptionModal(discord.ui.Modal):
         ))
 
     async def on_submit(self, interaction: discord.Interaction):
+        if self.option_index is None and len(self.editor.options) >= 25:
+            await interaction.response.send_message("Dropdown panels can have a maximum of 25 options.", ephemeral=True)
+            return
+        
         option_data = {
             "label": self.children[0].value,
             "value": self.children[1].value,
@@ -724,6 +744,10 @@ class ButtonOptionModal(discord.ui.Modal):
         ))
 
     async def on_submit(self, interaction: discord.Interaction):
+        if self.button_index is None and len(self.editor.buttons) >= 5:
+            await interaction.response.send_message("Button panels can have a maximum of 5 buttons.", ephemeral=True)
+            return
+        
         color_str = self.children[2].value.lower()
         color_map = {
             "green": discord.ButtonStyle.green,
@@ -760,6 +784,11 @@ class TicketPanelMainView(discord.ui.View):
                 if isinstance(child, discord.ui.Button) and child.label == "Manage Options":
                     child.label = "Manage Buttons"
                     break
+        
+        if self.editor.panel_id:
+            delete_button = discord.ui.Button(label="Delete Panel", style=discord.ButtonStyle.danger, emoji="🗑️", row=1)
+            delete_button.callback = self.delete_panel
+            self.add_item(delete_button)
     
     async def update_message(self, interaction: discord.Interaction = None):
         embed = self.editor.to_embed()
@@ -842,6 +871,40 @@ class TicketPanelMainView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(
                 f"<:no:1036810470860013639> Failed to update panel: {str(e)}",
+                ephemeral=True
+            )
+    
+    async def delete_panel(self, interaction: discord.Interaction):
+        # Find the delete button
+        button = None
+        for item in self.children:
+            if isinstance(item, discord.ui.Button) and item.label == "Delete Panel":
+                button = item
+                break
+        if not button:
+            return
+        
+        try:
+            if self.editor.message_id:
+                channel = self.original_interaction.channel
+                message = await channel.fetch_message(self.editor.message_id)
+                await message.delete()
+            
+            ref = db.reference(f"Ticket Panels/{interaction.guild_id}/{self.editor.panel_type}/{self.editor.panel_id}")
+            ref.delete()
+            
+            self.editor.panel_id = None
+            self.editor.message_id = None
+            self.remove_item(button)
+            
+            await interaction.response.send_message(
+                f"<:yes:1036811164891480194> Panel deleted! {'Posted message is also removed.' if self.editor.message_id else ''}",
+                ephemeral=True
+            )
+            await self.update_message()
+        except Exception as e:
+            await interaction.response.send_message(
+                f"<:no:1036810470860013639> Failed to delete panel: {str(e)}",
                 ephemeral=True
             )
     
@@ -1930,8 +1993,6 @@ class Ticket(commands.GroupCog, name="ticket"):
     @app_commands.checks.bot_has_permissions(manage_channels=True)
     @app_commands.checks.has_permissions(manage_channels=True)
     async def ticket_dropdown(self, interaction: discord.Interaction) -> None:
-        """New dropdown panel editor using embed system"""
-        # Load existing panels
         view = PanelSelectView(self, "dropdown")
         await view.load_panels(interaction.guild_id)
         
@@ -1950,8 +2011,6 @@ class Ticket(commands.GroupCog, name="ticket"):
     @app_commands.checks.bot_has_permissions(manage_channels=True)
     @app_commands.checks.has_permissions(manage_channels=True)
     async def ticket_button(self, interaction: discord.Interaction) -> None:
-        """New button panel editor using embed system"""
-        # Load existing panels
         view = PanelSelectView(self, "button")
         await view.load_panels(interaction.guild_id)
         

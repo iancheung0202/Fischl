@@ -126,13 +126,6 @@ class Select(discord.ui.Select):
                 "condition": lambda cmd: "boosterrole" in cmd.name,
                 "formatter": formatter
             },
-            "registration": {
-                "title": "Registration System",
-                "emoji": "📝",
-                "description": "The following slash commands are for managing custom registration queues in your server. Use </registration create:1417043976812232765> to create a queue and </registration embed:1417043976812232765> to create a submission message.",
-                "condition": lambda cmd: "registration" in cmd.name,
-                "formatter": formatter
-            },
             "utility": {
                 "title": "Utility Commands",
                 "emoji": "🛠️",
