@@ -26,7 +26,7 @@ async def generate(prompt: str) -> str:
 
     return chat_completion.choices[0].message.content
 
-async def create_ticket(interaction, topic=None, custom_opening_message=None):
+async def create_ticket(interaction, topic=None, custom_opening_message=None, closing_message=None):
     await interaction.response.defer(ephemeral=True, thinking=True)
     ref = db.reference("/Tickets")
     tickets = ref.get()
@@ -219,6 +219,9 @@ async def create_ticket(interaction, topic=None, custom_opening_message=None):
         content=f"<:yes:1036811164891480194> Ticket created at <#{chn.id}>", ephemeral=True
     )
     
+    if closing_message:
+        db.reference(f"/Ticket Closing Messages/{chn.id}").set(closing_message)
+    
     last_created_ref.set(time.time())
 
 class TicketPanelEditor:
@@ -238,8 +241,8 @@ class TicketPanelEditor:
             "fields": [],
             "timestamp": False
         }
-        self.options = []  # [{label, value, description, emoji, opening_message}]
-        self.buttons = []  # [{label, emoji, color, opening_message}]
+        self.options = []  # [{label, value, description, emoji, opening_message, closing_message}]
+        self.buttons = []  # [{label, emoji, color, opening_message, closing_message}]
         self.message_id = None
         
         if existing_data:
@@ -264,7 +267,11 @@ class TicketPanelEditor:
             self.embed_data = default_embed
             
         self.options = data.get("options", [])
+        for option in self.options:
+            option.setdefault("closing_message", "")
         self.buttons = data.get("buttons", [])
+        for button in self.buttons:
+            button.setdefault("closing_message", "")
         self.message_id = data.get("message_id")
     
     def to_dict(self):
@@ -640,21 +647,13 @@ class DropdownOptionModal(discord.ui.Modal):
         self.option_index = option_index
         
         option_data = editor.options[option_index] if option_index is not None else {
-            "label": "", "value": "", "description": "", "emoji": "", "opening_message": ""
+            "label": "", "value": "", "description": "", "emoji": "", "opening_message": "", "closing_message": ""
         }
         
         self.add_item(discord.ui.TextInput(
             label="Option Label",
             placeholder="Text shown in dropdown",
             default=option_data["label"],
-            max_length=100,
-            required=True
-        ))
-        
-        self.add_item(discord.ui.TextInput(
-            label="Option Value",
-            placeholder="Internal value (usually same as label)",
-            default=option_data["value"] or option_data["label"],
             max_length=100,
             required=True
         ))
@@ -682,6 +681,14 @@ class DropdownOptionModal(discord.ui.Modal):
             required=False
         ))
 
+        self.add_item(discord.ui.TextInput(
+            label="Closing Message",
+            placeholder="Message sent when ticket is closed",
+            default=option_data["closing_message"],
+            style=discord.TextStyle.paragraph,
+            required=False
+        ))
+
     async def on_submit(self, interaction: discord.Interaction):
         if self.option_index is None and len(self.editor.options) >= 25:
             await interaction.response.send_message("Dropdown panels can have a maximum of 25 options.", ephemeral=True)
@@ -689,10 +696,11 @@ class DropdownOptionModal(discord.ui.Modal):
         
         option_data = {
             "label": self.children[0].value,
-            "value": self.children[1].value,
-            "description": self.children[2].value,
-            "emoji": self.children[3].value,
-            "opening_message": self.children[4].value
+            "value": self.children[0].value,
+            "description": self.children[1].value,
+            "emoji": self.children[2].value,
+            "opening_message": self.children[3].value,
+            "closing_message": self.children[4].value
         }
         
         if self.option_index is not None:
@@ -710,7 +718,7 @@ class ButtonOptionModal(discord.ui.Modal):
         self.button_index = button_index
         
         button_data = editor.buttons[button_index] if button_index is not None else {
-            "label": "", "emoji": "", "color": "green", "opening_message": ""
+            "label": "", "emoji": "", "color": "green", "opening_message": "", "closing_message": ""
         }
         
         self.add_item(discord.ui.TextInput(
@@ -743,6 +751,14 @@ class ButtonOptionModal(discord.ui.Modal):
             required=False
         ))
 
+        self.add_item(discord.ui.TextInput(
+            label="Closing Message",
+            placeholder="Message sent when ticket is closed",
+            default=button_data["closing_message"],
+            style=discord.TextStyle.paragraph,
+            required=False
+        ))
+
     async def on_submit(self, interaction: discord.Interaction):
         if self.button_index is None and len(self.editor.buttons) >= 5:
             await interaction.response.send_message("Button panels can have a maximum of 5 buttons.", ephemeral=True)
@@ -762,7 +778,8 @@ class ButtonOptionModal(discord.ui.Modal):
             "emoji": self.children[1].value,
             "color": color_str,
             "style": color.value,
-            "opening_message": self.children[3].value
+            "opening_message": self.children[3].value,
+            "closing_message": self.children[4].value
         }
         
         if self.button_index is not None:
@@ -875,7 +892,6 @@ class TicketPanelMainView(discord.ui.View):
             )
     
     async def delete_panel(self, interaction: discord.Interaction):
-        # Find the delete button
         button = None
         for item in self.children:
             if isinstance(item, discord.ui.Button) and item.label == "Delete Panel":
@@ -919,7 +935,7 @@ class TicketPanelMainView(discord.ui.View):
         for option in self.editor.options:
             options.append(discord.SelectOption(
                 label=option["label"][:100],
-                value=option["value"],
+                value=option["label"],
                 description=option["description"][:100] if option["description"] else None,
                 emoji=option["emoji"] or None
             ))
@@ -940,7 +956,7 @@ class TicketPanelMainView(discord.ui.View):
                 selected_value = self.values[0]
                 selected_option = None
                 for option in self.editor.options:
-                    if option["value"] == selected_value:
+                    if option["label"] == selected_value:
                         selected_option = option
                         break
                 
@@ -996,7 +1012,7 @@ class TicketPanelMainView(discord.ui.View):
                     self.editor = editor
                 
                 async def callback(self, interaction: discord.Interaction):
-                    await create_ticket(interaction, topic=self.button_data["label"], custom_opening_message=self.button_data.get('opening_message'))
+                    await create_ticket(interaction, topic=self.button_data["label"], custom_opening_message=self.button_data.get('opening_message'), closing_message=self.button_data.get('closing_message'))
                     
             view.add_item(PanelButton(button_data, self.editor))
         
@@ -1340,12 +1356,18 @@ class CreateTicketButton(discord.ui.Button):
         self.custom_opening_message = None
 
     async def callback(self, interaction: discord.Interaction):
+        opening_message = None
+        closing_message = None
+        topic = None
         if hasattr(self.view, 'selected_option') and self.view.selected_option:
-            self.custom_opening_message = self.view.selected_option.get('opening_message')
+            opening_message = self.view.selected_option.get('opening_message')
+            closing_message = self.view.selected_option.get('closing_message')
         elif hasattr(self.view, 'button_data') and self.view.button_data:
-            self.custom_opening_message = self.view.button_data.get('opening_message')
+            opening_message = self.view.button_data.get('opening_message')
+            closing_message = self.view.button_data.get('closing_message')
+            topic = self.view.button_data.get('label')
         
-        await create_ticket(interaction, topic=None, custom_opening_message=self.custom_opening_message)
+        await create_ticket(interaction, topic=topic, custom_opening_message=opening_message, closing_message=closing_message)
 
 class Select(discord.ui.Select):
     def __init__(self, placeholder, options):
@@ -1711,6 +1733,14 @@ async def get_transcript(interaction, user):
 
         return (f, usersInvolved, user_message_counts)
 
+async def snippet_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    snippets = db.reference(f"/Ticket Snippets/{interaction.guild.id}").get() or {}
+    choices = []
+    for alias in snippets.keys():
+        if current.lower() in alias.lower():
+            choices.append(app_commands.Choice(name=alias, value=alias))
+    return choices[:25]
+
 class ConfirmCloseTicketButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -1779,7 +1809,7 @@ class ConfirmCloseTicketButtons(discord.ui.View):
                     f"The following is the entire history of the ticket in a Discord server for a user. "
                     "Please summarise the entire interaction into 1 or 2 sentences. "
                     "Only give 1 response option. Do not output additional text such as 'Here is the summary:'. "
-                    f"Do NOT include the channel names, user IDs, server names, Fischl (bot name), or the fact that a ticket is created or closed, since they are trivial.\n\n"
+                    f"Exclude the channel names, user IDs, server names, Fischl (bot name), or the fact that a ticket is created or closed in your response.\n\n"
                     "Full transcript:\n"
                     f"{f.read().split('<!DOCTYPE html>')[1]}")
             except Exception as e:
@@ -1833,6 +1863,11 @@ class ConfirmCloseTicketButtons(discord.ui.View):
         embed.set_footer(
             text=f"You can always create a new ticket for additional assistance!"
         )
+        
+        closing_message = db.reference(f"/Ticket Closing Messages/{interaction.channel.id}").get()
+        if closing_message:
+            embed.description += f"\n\n{closing_message}"
+        
         try:
             await user.send(embed=embed, view=user_view)
             await interaction.channel.set_permissions(
@@ -2194,6 +2229,62 @@ class Ticket(commands.GroupCog, name="ticket"):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
     
     @app_commands.command(
+        name="snippet",
+        description="Send a prewritten snippet response in the ticket"
+    )
+    @app_commands.describe(
+        alias="The snippet alias to send",
+        anonymous="Remove author from the embed (default: False)",
+        ping="Ping the ticket creator (default: False)"
+    )
+    @app_commands.autocomplete(alias=snippet_autocomplete)
+    async def ticket_snippet(
+        self, interaction: discord.Interaction, 
+        alias: str, 
+        anonymous: bool = False, 
+        ping: bool = False
+    ) -> None:
+        if interaction.channel.topic.startswith(":no_entry_sign:"):
+            await interaction.response.send_message("This ticket is closed and cannot send snippets!", ephemeral=True)
+            return
+        
+        if interaction.channel.topic.isdigit():
+            if int(interaction.channel.topic) == interaction.user.id:
+                await interaction.response.send_message("You cannot use this command in your own ticket!", ephemeral=True)
+                return
+        else:
+            await interaction.response.send_message("This command can only be used in ticket channels!", ephemeral=True)
+            return
+        
+        snippets = db.reference(f"/Ticket Snippets/{interaction.guild.id}").get() or {}
+        response = snippets.get(alias)
+        if not response:
+            await interaction.response.send_message(f"Snippet '{alias}' not found!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            color=discord.Color.gold()
+        )
+        if not anonymous:
+            embed.set_author(
+                name=f"Sent by {interaction.user.name}", 
+                icon_url=interaction.user.avatar.url if interaction.user.avatar else None
+            )
+        
+        content = ""
+        if ping:
+            ticket_creator_id = int(interaction.channel.topic)
+            content = f"<@{ticket_creator_id}> "
+        
+        content += response
+        
+        await interaction.channel.send(content=content, embed=embed)
+        await interaction.response.send_message(f"Snippet '{alias}' sent successfully!", ephemeral=True)
+    @ticket_snippet.error
+    async def ticket_snippet_error(self, interaction: discord.Interaction, error: Exception):
+        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+    
+    @app_commands.command(
         name="settings",
         description="Configure all ticket settings in one place"
     )
@@ -2273,6 +2364,7 @@ class TicketSettingsView(View):
             self.add_item(RoleAccessButton())
             self.add_item(BlacklistButton())
             self.add_item(DisableSystemButton())
+            self.add_item(SnippetsButton())
         
         target = interaction or self.interaction
         if interaction:
@@ -2338,8 +2430,8 @@ class TicketSettingsView(View):
         embed.add_field(
             name="🔧 Panel Commands",
             value=(
-                "</ticket dropdown:1254927191129456641> - Create or edit dropdown ticket panels\n"
-                "</ticket button:1254927191129456641> - Create or edit button ticket panels"
+                "- </ticket dropdown:1254927191129456641> - Create or edit dropdown ticket panels\n"
+                "- </ticket button:1254927191129456641> - Create or edit button ticket panels"
             ),
             inline=False
         )
@@ -2447,7 +2539,7 @@ class EnableSystemButton(Button):
 
 class CooldownButton(Button):
     def __init__(self):
-        super().__init__(label="Cooldown", style=discord.ButtonStyle.secondary, emoji="⏰", row=4)
+        super().__init__(label="Cooldown", style=discord.ButtonStyle.secondary, emoji="⏰", row=3)
     
     async def callback(self, interaction: discord.Interaction):
         modal = CooldownModal(self.view.server_config.get("Cooldown", 0))
@@ -2485,7 +2577,7 @@ class DisableSystemButton(Button):
 
 class RoleAccessButton(Button):
     def __init__(self):
-        super().__init__(label="Role Access", style=discord.ButtonStyle.secondary, emoji="👥", row=4)
+        super().__init__(label="Role Access", style=discord.ButtonStyle.secondary, emoji="👥", row=3)
     
     async def callback(self, interaction: discord.Interaction):
         view = RoleAccessView(self.view.bot, interaction, self.view)
@@ -2493,7 +2585,7 @@ class RoleAccessButton(Button):
 
 class BlacklistButton(Button):
     def __init__(self):
-        super().__init__(label="Blacklist", style=discord.ButtonStyle.secondary, emoji="🚫", row=4)
+        super().__init__(label="Blacklist", style=discord.ButtonStyle.secondary, emoji="🚫", row=3)
     
     async def callback(self, interaction: discord.Interaction):
         view = BlacklistView(self.view.bot, interaction, self.view)
@@ -2594,7 +2686,7 @@ class RoleAccessView(View):
         )
         
         if access_roles:
-            roles_list = "\n".join([f"• {role.mention}" for role in access_roles])
+            roles_list = "\n".join([f"- {role.mention}" for role in access_roles])
             embed.add_field(name="Current Access Roles", value=roles_list, inline=False)
         else:
             embed.add_field(name="Current Access Roles", value="No roles configured", inline=False)
@@ -2678,9 +2770,9 @@ class BlacklistView(View):
             for user_id in blacklisted.keys():
                 user = await interaction.guild.fetch_member(int(user_id))
                 if user:
-                    users_list.append(f"• {user.mention} ({user_id})")
+                    users_list.append(f"- {user.mention} ({user_id})")
                 else:
-                    users_list.append(f"• Unknown User ({user_id})")
+                    users_list.append(f"- Unknown User ({user_id})")
             
             embed.add_field(name="Blacklisted Users", value="\n".join(users_list[:10]), inline=False)
             if len(users_list) > 10:
@@ -2748,6 +2840,152 @@ class BackToSettingsButton(Button):
     
     async def callback(self, interaction: discord.Interaction):
         await self.view.parent_view.update_message(interaction)
+
+class SnippetSelect(discord.ui.Select):
+    def __init__(self, options, view):
+        super().__init__(placeholder="Select a snippet to edit/remove...", options=options)
+        self.snippets_view = view
+    
+    async def callback(self, interaction: discord.Interaction):
+        self.snippets_view.selected_snippet = self.values[0]
+        await interaction.response.defer()
+
+class SnippetsView(View):
+    def __init__(self, bot, interaction, parent_view):
+        super().__init__(timeout=1800)
+        self.bot = bot
+        self.interaction = interaction
+        self.parent_view = parent_view
+        self.selected_snippet = None
+        self.message = None
+    
+    async def show_snippets(self, interaction: discord.Interaction = None):
+        snippets = db.reference(f"/Ticket Snippets/{self.interaction.guild.id}").get() or {}
+        
+        embed = discord.Embed(
+            title="📝 Snippet Management",
+            description="Manage prewritten responses for tickets.",
+            color=discord.Color.blue()
+        )
+        
+        if snippets:
+            snippets_list = "\n".join([f"- **{alias}**: {response[:50]}{'...' if len(response) > 50 else ''}" for alias, response in snippets.items()])
+            embed.add_field(name=f"Current Snippets ({len(snippets)}/25)", value=snippets_list, inline=False)
+        else:
+            embed.add_field(name="Current Snippets (0/25)", value="No snippets configured", inline=False)
+        
+        self.clear_items()
+        
+        if snippets:
+            options = [discord.SelectOption(label=alias, value=alias, description=response[:50]) for alias, response in list(snippets.items())[:25]]
+            snippet_select = SnippetSelect(options, self)
+            self.add_item(snippet_select)
+        
+        self.add_item(AddSnippetButton())
+        if snippets:
+            self.add_item(EditSnippetButton())
+            self.add_item(RemoveSnippetButton())
+        self.add_item(BackToSettingsButton())
+        
+        if interaction:
+            await interaction.response.edit_message(embed=embed, view=self)
+            self.message = await interaction.original_response()
+        else:
+            await self.message.edit(embed=embed, view=self)
+    
+    async def select_snippet(self, interaction: discord.Interaction):
+        self.selected_snippet = interaction.data["values"][0]
+        await interaction.response.defer()
+
+class AddSnippetButton(Button):
+    def __init__(self):
+        super().__init__(label="Add Snippet", style=discord.ButtonStyle.green, emoji="➕")
+    
+    async def callback(self, interaction: discord.Interaction):
+        snippets = db.reference(f"/Ticket Snippets/{interaction.guild.id}").get() or {}
+        if len(snippets) >= 25:
+            await interaction.response.send_message("Maximum 25 snippets allowed per server!", ephemeral=True)
+            return
+        modal = SnippetModal(view=self.view)
+        await interaction.response.send_modal(modal)
+
+class EditSnippetButton(Button):
+    def __init__(self):
+        super().__init__(label="Edit Snippet", style=discord.ButtonStyle.primary, emoji="✏️")
+    
+    async def callback(self, interaction: discord.Interaction):
+        if not hasattr(self.view, 'selected_snippet') or not self.view.selected_snippet:
+            await interaction.response.send_message("Please select a snippet first!", ephemeral=True)
+            return
+        snippets = db.reference(f"/Ticket Snippets/{interaction.guild.id}").get() or {}
+        response = snippets.get(self.view.selected_snippet, "")
+        modal = SnippetModal(view=self.view, alias=self.view.selected_snippet, response=response, editing=True)
+        await interaction.response.send_modal(modal)
+
+class RemoveSnippetButton(Button):
+    def __init__(self):
+        super().__init__(label="Remove Snippet", style=discord.ButtonStyle.red, emoji="🗑️")
+    
+    async def callback(self, interaction: discord.Interaction):
+        if not hasattr(self.view, 'selected_snippet') or not self.view.selected_snippet:
+            await interaction.response.send_message("Please select a snippet first!", ephemeral=True)
+            return
+        ref = db.reference(f"/Ticket Snippets/{interaction.guild.id}/{self.view.selected_snippet}")
+        ref.delete()
+        await self.view.show_snippets(interaction)
+
+class SnippetModal(Modal):
+    def __init__(self, view=None, alias="", response="", editing=False):
+        super().__init__(title="Add Snippet" if not editing else "Edit Snippet")
+        self.view = view
+        self.old_alias = alias if editing else None
+        self.saved = False
+        
+        self.add_item(TextInput(
+            label="Alias",
+            placeholder="Short name for the snippet",
+            default=alias,
+            max_length=50,
+            required=True
+        ))
+        
+        self.add_item(TextInput(
+            label="Response",
+            placeholder="The prewritten response",
+            default=response,
+            max_length=2000,
+            style=discord.TextStyle.paragraph,
+            required=True
+        ))
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        alias = self.children[0].value.strip()
+        response = self.children[1].value.strip()
+        
+        if not alias or not response:
+            await interaction.response.send_message("Both alias and response are required!", ephemeral=True)
+            return
+        
+        if self.old_alias and self.old_alias != alias:
+            ref = db.reference(f"/Ticket Snippets/{interaction.guild.id}/{self.old_alias}")
+            ref.delete()
+        
+        ref = db.reference(f"/Ticket Snippets/{interaction.guild.id}/{alias}")
+        ref.set(response)
+        self.saved = True
+        
+        if self.view:
+            await self.view.show_snippets()
+        
+        await interaction.response.defer()
+
+class SnippetsButton(Button):
+    def __init__(self):
+        super().__init__(label="Snippets", style=discord.ButtonStyle.secondary, emoji="📝", row=3)
+    
+    async def callback(self, interaction: discord.Interaction):
+        view = SnippetsView(self.view.bot, interaction, self.view)
+        await view.show_snippets(interaction)
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -1,6 +1,5 @@
 from commands.Partnership.partnershipSystem import PartnerRequestButtonView
 from commands.Sigils.sigils import GiveawayEntryView, PersistentSigilsInfoView
-from commands.Registration.registration import RegistrationDropdownView, RegistrationButtonView
 
 from commands.CoOp.coOpSystem import CoOpButtonViewSystem
 from commands.CoOp.coOpSystem import CoOpView as CoOpViewSystem
@@ -40,8 +39,6 @@ views = [
     TierRewardsView,
     GiveawayEntryView,
     PersistentSigilsInfoView,
-    RegistrationDropdownView,
-    RegistrationButtonView,
     CloseTicketButton,
     TicketAdminButtons,
     ConfirmCloseTicketButtons,
