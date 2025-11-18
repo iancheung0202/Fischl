@@ -3,3 +3,5 @@ assets
 *.log
 __pycache__/
 .env
+*enabledChannels.py
+
