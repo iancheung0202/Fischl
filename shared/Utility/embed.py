@@ -1,15 +1,13 @@
 import discord
 import datetime
 import uuid
+
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View, Select, Modal, TextInput, ChannelSelect
-import firebase_admin
 from firebase_admin import db
 
 class EmbedEditor:
-    """Helper class for managing embed editor state"""
-    
     def __init__(self, user_id, guild_id, edit_mode=False, message_to_edit=None):
         self.user_id = user_id
         self.guild_id = guild_id
@@ -32,7 +30,6 @@ class EmbedEditor:
         self.template_owner = None
     
     def to_embed(self):
-        """Convert stored data to discord.Embed"""
         if self.is_empty():
             return None
             
@@ -42,27 +39,23 @@ class EmbedEditor:
             color=self.embed_data["color"]
         )
         
-        # Footer
         if self.embed_data["footer"]["text"]:
             embed.set_footer(
                 text=self.embed_data["footer"]["text"],
                 icon_url=self.embed_data["footer"]["icon_url"] or None
             )
         
-        # Author
         if self.embed_data["author"]["name"]:
             embed.set_author(
                 name=self.embed_data["author"]["name"],
                 icon_url=self.embed_data["author"]["icon_url"] or None
             )
         
-        # Thumbnail and Image
         if self.embed_data["thumbnail"]:
             embed.set_thumbnail(url=self.embed_data["thumbnail"])
         if self.embed_data["image"]:
             embed.set_image(url=self.embed_data["image"])
         
-        # Fields
         for field in self.embed_data["fields"]:
             embed.add_field(
                 name=field["name"],
@@ -70,14 +63,12 @@ class EmbedEditor:
                 inline=field["inline"]
             )
         
-        # Timestamp
         if self.embed_data["timestamp"]:
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             
         return embed
     
     def is_empty(self):
-        """Check if embed is effectively empty"""
         return (
             not self.embed_data["title"] and
             not self.embed_data["description"] and
@@ -89,7 +80,6 @@ class EmbedEditor:
         )
     
     def to_dict(self):
-        """Convert to dictionary for storage"""
         return {
             "message_content": self.message_content,
             "embed_data": self.embed_data,
@@ -99,7 +89,6 @@ class EmbedEditor:
     
     @classmethod
     def from_dict(cls, user_id, guild_id, data, template_id=None):
-        """Create from stored dictionary"""
         editor = cls(user_id, guild_id)
         editor.message_content = data.get("message_content", "")
         editor.embed_data = data.get("embed_data", editor.embed_data)
@@ -110,7 +99,6 @@ class EmbedEditor:
     
     @classmethod
     def from_embed(cls, user_id, guild_id, message: discord.Message):
-        """Create from existing message"""
         editor = cls(user_id, guild_id, edit_mode=True, message_to_edit=message)
         editor.message_content = message.content or ""
         
@@ -190,19 +178,17 @@ class EmbedModal(Modal):
         self.editor.embed_data["title"] = self.children[0].value
         self.editor.embed_data["description"] = self.children[1].value
         
-        # Process color
         color_str = self.children[2].value.strip()
         if color_str and color_str.startswith("#"):
             try:
                 self.editor.embed_data["color"] = int(color_str[1:], 16)
             except ValueError:
-                pass  # Keep current color if invalid
+                pass
         
         self.editor.embed_data["footer"]["text"] = self.children[3].value
         self.editor.embed_data["author"]["name"] = self.children[4].value
         
         await interaction.response.defer()
-        # The main view will handle updating the message
 
 class MediaModal(Modal):
     def __init__(self, editor: EmbedEditor):
@@ -355,7 +341,6 @@ class SaveModal(Modal):
         template_name = self.children[0].value
         template_id = str(uuid.uuid4())[:8]
         
-        # Save to Firebase
         ref = db.reference(f"Embed Templates/{interaction.guild_id}/{template_id}")
         data = self.editor.to_dict()
         data["name"] = template_name
@@ -394,15 +379,12 @@ class EmbedMainView(View):
         self.editor = editor
         self.original_interaction = original_interaction
         
-        # Change button label if editing
         for child in self.children:
             if hasattr(child, 'label') and child.label == "Post":
                 child.label = "Update" if self.editor.edit_mode else "Post"
     
     async def update_message(self, interaction: discord.Interaction = None):
-        """Update the editor message with current state"""
         embed = self.editor.to_embed()
-        # content = "-# 🎨 Embed Editor"
         content = None
         
         if self.editor.is_empty():
@@ -444,7 +426,6 @@ class EmbedMainView(View):
     @discord.ui.button(label="Save", style=discord.ButtonStyle.success, emoji="💾", row=1)
     async def save_template(self, interaction: discord.Interaction, button: Button):
         if self.editor.template_id and self.editor.template_owner == interaction.user.id:
-            # Update existing template
             ref = db.reference(f"Embed Templates/{interaction.guild_id}/{self.editor.template_id}")
             data = self.editor.to_dict()
             data["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -462,11 +443,9 @@ class EmbedMainView(View):
     @discord.ui.button(label="Post", style=discord.ButtonStyle.green, emoji="📤", row=1)
     async def save_and_post(self, interaction: discord.Interaction, button: Button):
         if self.editor.edit_mode:
-            # Update the existing message
             embed = self.editor.to_embed()
             try:
                 await self.editor.message_to_edit.edit(content=self.editor.message_content or None, embed=embed)
-                # Create view for buttons if any
                 if self.editor.button_links:
                     view = View()
                     for link in self.editor.button_links:
@@ -505,8 +484,6 @@ class FieldsEditorView(View):
         self.update_select()
     
     def update_select(self):
-        """Update the fields select menu"""
-        # Clear existing select if any
         for item in self.children:
             if isinstance(item, Select) and item.custom_id == "fields_select":
                 self.remove_item(item)
@@ -530,13 +507,11 @@ class FieldsEditorView(View):
             )
             select.callback = self.select_field
             self.add_item(select)
-            # Move select to beginning
             self.children.insert(0, self.children.pop())
     
     async def update_message(self, interaction: discord.Interaction = None):
         self.update_select()
         embed = self.editor.to_embed()
-        # content = "-# 📋 Fields Editor"
         content = None
         
         if self.editor.is_empty():
@@ -624,7 +599,6 @@ class ButtonLinksEditorView(View):
         self.update_select()
     
     def update_select(self):
-        """Update the links select menu"""
         for item in self.children:
             if isinstance(item, Select) and item.custom_id == "links_select":
                 self.remove_item(item)
@@ -653,7 +627,6 @@ class ButtonLinksEditorView(View):
     async def update_message(self, interaction: discord.Interaction = None):
         self.update_select()
         embed = self.editor.to_embed()
-        # content = "-# 🔗 Button Links Editor"
         content = None
         
         if self.editor.is_empty():
@@ -663,7 +636,6 @@ class ButtonLinksEditorView(View):
                 color=discord.Color.light_gray()
             )
         
-        # Create preview view with buttons
         preview_view = View()
         for link in self.editor.button_links:
             try:
@@ -781,14 +753,12 @@ class ButtonLinksEditorView(View):
 
 class PostEmbedView(View):
     def __init__(self, cog, editor: EmbedEditor, original_interaction: discord.Interaction):
-        super().__init__(timeout=1800)  # 30 minute timeout
+        super().__init__(timeout=1800)
         self.cog = cog
         self.editor = editor
         self.original_interaction = original_interaction
         self.use_webhook = False
         self.webhook_data = {"username": "", "avatar_url": ""}
-        
-        # Add channel select
         self.channel_select = ChannelSelect(placeholder="Select channel to post...")
         self.channel_select.callback = self.select_channel
         self.add_item(self.channel_select)
@@ -823,14 +793,12 @@ class PostEmbedView(View):
             return
         
         channel = self.selected_channel
-        # Ensure we have a proper channel object
         if not hasattr(channel, 'send'):
             channel = interaction.guild.get_channel(channel.id)
             if not channel:
                 await interaction.response.send_message("<:no:1036810470860013639> Channel not found!", ephemeral=True)
                 return
         
-        # Create the final view with button links
         final_view = View()
         for link in self.editor.button_links:
             try:
@@ -849,7 +817,6 @@ class PostEmbedView(View):
         
         try:
             if self.use_webhook and self.webhook_data["username"]:
-                # Create webhook
                 webhook = await channel.create_webhook(name="Embed Bot")
                 await webhook.send(
                     content=self.editor.message_content or None,
@@ -859,7 +826,6 @@ class PostEmbedView(View):
                 )
                 await webhook.delete()
             else:
-                # Send normally
                 await channel.send(
                     content=self.editor.message_content or None,
                     embed=embed,
@@ -868,7 +834,6 @@ class PostEmbedView(View):
             
             await interaction.response.send_message(f"<:yes:1036811164891480194> Embed posted in {channel.mention}!", ephemeral=True)
             
-            # Return to main editor
             view = EmbedMainView(self.cog, self.editor, self.original_interaction)
             await view.update_message(interaction)
             
@@ -889,18 +854,8 @@ class TemplateSelectView(View):
         self.user_id = user_id
         self.guild_id = guild_id
         self.template_data = {}
-        # Template loading requires awaiting async API calls (fetch_user).
-        # We no longer call load_templates() here because __init__ is synchronous.
-        # Callers should await `await view.load_templates()` after instantiation.
     
     async def load_templates(self):
-        """Asynchronously load templates from Firebase and populate the view's Select.
-
-        Callers must await this after constructing the view, e.g.:
-            view = TemplateSelectView(...)
-            await view.load_templates()
-            await interaction.response.edit_message(..., view=view)
-        """
         try:
             ref = db.reference(f"Embed Templates/{self.guild_id}")
             templates = ref.get() or {}
@@ -930,7 +885,6 @@ class TemplateSelectView(View):
                 select.callback = self.select_template
                 self.add_item(select)
             else:
-                # Add disabled option if no templates
                 select = Select(
                     placeholder="No templates available",
                     options=[discord.SelectOption(label="No templates", value="none")],
@@ -962,8 +916,6 @@ class EmbedCommand(commands.Cog):
     @app_commands.command(name="embed", description="Create and customize embeds with an advanced editor")
     @app_commands.checks.has_permissions(administrator=True)
     async def embed(self, interaction: discord.Interaction) -> None:
-        """Main embed command - starts the embed editor"""
-        # Load template counts
         try:
             ref = db.reference(f"Embed Templates/{interaction.guild_id}")
             templates = ref.get() or {}
@@ -973,15 +925,12 @@ class EmbedCommand(commands.Cog):
             total_templates = 0
             user_templates = 0
         
-        # Initial choice view
         class InitialView(View):
             def __init__(self, cog, total_templates, user_templates):
                 super().__init__(timeout=60)
                 self.cog = cog
                 self.total_templates = total_templates
                 self.user_templates = user_templates
-                
-                # Set disabled state for template button
                 for child in self.children:
                     if isinstance(child, Button) and child.label == "Create from Template":
                         child.disabled = self.total_templates == 0
@@ -995,7 +944,6 @@ class EmbedCommand(commands.Cog):
             @discord.ui.button(label="Create from Template", style=discord.ButtonStyle.secondary)
             async def from_template(self, inter: discord.Interaction, button: Button):
                 view = TemplateSelectView(self.cog, inter.user.id, inter.guild_id)
-                # Populate templates asynchronously before sending the view so fetch_user can be awaited
                 await view.load_templates()
                 await inter.response.edit_message(embed=discord.Embed(title="Choose a Template", description="Select a template from the list below. You can only edit your own templates, but can view others' templates and save as your own.", color=discord.Color.blue()), view=view)
         
@@ -1049,7 +997,6 @@ class EmbedCommand(commands.Cog):
             id = int(id)
         msg = await (thread or channel).fetch_message(id)
 
-        # Load template counts
         try:
             ref = db.reference(f"Embed Templates/{interaction.guild_id}")
             templates = ref.get() or {}
@@ -1059,7 +1006,6 @@ class EmbedCommand(commands.Cog):
             total_templates = 0
             user_templates = 0
         
-        # Initial choice view for editing
         class EditInitialView(View):
             def __init__(self, cog, total_templates, user_templates, target_message):
                 super().__init__(timeout=60)
@@ -1067,8 +1013,6 @@ class EmbedCommand(commands.Cog):
                 self.total_templates = total_templates
                 self.user_templates = user_templates
                 self.target_message = target_message
-                
-                # Set disabled state for template button
                 for child in self.children:
                     if isinstance(child, Button) and child.label == "Load from Template":
                         child.disabled = self.total_templates == 0
@@ -1081,7 +1025,6 @@ class EmbedCommand(commands.Cog):
             
             @discord.ui.button(label="Load from Template", style=discord.ButtonStyle.secondary)
             async def load_template(self, inter: discord.Interaction, button: Button):
-                # Create a modified template selector that sets the target message
                 class EditTemplateSelectView(TemplateSelectView):
                     def __init__(self, cog, user_id, guild_id, target_message):
                         super().__init__(cog, user_id, guild_id)
@@ -1097,14 +1040,12 @@ class EmbedCommand(commands.Cog):
                             template_data,
                             template_id=template_id
                         )
-                        # Set edit mode and target message
                         editor.edit_mode = True
                         editor.message_to_edit = self.target_message
                         
                         view = EmbedMainView(self.cog, editor, interaction)
                         await view.update_message(interaction)
                 view = EditTemplateSelectView(self.cog, inter.user.id, inter.guild_id, self.target_message)
-                # Populate templates asynchronously before sending the view
                 await view.load_templates()
                 await inter.response.edit_message(embed=discord.Embed(title="Choose a Template", description="Select a template from the list below. The template content will be applied to edit the selected message.", color=discord.Color.blue()), view=view)
         
@@ -1147,7 +1088,6 @@ async def edit_embed_context_menu(interaction: discord.Interaction, message: dis
 
     cog = interaction.client.get_cog('EmbedCommand')
     
-    # Load template counts
     try:
         ref = db.reference(f"Embed Templates/{interaction.guild_id}")
         templates = ref.get() or {}
@@ -1157,7 +1097,6 @@ async def edit_embed_context_menu(interaction: discord.Interaction, message: dis
         total_templates = 0
         user_templates = 0
     
-    # Initial choice view for editing
     class EditInitialView(View):
         def __init__(self, cog, total_templates, user_templates, target_message):
             super().__init__(timeout=60)
@@ -1165,8 +1104,6 @@ async def edit_embed_context_menu(interaction: discord.Interaction, message: dis
             self.total_templates = total_templates
             self.user_templates = user_templates
             self.target_message = target_message
-            
-            # Set disabled state for template button
             for child in self.children:
                 if isinstance(child, Button) and child.label == "Load from Template":
                     child.disabled = self.total_templates == 0
@@ -1179,7 +1116,6 @@ async def edit_embed_context_menu(interaction: discord.Interaction, message: dis
         
         @discord.ui.button(label="Load from Template", style=discord.ButtonStyle.secondary)
         async def load_template(self, inter: discord.Interaction, button: Button):
-            # Create a modified template selector that sets the target message
             class EditTemplateSelectView(TemplateSelectView):
                 def __init__(self, cog, user_id, guild_id, target_message):
                     super().__init__(cog, user_id, guild_id)
@@ -1195,14 +1131,12 @@ async def edit_embed_context_menu(interaction: discord.Interaction, message: dis
                         template_data,
                         template_id=template_id
                     )
-                    # Set edit mode and target message
                     editor.edit_mode = True
                     editor.message_to_edit = self.target_message
                     
                     view = EmbedMainView(self.cog, editor, interaction)
                     await view.update_message(interaction)
             view = EditTemplateSelectView(self.cog, inter.user.id, inter.guild_id, self.target_message)
-            # Populate templates asynchronously before sending the view
             await view.load_templates()
             await inter.response.edit_message(embed=discord.Embed(title="Choose a Template", description="Select a template from the list below. The template content will be applied to edit the selected message.", color=discord.Color.blue()), view=view)
     
