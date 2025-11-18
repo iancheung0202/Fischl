@@ -88,7 +88,7 @@ class Select(discord.ui.Select):
             "events": {
                 "title": "Chat Minigames",
                 "emoji": "🎉",
-                "description": "The following slash commands are dedicated to random events that appear in a chat channel. Servers that have random events enabled will have exciting mini-games randomly spawned to the chat based on the chat activity and frequency you provided. Use </events enable:1339782470677299260> to setup and </events settings:1339782470677299260> to modify random chat events in the server.",
+                "description": "The following slash commands are dedicated to random events that appear in a chat channel. Servers that have random events enabled will have exciting mini-games randomly spawned to the chat based on the chat activity and frequency you provided. Use </events settings:1339782470677299260> to setup and configure random chat events in the server.",
                 "condition": lambda cmd: (
                     "customize" in cmd.name
                     or "mora" in cmd.name
@@ -104,7 +104,7 @@ class Select(discord.ui.Select):
                 ),
                 "formatter": lambda cmd: (
                     f" \n\n{cmd.mention}\n{REPLY} {cmd.description}"
-                    if cmd.name in ["customize", "mora", "lb", "buy", "shop", "milestones", "gift", "summon", "chest"]
+                    if cmd.name in ["customize", "mora", "lb", "buy", "shop", "milestones", "gift", "summon", "chest", "preview"]
                     else formatter(cmd)
                 )
             },

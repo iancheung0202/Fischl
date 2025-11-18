@@ -6,62 +6,11 @@ from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
 from PIL import Image, ImageEnhance, ImageSequence
-from discord.ui import View
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
-letter_emojis = [
-    "🇦",
-    "🇧",
-    "🇨",
-    "🇩",
-    "🇪",
-    "🇫",
-    "🇬",
-    "🇭",
-    "🇮",
-    "🇯",
-    "🇰",
-    "🇱",
-    "🇲",
-    "🇳",
-    "🇴",
-    "🇵",
-    "🇶",
-    "🇷",
-    "🇸",
-    "🇹",
-    "🇺",
-    "🇻",
-    "🇼",
-    "🇽",
-]
-letterList = [
-    "A",
-    "B",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    "H",
-    "I",
-    "J",
-    "K",
-    "L",
-    "M",
-    "N",
-    "O",
-    "P",
-    "Q",
-    "R",
-    "S",
-    "T",
-    "U",
-    "V",
-    "W",
-    "X",
-]
+letter_emojis = [ "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", ] 
+letterList = [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", ]
 letterString = "".join(letterList)
 
 minigame_titles = [
@@ -88,7 +37,7 @@ minigame_titles = [
     "Know Your Members",
     "Hangman",
     "Mora Auction House",
-    ":new: Mora Heist"
+    "Mora Heist"
 ]
 
 
@@ -159,7 +108,7 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
 
             self.embed = discord.Embed(
                 title="Customize which mini-games you'd like to enable",
-                description=f"**Channel:** <#{channelID}>\n\n > {string}\n\nClick the button below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). *To edit the frequency, use </events enable:1339782470677299260> again.*",
+                description=f"**Channel:** <#{channelID}>\n\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
                 color=discord.Color.blurple(),
             )
             self.update = discord.Embed(
@@ -200,6 +149,227 @@ class ToggleEventButton(discord.ui.Button):
         )
 
 
+class EnableEventButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Enable Events", style=discord.ButtonStyle.green)
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0]
+            .description.split("<#")[1]
+            .split(">")[0]
+            .strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+
+        frequency_value = 50 # Uncommon (~2%)
+
+        ref = db.reference("/Global Events System")
+        data = {
+            channel.id: {
+                "Channel ID": channel.id,
+                "Frequency": frequency_value,
+                "Events": letterList,  # All enabled by default
+            }
+        }
+        for key, value in data.items():
+            ref.push().set(value)
+
+        with open("./commands/Events/enabledChannels.py", "r") as file:
+            lines = file.readlines()
+
+        for i, line in enumerate(lines):
+            if line.startswith("enabledChannels ="):
+                existing_dict = eval(line.split("=", 1)[1].strip())
+                existing_dict[channel.id] = frequency_value
+                lines[i] = f"enabledChannels = {existing_dict}\n"
+                break
+
+        with open("./commands/Events/enabledChannels.py", "w") as file:
+            file.writelines(lines)
+
+        # Create settings embed
+        string = "\n> ".join(
+            [
+                f"{emoji} - {title} <:yes:1036811164891480194>"
+                if letter in letterList
+                else f"{emoji} - {title} <:no:1036810470860013639>"
+                for letter, emoji, title in zip(
+                    letterString, letter_emojis, minigame_titles
+                )
+            ]
+        )
+        embed = discord.Embed(
+            title="Customize which mini-games you'd like to enable",
+            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency_value)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
+            color=discord.Color.blurple(),
+        )
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+
+        view = EventSettingsView(channel)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        success_embed = discord.Embed(
+            title="Random events enabled!",
+            description=f"Now, there will be a **{100//frequency_value}%** chance for every message sent in {channel.mention} to trigger a random event!",
+            colour=0x00FF00,
+        )
+        success_embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        await interaction.followup.send(embed=success_embed, ephemeral=True)
+
+
+class DisableEventButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Disable Events", style=discord.ButtonStyle.red)
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0]
+            .description.split("<#")[1]
+            .split(">")[0]
+            .strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+
+        ref = db.reference("/Global Events System")
+        stickies = ref.get()
+
+        for key, val in stickies.items():
+            if val["Channel ID"] == channel.id:
+                db.reference("/Global Events System").child(key).delete()
+                break
+
+        with open("./commands/Events/enabledChannels.py", "r") as file:
+            lines = file.readlines()
+
+        for i, line in enumerate(lines):
+            if line.startswith("enabledChannels ="):
+                existing_dict = eval(line.split("=", 1)[1].strip())
+                if channel.id in existing_dict:
+                    del existing_dict[channel.id]
+                lines[i] = f"enabledChannels = {existing_dict}\n"
+                break
+
+        with open("./commands/Events/enabledChannels.py", "w") as file:
+            file.writelines(lines)
+
+        embed = discord.Embed(
+            title="Event Settings",
+            description=f"**Channel:** {channel.mention}\n**Status:** Disabled\n\nRandom events are not enabled in this channel.",
+            colour=0xFFFF00,
+        )
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+
+        view = EventSettingsView(channel)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class FrequencySelect(discord.ui.Select):
+    def __init__(self, current_frequency=None):
+        options = [
+            discord.SelectOption(label="Very Frequent (~10%)", value="10", default=current_frequency == 10),
+            discord.SelectOption(label="Frequent (~5%)", value="20", default=current_frequency == 20),
+            discord.SelectOption(label="Occasional (~3%)", value="30", default=current_frequency == 30),
+            discord.SelectOption(label="Uncommon (~2%)", value="50", default=current_frequency == 50),
+            discord.SelectOption(label="Rare (~1%)", value="100", default=current_frequency == 100),
+            discord.SelectOption(label="Very Rare (~0.5%)", value="200", default=current_frequency == 200),
+        ]
+        super().__init__(placeholder="Select frequency...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0]
+            .description.split("<#")[1]
+            .split(">")[0]
+            .strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+
+        new_frequency = int(self.values[0])
+
+        ref = db.reference("/Global Events System")
+        stickies = ref.get()
+
+        for key, val in stickies.items():
+            if val["Channel ID"] == channel.id:
+                db.reference("/Global Events System").child(key).update({"Frequency": new_frequency})
+                break
+
+        with open("./commands/Events/enabledChannels.py", "r") as file:
+            lines = file.readlines()
+
+        for i, line in enumerate(lines):
+            if line.startswith("enabledChannels ="):
+                existing_dict = eval(line.split("=", 1)[1].strip())
+                existing_dict[channel.id] = new_frequency
+                lines[i] = f"enabledChannels = {existing_dict}\n"
+                break
+
+        with open("./commands/Events/enabledChannels.py", "w") as file:
+            file.writelines(lines)
+
+        # Get current events
+        events = []
+        for key, val in stickies.items():
+            if val["Channel ID"] == channel.id:
+                events = val.get("Events", [])
+                break
+
+        # Create settings embed
+        string = "\n> ".join(
+            [
+                f"{emoji} - {title} <:yes:1036811164891480194>"
+                if letter in events
+                else f"{emoji} - {title} <:no:1036810470860013639>"
+                for letter, emoji, title in zip(
+                    letterString, letter_emojis, minigame_titles
+                )
+            ]
+        )
+        embed = discord.Embed(
+            title="Customize which mini-games you'd like to enable",
+            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/new_frequency)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
+            color=discord.Color.blurple(),
+        )
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+
+        view = EventSettingsView(channel)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        success_embed = discord.Embed(
+            title="Frequency updated!",
+            description=f"Spawn rate updated to **{100//new_frequency}%** for {channel.mention}.",
+            colour=0x00FF00,
+        )
+        success_embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        await interaction.followup.send(embed=success_embed, ephemeral=True)
+
+
+class EventSettingsView(discord.ui.View):
+    def __init__(self, channel):
+        super().__init__()
+        self.channel = channel
+
+        ref = db.reference("/Global Events System")
+        stickies = ref.get()
+        enabled = False
+        frequency = None
+        events = []
+        for key, val in stickies.items():
+            if val["Channel ID"] == channel.id:
+                enabled = True
+                frequency = val.get("Frequency", 50)
+                events = val.get("Events", [])
+                break
+
+        if enabled:
+            self.add_item(FrequencySelect(current_frequency=frequency))
+            self.add_item(ToggleEventButton())
+            self.add_item(DisableEventButton())
+        else:
+            self.add_item(EnableEventButton())
+
+
 @app_commands.guild_only()
 class EventSystem(commands.GroupCog, name="events"):
     def __init__(self, bot: commands.Bot) -> None:
@@ -207,90 +377,11 @@ class EventSystem(commands.GroupCog, name="events"):
         super().__init__()
 
     @app_commands.command(
-        name="enable", description="Enable random events in a channel"
-    )
-    @app_commands.describe(
-        frequency="How often you'd like the random events to appear",
-        channel="The channel to enable random events in (Current channel if not provided)",
-    )
-    @app_commands.choices(
-        frequency=[
-            app_commands.Choice(name="Very Frequent (~10%)", value="10"),
-            app_commands.Choice(name="Frequent (~5%)", value="20"),
-            app_commands.Choice(name="Occasional (~3%)", value="30"),
-            app_commands.Choice(name="Uncommon (~2%)", value="50"),
-            app_commands.Choice(name="Rare (~1%)", value="100"),
-            app_commands.Choice(name="Very Rare (~0.5%)", value="200"),
-        ]
-    )
-    @app_commands.checks.has_permissions(manage_guild=True, manage_channels=True)
-    async def events_enable(
-        self,
-        interaction: discord.Interaction,
-        frequency: app_commands.Choice[str],
-        channel: discord.TextChannel = None,
-    ) -> None:
-        if channel is None:
-            channel = interaction.channel
-
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
-
-        originalList = letterList
-        try:
-            for key, val in stickies.items():
-                if val["Channel ID"] == channel.id:
-                    originalList = val["Events"]
-                    db.reference("/Global Events System").child(key).delete()
-                    break
-        except Exception:
-            pass
-
-        data = {
-            channel.id: {
-                "Channel ID": channel.id,
-                "Frequency": int(frequency.value),
-                "Events": originalList,
-            }
-        }
-
-        for key, value in data.items():
-            ref.push().set(value)
-
-        embed = discord.Embed(
-            title="All random events enabled!",
-            description=f"Now, there will be a **{100//(int(frequency.value))}%** chance for every message sent in {channel.mention} to trigger a random event! \n\n***Tip:** You can use `/events settings` to blacklist/whitelist the events you want to appear!*",
-            colour=0x00FF00,
-        )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        with open("./commands/Events/enabledChannels.py", "r") as file:
-            lines = file.readlines()
-
-        for i, line in enumerate(lines):
-            if line.startswith("enabledChannels ="):
-                existing_dict = eval(line.split("=", 1)[1].strip())
-                existing_dict[channel.id] = int(frequency.value)
-                lines[i] = f"enabledChannels = {existing_dict}\n"
-                break
-
-        with open("./commands/Events/enabledChannels.py", "w") as file:
-            file.writelines(lines)
-
-
-    @events_enable.error
-    async def events_enable_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
-    @app_commands.command(
         name="settings",
         description="Customize the selection of random events in your server",
     )
     @app_commands.describe(
-        channel="The channel that already has random events enabled (Current channel if not provided)",
+        channel="The text channel to customize event settings for (default: current channel)",
     )
     @app_commands.checks.has_permissions(manage_guild=True, manage_channels=True)
     async def events_settings(
@@ -298,20 +389,26 @@ class EventSystem(commands.GroupCog, name="events"):
     ) -> None:
         if channel == None:
             channel = interaction.channel
+
+        view = EventSettingsView(channel)
+
         ref = db.reference("/Global Events System")
         stickies = ref.get()
-        found = None
+        enabled = False
+        frequency = None
+        events = []
         for key, val in stickies.items():
             if val["Channel ID"] == channel.id:
-                found = val.get("Events", [])
-                frequency = val.get("Frequency", None)
+                enabled = True
+                frequency = val.get("Frequency", 50)
+                events = val.get("Events", [])
                 break
 
-        if found is not None:
+        if enabled:
             string = "\n> ".join(
                 [
                     f"{emoji} - {title} <:yes:1036811164891480194>"
-                    if letter in found
+                    if letter in events
                     else f"{emoji} - {title} <:no:1036810470860013639>"
                     for letter, emoji, title in zip(
                         letterString, letter_emojis, minigame_titles
@@ -321,92 +418,27 @@ class EventSystem(commands.GroupCog, name="events"):
 
             embed = discord.Embed(
                 title="Customize which mini-games you'd like to enable",
-                description=f"**Channel:** {channel.mention}\n**Spawn Rate:** `{int(100/frequency) if frequency is not None else '0'}%`\n\n > {string}\n\nClick the button below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). *To edit the frequency, use </events enable:1339782470677299260> again.*",
+                description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency) if frequency else 0}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
                 color=discord.Color.blurple(),
-            )
-            view = View()
-            view.add_item(ToggleEventButton())
-            await interaction.response.send_message(
-                embed=embed, view=view, ephemeral=True
             )
         else:
             embed = discord.Embed(
-                title="Random events are not enabled!",
-                description=f"What are you thinking? Random event is currently not even enabled in {channel.mention}. To enable the function, use </events enable:1339782470677299260>.",
+                title="Event Settings",
+                description=f"**Channel:** {channel.mention}\n**Status:** Disabled\n\nRandom events are not enabled in this channel.",
                 colour=0xFFFF00,
             )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @events_settings.error
     async def events_settings_error(
         self, interaction: discord.Interaction, error: Exception
     ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
-    @app_commands.command(
-        name="disable", description="Disable random events in a channel"
-    )
-    @app_commands.describe(
-        channel="The channel to disable random events in (Current channel if not provided)"
-    )
-    @app_commands.checks.has_permissions(manage_guild=True, manage_channels=True)
-    async def events_disable(
-        self, interaction: discord.Interaction, channel: discord.TextChannel = None
-    ) -> None:
-        if channel is None:
-            channel = interaction.channel
-
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
-
-        found = False
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                db.reference("/Global Events System").child(key).delete()
-                found = True
-                break
-
-        if found:
-            embed = discord.Embed(
-                title="Random events disabled!",
-                description=f"Sad to see you go. If you change your mind at anytime, you could use </events enable:1339782470677299260> to re-enable random events again.",
-                colour=0xFF0000,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-            with open("./commands/Events/enabledChannels.py", "r") as file:
-                lines = file.readlines()
-
-            for i, line in enumerate(lines):
-                if line.startswith("enabledChannels ="):
-                    existing_dict = eval(line.split("=", 1)[1].strip())
-                    if channel.id in existing_dict:
-                        del existing_dict[channel.id]  # or: existing_dict.pop(channel.id)
-                    lines[i] = f"enabledChannels = {existing_dict}\n"
-                    break
-
-            with open("./commands/Events/enabledChannels.py", "w") as file:
-                file.writelines(lines)
-
-        else:
-            embed = discord.Embed(
-                title="Random events are not enabled!",
-                description=f"What are you thinking? Random event is currently not even enabled in {channel.mention}. To start having fun, use </events enable:1339782470677299260> to enable random games in this channel!",
-                colour=0xFFFF00,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @events_disable.error
-    async def events_disable_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
         
-        
-async def format_animated_background(ctx, gif_name): # Darken and resize an animated background GIF for profile cards
+### Darken and resize an animated background GIF for profile cards ###
+async def format_animated_background(ctx, gif_name): 
     if not gif_name.lower().endswith('.gif'):
         return await ctx.send("Please provide a GIF file!", delete_after=5)
 
