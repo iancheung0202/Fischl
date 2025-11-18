@@ -32,9 +32,12 @@ class Fischl(commands.AutoShardedBot):
             for path, _, files in os.walk(directory):
                 for name in files:
                     if name.endswith(".py"):
-                        extension = os.path.join(path, name).replace("/", ".")[:-3]
-                        await self.load_extension(extension)
-                        print(f"Loaded {extension} in {self.user}")
+                        try:
+                            extension = os.path.join(path, name).replace("/", ".")[:-3]
+                            await self.load_extension(extension)
+                            print(f"Loaded {extension} in {self.user}")
+                        except Exception as e:
+                            print(f"Failed to load {extension}: {e}")
             
         await self.tree.sync()
 
