@@ -1,4 +1,5 @@
-assets
+assets/
+web/config/
 
 *.log
 __pycache__/

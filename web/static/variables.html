@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fischl - Dynamic Variables</title>
+    <link rel="icon" href="assets/icon.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-900">
+    <div class="max-w-3xl mx-auto py-10">
+        <h1 class="text-4xl font-bold text-center text-blue-600">Fischl Bot Documentation</h1>
+        <p class="text-center text-gray-600 mt-2">Reference guide for dynamic variables</p>
+
+        <div class="mt-10 bg-white shadow-lg rounded-lg p-6">
+            <h2 class="text-2xl font-semibold text-gray-800 border-b pb-2">Dynamic Variables</h2>
+            
+            <div class="mt-6">
+                <h3 class="text-xl font-semibold text-blue-500">Welcome Function</h3>
+                <ul class="mt-2 space-y-2">
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{mention}</code> - Mentions the member who joins</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{server}</code> - The server's name</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{user}</code> - The username of the member who joins</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{count}</code> - The total number of server members after the event</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{count-th}</code> - The total number of server members (with suffixes) after the event</li>
+                </ul>
+            </div>
+
+            <div class="mt-6">
+                <h3 class="text-xl font-semibold text-blue-500">Vanity Roles</h3>
+                <ul class="mt-2 space-y-2">
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{mention}</code> - Mentions the member adding your invite link</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{server}</code> - The server's name</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{user}</code> - The username of the member adding your invite link</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{count}</code> - The total number of members with the exclusive role</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{count-th}</code> - The total number of members with the exclusive role (with suffixes)</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{role}</code> - Mentions the exclusive role</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{rolename}</code> - The exclusive role's name</li>
+                    <li><code class="bg-gray-200 px-2 py-1 rounded">{link}</code> - The server's vanity invite link</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script>
+      function hasDayPassed(lastVisitTimestamp) {
+            const now = new Date();
+            const lastVisitDate = new Date(lastVisitTimestamp);
+            lastVisitDate.setHours(lastVisitDate.getHours() - 7);
+            return now - lastVisitDate >= 24 * 60 * 60 * 1000;
+        }
+
+        function reloadOncePerDay() {
+            const lastVisitTimestamp = localStorage.getItem('lastVisitTimestamp');
+            
+            if (!lastVisitTimestamp || hasDayPassed(lastVisitTimestamp)) {
+                localStorage.setItem('lastVisitTimestamp', new Date().getTime());
+                alert("Updating riddles... Reloading...")
+                location.reload();
+            }
+        }
+
+        window.onload = reloadOncePerDay;
+    </script>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solve The Riddle - Team Challenge</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css"
+      integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+      crossorigin="anonymous"
+    />
+    <meta property="og:url" content="https://fischlbot.web.app/riddles">
+    <meta property="og:site_name" content="Genshin Impact Cafe">
+    <meta property="og:description" content="Welcome to the Riddle Team Challenge! As we celebrate the Middle Autumn Festival, we will be honoring the traditions of the festival this month: solving riddles!">
+    <meta name="description" content="Welcome to the Riddle Team Challenge! As we celebrate the Middle Autumn Festival, we will be honoring the traditions of the festival this month: solving riddles!">
+    <meta property="og:title" content="Solve The Riddle - Team Challenge"> <!-- embed message second line big text title -->
+    <meta property="og:image" content="#"> <!-- embed message image -->
+    <meta name="theme-color" content="#f2f0d8"> <!-- embed message side color -->
+    <link href='https://fonts.googleapis.com/css?family=Roboto' rel='stylesheet'>
+    <style>
+        @font-face {
+          font-family: 'GenshinFont'; 
+          src: url('ja-jp.ttf');
+        }
+        body {
+            font-family: "GenshinFont", "Roboto", Verdana, sans-serif !important;
+        }
+        table {
+            font-family: Arial, Helvetica, sans-serif;
+            border-collapse: collapse;
+            width: 50%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            text-align: center;
+            padding: 8px;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+
+        tr:nth-child(odd) {
+            background-color: white;
+        }
+    </style>
+  </head>
+  <body class="bg-dark">
+    <div class="container border mt-3 bg-light">
+      <div class="row">
+        <div class="col-md-6 p-5 bg-dark text-white">
+          <h1>Hi there! Welcome!</h1>
+          <h6 style="line-height: 26px;">
+            🌕 Welcome to the Riddle Team Challenge! As we celebrate the Middle Autumn Festival, we will be honoring the traditions of the festival this month: solving riddles! 🌝✨
+          </h6>
+          <br>
+          <!-- <h5 style="line-height: 34px;">Remember to check back <mark><span id="countdown"></span></mark> for a new riddle!</h5>
+          <br>
+          <h6><mark>Update: To ensure that you receive the correct riddle for the day, please reload the website once to avoid getting stuck at yesterday's version of the webpage! </mark></h6>
+          <br> -->
+          <h6>Please only fill in this form once a day!</h6>
+        </div>
+        <div class="col-md-6 border-left p-md-4">
+          <div class="form-group">
+            <br>
+            <!-- <h3 for="message"><b style="font-weight: bolder;">Today's Riddle</b></h3> -->
+            <p id="riddle" style="border: 2px solid black; border-radius: 6px; padding: 12px;">The event has ended. Thank you for supporting Genshin Impact Cafe.</p>
+            <!-- <iframe src="https://docs.google.com/forms/d/e/1FAIpQLSf1R-TxVm3mSdJDZEJavaQSwNlcsCQeFTq2h5i5tCYFOUp-4w/viewform?embedded=true" style="min-width:100%;max-width:100%;height:869px;border:none;" scrolling="no" frameborder="0" marginheight="0" marginwidth="0">Loading…</iframe> -->
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col-md-12 p-5">
+          <h2 style="font-weight: bolder;">Scoreboard</h2>
+          <h5 id="timestamp"></h5>
+          <br>
+          <table id="myTable">
+              <tr>
+                  <th>Date (PST)</th>
+                  <th>Mondstadt</th>
+                  <th>Liyue</th>
+                  <th>Inazuma</th>
+                  <th>Sumeru</th>
+                  <th>Fontaine</th>
+              </tr>
+              <tr>
+                  <td>9/16</td>
+                  <td>10</td>
+                  <td>12</td>
+                  <td>2</td>
+                  <td>9</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/17</td>
+                  <td>12</td>
+                  <td>11</td>
+                  <td>4</td>
+                  <td>7</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/18</td>
+                  <td>11</td>
+                  <td>7</td>
+                  <td>5</td>
+                  <td>9</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/19</td>
+                  <td>6</td>
+                  <td>6</td>
+                  <td>4</td>
+                  <td>5</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/20</td>
+                  <td>7</td>
+                  <td>6</td>
+                  <td>4</td>
+                  <td>6</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/21</td>
+                  <td>0</td>
+                  <td>2</td>
+                  <td>0</td>
+                  <td>0</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/22</td>
+                  <td>7</td>
+                  <td>9</td>
+                  <td>2</td>
+                  <td>6</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/23</td>
+                  <td>2</td>
+                  <td>3</td>
+                  <td>1</td>
+                  <td>2</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/24</td>
+                  <td>21</td>
+                  <td>13</td>
+                  <td>4</td>
+                  <td>3</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/25</td>
+                  <td>5</td>
+                  <td>8</td>
+                  <td>1</td>
+                  <td>2</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/26</td>
+                  <td>6</td>
+                  <td>10</td>
+                  <td>1</td>
+                  <td>2</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/27</td>
+                  <td>2</td>
+                  <td>2</td>
+                  <td>0</td>
+                  <td>1</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/28</td>
+                  <td>4</td>
+                  <td>4</td>
+                  <td>2</td>
+                  <td>0</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/29</td>
+                  <td>4</td>
+                  <td>5</td>
+                  <td>2</td>
+                  <td>2</td>
+                  <td>0</td>
+              </tr>
+              <tr>
+                  <td>9/30</td>
+                  <td>7</td>
+                  <td>10</td>
+                  <td>1</td>
+                  <td>7</td>
+                  <td>0</td>
+              </tr>
+          </table>
+        </div>
+        <div class="row">
+          <div class="col-md-12 p-5">
+            <h4 style="font-weight: bolder;">Answers to Previous Riddles</h4>
+            <br>
+            <table style="width: 70%;">
+              <tr>
+                <th>Date (PST)</th>
+                <th>Question</th>
+                <th>Answer</th>
+              </tr>
+              <tr>
+                <td>9/16</td>
+                <td>What has keys but can't open locks?</td>
+                <td>Piano / Keyboard / Keychain</td>
+              </tr>
+              <tr>
+                <td>9/17</td>
+                <td>What comes once in a minute, twice in a moment, but never in a thousand years?</td>
+                <td>The letter "m"</td>
+              </tr>
+              <tr>
+                <td>9/18</td>
+                <td>You measure my life in hours and I serve you by expiring. I’m quick when I’m thin and slow when I’m fat. The wind is my enemy.</td>
+                <td>Candle</td>
+              </tr>
+              <tr>
+                <td>9/19</td>
+                <td>You see a boat filled with people. It has not sunk, but when you look again you don’t see a single person on the boat. Why?</td>
+                <td>They are all married.</td>
+              </tr>
+              <tr>
+                <td>9/20</td>
+                <td>Turn me on my side, and I am everything. Cut me in half and I am nothing. What am I?</td>
+                <td>The number 8</td>
+              </tr>
+              <tr>
+                <td>9/21</td>
+                <td>How many ways can you arrange 8 keys on a keychain?</td>
+                <td>7!/2 = 2520<br> There are <var>n-1</var> ways to arrange <var>n</var> things on a circle. If you flip the keychain, it will still have the same arrangement, hence we divide it by 2.</td>
+              </tr>
+              <tr>
+                <td>9/22</td>
+                <td>Which word in the dictionary is always spelled incorrectly?</td>
+                <td>"Incorrectly"</td>
+              </tr>
+              <tr>
+                <td>9/23</td>
+                <td>Find the number of positive integers greater than 6000 and less than 7000 which are divisible by 5, provided that no digit is to be repeated.</td>
+                <td>8 * 7 * 2 = 112</td>
+              </tr>
+              <tr>
+                <td>9/24</td>
+                <td>1. Why did the computer catch a cold?<br>2. Why did the bicycle fall over?</td>
+                <td>1. It has too many windows opened / it contracteed a virus (or equivalent)<br>2. It was two-tired (too tired)</td>
+              </tr>
+              <tr>
+                <td>9/25</td>
+                <td>If you have me, you want to share me. If you share me, you don't have me. What am I?</td>
+                <td>A secret</td>
+              </tr>
+              <tr>
+                <td>9/26</td>
+                <td>1. It exists in dreams and no other place, a must for Festival Utsava space.<br>2. Where is the sole path to knowledge?</td>
+                <td>1. Viparyas <br> 2. The Akademiya</td>
+              </tr>
+              <tr>
+                <td>9/27</td>
+                <td>What is the winning team of this month's Genshin Impact Cafe's Team Challenge?</td>
+                <td>No one (because it's winning, not leading) / Everyone / The Staff Team / The "I Love Riddles" People</td>
+              </tr>
+              <tr>
+                <td>9/28</td>
+                <td>Describe where you can find the following: A mirror not made of glass reflects every drama.</td>
+                <td>Located in the reflective water basin around the fountain in front of the Zubayr Theatre at the Grand Bazaar</td>
+              </tr>
+              <tr>
+                <td>9/29</td>
+                <td>When you take 2 out of 3 apples away, how many apples do you have?</td>
+                <td>2 apples</td>
+              </tr>
+              <tr>
+                <td>9/30</td>
+                <td>What are the two things you can’t eat for breakfast?</td>
+                <td>Lunch and dinner</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <script>
+      var now = new Date();
+      riddle = document.getElementById("riddle")
+      var pacificTime = String(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      if (pacificTime.includes("9/30/2023")) {
+        riddle.innerHTML = "What are the two things you can’t eat for breakfast?"
+      }
+
+      riddle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+      });
+
+
+      // function calculateTimeUntilMidnight() {
+      //     const now = new Date();
+      //     const midnightPT = new Date(now);
+      //     midnightPT.setUTCHours(7);  // 7 is the UTC offset for PT
+      //     midnightPT.setUTCMinutes(0);
+      //     midnightPT.setUTCSeconds(0);
+      //     midnightPT.setUTCMilliseconds(0);
+      //     let timeRemaining = midnightPT - now;
+      //     if (timeRemaining < 0) {
+      //         midnightPT.setDate(midnightPT.getDate() + 1);
+      //         timeRemaining = midnightPT - now;
+      //     }
+      //     const hours = Math.floor(timeRemaining / (1000 * 60 * 60));
+      //     const minutes = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
+      //     return { hours, minutes };
+      // }
+
+      // function updateCountdown() {
+      //     const time = calculateTimeUntilMidnight();
+      //     const countdownDiv = document.getElementById('countdown');
+      //     if (time.hours === 0) {
+      //         countdownDiv.textContent = `in ${time.minutes} minutes`;
+      //     } else {
+      //         countdownDiv.textContent = `in ${time.hours} hours`;
+      //     }
+      // }
+
+      // setInterval(updateCountdown, 1000);
+      // updateCountdown();
+      
+      function updateTimestamp() {
+          const timestampElement = document.getElementById('timestamp');
+          const now = new Date();
+          const targetDate = new Date('2023-10-01T07:00:00Z'); // in UTC
+          const timeDifference = now - targetDate;
+          const minutes = Math.floor(timeDifference / (1000 * 60));
+          const hours = Math.floor(minutes / 60);
+          let timestampText = '';
+          if (hours > 0) {
+              timestampText += hours + ' hour';
+              if (hours > 1) {
+                  timestampText += 's';
+              }
+              timestampText += ' ';
+          }
+          if (minutes % 60 > 0) {
+              timestampText += (minutes % 60) + ' minute';
+              if (minutes % 60 > 1) {
+                  timestampText += 's';
+              }
+              timestampText += ' ';
+          }
+          timestampText += 'ago';
+          timestampElement.textContent = "Last updated: " + timestampText;
+      }
+      setInterval(updateTimestamp, 1000);
+      updateTimestamp();
+      
+      function addSumRow() {
+          var table = document.getElementById("myTable");
+          var newRow = table.insertRow(-1);
+          var sums = new Array(table.rows[0].cells.length).fill(0);
+          for (var i = 1; i < table.rows.length; i++) {
+              var row = table.rows[i];
+              for (var j = 1; j < row.cells.length; j++) {
+                  sums[j - 1] += parseInt(row.cells[j].textContent);
+              }
+          }
+          var cell = newRow.insertCell(0);
+          cell.innerHTML = '<strong>Total</strong>';
+          for (var i = 0; i < sums.length - 1; i++) {
+              cell = newRow.insertCell(i + 1);
+              cell.textContent = sums[i];
+              cell.innerHTML = '<strong>' + cell.textContent + '</strong>';
+          }
+      }
+
+      addSumRow();
+    </script>
+  </body>
+</html>
