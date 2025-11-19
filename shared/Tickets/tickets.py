@@ -1449,9 +1449,12 @@ class CloseTicketButton(discord.ui.View):
             color=0xFF0000,
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        ticket_owner_id = int(interaction.channel.topic)
+        view = ConfirmCloseTicketButtons(ticket_owner_id=ticket_owner_id, interaction_user_id=interaction.user.id)
         await interaction.response.send_message(
-            embed=embed, view=ConfirmCloseTicketButtons(), ephemeral=True
+            embed=embed, view=view, ephemeral=True
         )
+        view.message = await interaction.original_response()
 
 
 class TicketAdminButtons(discord.ui.View):
@@ -1506,7 +1509,7 @@ class TicketAdminButtons(discord.ui.View):
         view.add_item(button)
         await log.send(embed=embed, view=view)
         embed = discord.Embed(
-            title="Ticket reopened",
+            title="Ticket Reopened",
             description=f"Your ticket is reopened by {interaction.user.mention}.",
             color=0xE44D41,
         )
@@ -1525,7 +1528,7 @@ class TicketAdminButtons(discord.ui.View):
             pass
         embed = discord.Embed(
             title="🔓 Ticket Reopened",
-            description="Ticket is again visible to the member.",
+            description=f"Ticket reopened by {interaction.user.mention} and is visible to {user.mention} again.",
             color=0xFFFF00,
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -1741,163 +1744,202 @@ async def snippet_autocomplete(interaction: discord.Interaction, current: str) -
             choices.append(app_commands.Choice(name=alias, value=alias))
     return choices[:25]
 
-class ConfirmCloseTicketButtons(discord.ui.View):
+async def perform_ticket_close(interaction: discord.Interaction, closing_message=None):
+    embed = discord.Embed(
+        title="Closing Ticket...",
+        description="Ticket will be closed in 3 seconds",
+        color=0xFF0000,
+    )
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    msg = await interaction.channel.send(embed=embed)
+    left = False
+    user = None
+    try:
+        user = await interaction.guild.fetch_member(int(interaction.channel.topic))
+    except Exception:
+        left = True
+
+    ref = db.reference("/Tickets")
+    tickets = ref.get()
+    for key, value in tickets.items():
+        if value["Server ID"] == interaction.guild.id:
+            LOGCHANNEL_ID = value["Log Channel ID"]
+            break
+    log = interaction.guild.get_channel(LOGCHANNEL_ID)
+
+    if not user:
+        left = True
+
+    f, usersInvolved, user_message_counts = await get_transcript(interaction, user)
+
+    if left == False and user != None:
+        embed = discord.Embed(
+            title="Ticket closed",
+            description=f"Ticket created by {user.mention} is closed by {interaction.user.mention}",
+            color=0xE44D41,
+        )
+        try:
+            embed.set_author(
+                name=f"{user.name}", icon_url=user.avatar.url
+            )
+        except Exception:
+            embed.set_author(name=f"{user.name}")
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        embed.set_footer(text=f"Ticket ID: {interaction.channel.id}")
+    else:
+        embed = discord.Embed(
+            title="Ticket closed",
+            description=f"Ticket created by a member who has left the server is closed by {interaction.user.mention}",
+            color=0xE44D41,
+        )
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+
+    user_list = "\n".join(f"- {user.mention} `({user_message_counts[user]})`" for user in usersInvolved) if usersInvolved else "`None`"
+    embed.add_field(name="Users Involved", value=user_list, inline=True)
+
+    with open(f"../Fischl/shared/Tickets/{interaction.channel.id}.html", "r", encoding="utf-8") as f:
+        try:
+            summary = await generate(
+                f"The following is the entire history of the ticket in a Discord server for a user. "
+                "Please summarise the entire interaction into 1 or 2 sentences. "
+                "Only give 1 response option. Do not output additional text such as 'Here is the summary:'. "
+                f"Exclude the channel names, user IDs, server names, Fischl (bot name), or the fact that a ticket is created or closed in your response.\n\n"
+                "Full transcript:\n"
+                f"{f.read().split('<!DOCTYPE html>')[1]}")
+        except Exception as e:
+            print(e)
+            summary = "`AI Summary Temporarily Unavailable`"
+
+    first_message = [msg async for msg in interaction.channel.history(oldest_first=True)][0]
+    embed.add_field(name="Ticket Topic", value=first_message.embeds[0].title)
+
+    log_message = await log.send(
+        embed=embed,
+        file=discord.File(f"../Fischl/shared/Tickets/{interaction.channel.id}.html")
+    )
+
+    with open(f"../Fischl/shared/Tickets/{interaction.channel.id}.html", "rb") as f:
+        file_content = f.read()
+
+    checksum = hashlib.sha256(file_content + str(log.id).encode()).hexdigest()[:20]
+    token = f"{log.id}-{log_message.id}-{checksum}"
+    url = f"https://fischl.app/logs/{token}"
+
+    embed.add_field(name="Transcript Link", value=url, inline=False)
+    embed.add_field(name="Ticket Summary", value=summary)
+    await log_message.edit(embed=embed)
+    embed.title = f"Ticket closed in {interaction.guild.name}"
+    await interaction.client.get_channel(1417408712980697099).send(
+        embed=embed,
+        file=discord.File(f"../Fischl/shared/Tickets/{interaction.channel.id}.html")
+    )
+
+    try:
+        os.remove(f"../Fischl/shared/Tickets/{interaction.channel.id}.html")
+    except Exception:
+        pass
+
+    transcript_button = Button(
+        style=discord.ButtonStyle.link,
+        label="Transcript Link",
+        emoji="📜",
+        url=url
+    )
+    user_view = View()
+    user_view.add_item(transcript_button)
+
+    embed = discord.Embed(
+        title="Ticket Closed",
+        description=f"Your ticket in **{interaction.guild.name}** is now closed.",
+        color=0xE44D41,
+    )
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    embed.set_footer(
+        text=f"You can always create a new ticket for additional assistance!"
+    )
+    
+    if closing_message is None:
+        closing_message = db.reference(f"/Ticket Closing Messages/{interaction.channel.id}").get()
+    if closing_message:
+        embed.description += f"\n\n> {closing_message}"
+    
+    try:
+        await user.send(embed=embed, view=user_view)
+        await interaction.channel.set_permissions(
+            user, send_messages=False, read_messages=False, attach_files=False
+        )
+    except Exception:
+        pass
+
+    await msg.delete()
+    if left == False:
+        embed = discord.Embed(
+            description=f"Ticket is closed by {interaction.user.mention} and no longer visible to {user.mention}.",
+            color=0xE44D41,
+        )
+        if closing_message:
+            embed.add_field(name="Closing Message", value=closing_message, inline=False)
+            embed.title = "Ticket Closed"
+    else:
+        embed = discord.Embed(
+            description=f"Member ({user.id}) left the server. Ticket is still closed.",
+            color=0xE44D41,
+        )
+    await interaction.channel.send(embed=embed)
+    embed = discord.Embed(
+        title="", description="""```STAFF CONTROLS PANEL```""", color=0xE44D41
+    )
+    view = TicketAdminButtons()
+    view.add_item(transcript_button)
+    await interaction.channel.send(embed=embed, view=view)
+    await interaction.channel.edit(
+        topic=f":no_entry_sign: {interaction.channel.topic}"
+    )
+
+class SetClosingMessageButton(discord.ui.Button):
     def __init__(self):
+        super().__init__(label="Set Closing Message", style=discord.ButtonStyle.blurple)
+
+    async def callback(self, interaction: discord.Interaction):
+        modal = ClosingMessageModal(original_message=self.view.message)
+        await interaction.response.send_modal(modal)
+
+class ClosingMessageModal(discord.ui.Modal):
+    def __init__(self, original_message):
+        super().__init__(title="Set Closing Message")
+        self.original_message = original_message
+        self.add_item(discord.ui.TextInput(
+            label="Closing Message",
+            placeholder="Enter a message to send when closing the ticket",
+            style=discord.TextStyle.paragraph,
+            required=True
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        closing_message = self.children[0].value
+        await self.original_message.edit(
+            embed=discord.Embed(description="<:yes:1036811164891480194> **Ticket Closure Confirmed**", color=discord.Color.green()), 
+            view=None
+        )
+        await interaction.response.defer()
+        await perform_ticket_close(interaction, closing_message)
+
+class ConfirmCloseTicketButtons(discord.ui.View):
+    def __init__(self, override_closing_message=None, ticket_owner_id=None, interaction_user_id=None):
         super().__init__(timeout=None)
+        self.override_closing_message = override_closing_message
+        self.ticket_owner_id = ticket_owner_id
+        self.interaction_user_id = interaction_user_id
+        if self.ticket_owner_id is not None and self.interaction_user_id is not None and self.interaction_user_id != self.ticket_owner_id:
+            self.add_item(SetClosingMessageButton())
 
     @discord.ui.button(label="Yes", style=discord.ButtonStyle.green, custom_id="yes")
     async def yes(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Closing Ticket...",
-            description="Ticket will be closed in 3 seconds",
-            color=0xFF0000,
-        )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         await interaction.response.edit_message(
             embed=discord.Embed(description="<:yes:1036811164891480194> **Ticket Closure Confirmed**", color=discord.Color.green()), 
             view=None
         )
-        msg = await interaction.channel.send(embed=embed)
-        left = False
-        user = None
-        try:
-            user = await interaction.guild.fetch_member(int(interaction.channel.topic))
-        except Exception:
-            left = True
-
-        ref = db.reference("/Tickets")
-        tickets = ref.get()
-        for key, value in tickets.items():
-            if value["Server ID"] == interaction.guild.id:
-                LOGCHANNEL_ID = value["Log Channel ID"]
-                break
-        log = interaction.guild.get_channel(LOGCHANNEL_ID)
-
-        if not user:
-            left = True
-
-        f, usersInvolved, user_message_counts = await get_transcript(interaction, user)
-
-        if left == False and user != None:
-            embed = discord.Embed(
-                title="Ticket closed",
-                description=f"Ticket created by {user.mention} is closed by {interaction.user.mention}",
-                color=0xE44D41,
-            )
-            try:
-                embed.set_author(
-                    name=f"{user.name}", icon_url=user.avatar.url
-                )
-            except Exception:
-                embed.set_author(name=f"{user.name}")
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            embed.set_footer(text=f"Ticket ID: {interaction.channel.id}")
-        else:
-            embed = discord.Embed(
-                title="Ticket closed",
-                description=f"Ticket created by a member who has left the server is closed by {interaction.user.mention}",
-                color=0xE44D41,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        user_list = "\n".join(f"- {user.mention} `({user_message_counts[user]})`" for user in usersInvolved) if usersInvolved else "`None`"
-        embed.add_field(name="Users Involved", value=user_list, inline=True)
-
-        with open(f"../Fischl/shared/Tickets/{interaction.channel.id}.html", "r", encoding="utf-8") as f:
-            try:
-                summary = await generate(
-                    f"The following is the entire history of the ticket in a Discord server for a user. "
-                    "Please summarise the entire interaction into 1 or 2 sentences. "
-                    "Only give 1 response option. Do not output additional text such as 'Here is the summary:'. "
-                    f"Exclude the channel names, user IDs, server names, Fischl (bot name), or the fact that a ticket is created or closed in your response.\n\n"
-                    "Full transcript:\n"
-                    f"{f.read().split('<!DOCTYPE html>')[1]}")
-            except Exception as e:
-                print(e)
-                summary = "`AI Summary Temporarily Unavailable`"
-
-        first_message = [msg async for msg in interaction.channel.history(oldest_first=True)][0]
-        embed.add_field(name="Ticket Topic", value=first_message.embeds[0].title)
-
-        log_message = await log.send(
-            embed=embed,
-            file=discord.File(f"../Fischl/shared/Tickets/{interaction.channel.id}.html")
-        )
-
-        with open(f"../Fischl/shared/Tickets/{interaction.channel.id}.html", "rb") as f:
-            file_content = f.read()
-
-        checksum = hashlib.sha256(file_content + str(log.id).encode()).hexdigest()[:20]
-        token = f"{log.id}-{log_message.id}-{checksum}"
-        url = f"https://fischl.app/logs/{token}"
-
-        embed.add_field(name="Transcript Link", value=url, inline=False)
-        embed.add_field(name="Ticket Summary", value=summary)
-        await log_message.edit(embed=embed)
-        embed.title = f"Ticket closed in {interaction.guild.name}"
-        await interaction.client.get_channel(1417408712980697099).send(
-            embed=embed,
-            file=discord.File(f"../Fischl/shared/Tickets/{interaction.channel.id}.html")
-        )
-
-        try:
-            os.remove(f"../Fischl/shared/Tickets/{interaction.channel.id}.html")
-        except Exception:
-            pass
-
-        transcript_button = Button(
-            style=discord.ButtonStyle.link,
-            label="Transcript Link",
-            emoji="📜",
-            url=url
-        )
-        user_view = View()
-        user_view.add_item(transcript_button)
-
-        embed = discord.Embed(
-            title="Ticket closed",
-            description=f"Your ticket in **{interaction.guild.name}** is now closed.",
-            color=0xE44D41,
-        )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-        embed.set_footer(
-            text=f"You can always create a new ticket for additional assistance!"
-        )
-        
-        closing_message = db.reference(f"/Ticket Closing Messages/{interaction.channel.id}").get()
-        if closing_message:
-            embed.description += f"\n\n{closing_message}"
-        
-        try:
-            await user.send(embed=embed, view=user_view)
-            await interaction.channel.set_permissions(
-                user, send_messages=False, read_messages=False, attach_files=False
-            )
-        except Exception:
-            pass
-        await msg.delete()
-        if left == False:
-            embed = discord.Embed(
-                title="",
-                description="Ticket is closed and no longer visible to the member.",
-                color=0xE44D41,
-            )
-        else:
-            embed = discord.Embed(
-                title="",
-                description="Member left the server. Ticket is closed still.",
-                color=0xE44D41,
-            )
-        await interaction.channel.send(embed=embed)
-        embed = discord.Embed(
-            title="", description="""```STAFF CONTROLS PANEL```""", color=0xE44D41
-        )
-        view = TicketAdminButtons()
-        view.add_item(transcript_button)
-        await interaction.channel.send(embed=embed, view=view)
-        await interaction.channel.edit(
-            topic=f":no_entry_sign: {interaction.channel.topic}"
-        )
+        await perform_ticket_close(interaction, self.override_closing_message)
 
     @discord.ui.button(label="No", style=discord.ButtonStyle.red, custom_id="no")
     async def red(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1931,6 +1973,11 @@ class Ticket(commands.GroupCog, name="ticket"):
         try:
             user = await interaction.guild.fetch_member(int(interaction.channel.topic))
         except Exception:
+            return
+        if interaction.user.id == user.id:
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You cannot notify yourself!", ephemeral=True
+            )
             return
         embed = discord.Embed(
             title="⚠️ Notification ⚠️",
@@ -1992,7 +2039,8 @@ class Ticket(commands.GroupCog, name="ticket"):
         name="close",
         description="Closes the current ticket and prevents ticket author from viewing the ticket",
     )
-    async def ticket_close(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(closing_message="Optional custom closing message (staff only)")
+    async def ticket_close(self, interaction: discord.Interaction, closing_message: str = None) -> None:
         if ":no_entry_sign:" in interaction.channel.topic:
             embed = discord.Embed(
                 title="Ticket already closed :no_entry_sign:",
@@ -2002,6 +2050,12 @@ class Ticket(commands.GroupCog, name="ticket"):
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
+        
+        ticket_creator_id = int(interaction.channel.topic)
+        if closing_message and interaction.user.id == ticket_creator_id:
+            await interaction.response.send_message("Only staff can override the closing message.", ephemeral=True)
+            return
+        
         try:
             embed = discord.Embed(
                 title="Are you sure about that?",
@@ -2010,7 +2064,7 @@ class Ticket(commands.GroupCog, name="ticket"):
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(
-                embed=embed, view=ConfirmCloseTicketButtons(), ephemeral=True
+                embed=embed, view=ConfirmCloseTicketButtons(override_closing_message=closing_message), ephemeral=True
             )
         except Exception:
             embed = discord.Embed(
