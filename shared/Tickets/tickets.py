@@ -668,7 +668,7 @@ class DropdownOptionModal(discord.ui.Modal):
         
         self.add_item(discord.ui.TextInput(
             label="Emoji",
-            placeholder="Optional emoji name or ID",
+            placeholder="Format: <:name:id> or unicode emoji",
             default=option_data["emoji"],
             required=False
         ))
@@ -718,7 +718,7 @@ class ButtonOptionModal(discord.ui.Modal):
         self.button_index = button_index
         
         button_data = editor.buttons[button_index] if button_index is not None else {
-            "label": "", "emoji": "", "color": "green", "opening_message": "", "closing_message": ""
+            "label": "", "emoji": "", "color": "grey", "opening_message": "", "closing_message": ""
         }
         
         self.add_item(discord.ui.TextInput(
@@ -731,7 +731,7 @@ class ButtonOptionModal(discord.ui.Modal):
         
         self.add_item(discord.ui.TextInput(
             label="Emoji",
-            placeholder="Optional emoji name or ID",
+            placeholder="Format: <:name:id> or unicode emoji",
             default=button_data["emoji"],
             required=False
         ))
@@ -771,7 +771,7 @@ class ButtonOptionModal(discord.ui.Modal):
             "red": discord.ButtonStyle.red,
             "grey": discord.ButtonStyle.gray
         }
-        color = color_map.get(color_str, discord.ButtonStyle.green)
+        color = color_map.get(color_str, discord.ButtonStyle.grey)
         
         button_data = {
             "label": self.children[0].value,
@@ -998,7 +998,7 @@ class TicketPanelMainView(discord.ui.View):
                 "red": discord.ButtonStyle.red,
                 "grey": discord.ButtonStyle.gray
             }
-            style = style_map.get(button_data["color"], discord.ButtonStyle.green)
+            style = style_map.get(button_data["color"], discord.ButtonStyle.grey)
             
             class PanelButton(discord.ui.Button):
                 def __init__(self, button_data, editor):
@@ -1344,7 +1344,7 @@ class PanelSelectView(discord.ui.View):
         await view.update_message(interaction)
 
 class CreateTicketButtonView(discord.ui.View):
-    def __init__(self, title="Create Ticket", emoji="🎫", color=discord.ButtonStyle.green, *, timeout=None):
+    def __init__(self, title="Create Ticket", emoji="🎫", color=discord.ButtonStyle.grey, *, timeout=None):
         super().__init__(timeout=timeout)
         self.add_item(CreateTicketButton(title, emoji, color))
         self.selected_option = None
@@ -1413,7 +1413,7 @@ class CreateTicketButtonView(discord.ui.View):
         self,
         title="Create Ticket",
         emoji="🎫",
-        color=discord.ButtonStyle.green,
+        color=discord.ButtonStyle.grey,
         *,
         timeout=None,
     ):
@@ -2417,8 +2417,8 @@ class TicketSettingsView(View):
             self.add_item(CooldownButton())
             self.add_item(RoleAccessButton())
             self.add_item(BlacklistButton())
-            self.add_item(DisableSystemButton())
             self.add_item(SnippetsButton())
+            self.add_item(DisableSystemButton())
         
         target = interaction or self.interaction
         if interaction:

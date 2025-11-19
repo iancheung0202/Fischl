@@ -20,7 +20,7 @@ class StatusCog(commands.Cog):
     async def status_task(self):
         timeout = 30
         await self.bot.change_presence(
-            status=discord.Status.dnd,
+            status=discord.Status.online,
             activity=discord.Activity(
                 type=discord.ActivityType.playing, name="Genshin Impact"
             ),
@@ -30,14 +30,14 @@ class StatusCog(commands.Cog):
             status=discord.Status.online,
             activity=discord.Activity(
                 type=discord.ActivityType.listening,
-                name=f"{len(self.bot.guilds)} guilds",
+                name=f"Website: fischl.app",
             ),
         )
         await asyncio.sleep(timeout)
         await self.bot.change_presence(
             status=discord.Status.online,
             activity=discord.Activity(
-                type=discord.ActivityType.playing, name=f"discord.gg/kaycd3fxHh"
+                type=discord.ActivityType.playing, name=f"Support: discord.gg/kaycd3fxHh"
             ),
         )
 

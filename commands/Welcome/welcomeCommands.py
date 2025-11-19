@@ -1,8 +1,10 @@
-import discord, firebase_admin, datetime, asyncio, time, emoji, aiohttp
+import discord
+import datetime
+import aiohttp
+
 from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, View
 from PIL import Image, ImageEnhance
 from commands.Welcome.createWelcomeMsg import createWelcomeMsg
 
@@ -32,7 +34,7 @@ class embed_modal(discord.ui.Modal, title="Setup Embed Welcome Message"):
     msg = discord.ui.TextInput(
         label="Normal message content",
         style=discord.TextStyle.paragraph,
-        placeholder="Visit bit.ly/fischlvariables for all dynamic variables",
+        placeholder="Dynamic variables: fischl.app/variables.html",
         max_length=2000,
         required=False,
     )
@@ -40,7 +42,7 @@ class embed_modal(discord.ui.Modal, title="Setup Embed Welcome Message"):
     embedtitle = discord.ui.TextInput(
         label="Title of the embed",
         style=discord.TextStyle.paragraph,
-        placeholder="Visit bit.ly/fischlvariables for all dynamic variables",
+        placeholder="Dynamic variables: fischl.app/variables.html",
         max_length=256,
         required=False,
     )
@@ -48,7 +50,7 @@ class embed_modal(discord.ui.Modal, title="Setup Embed Welcome Message"):
     description = discord.ui.TextInput(
         label="Description of the embed",
         style=discord.TextStyle.paragraph,
-        placeholder="Visit bit.ly/fischlvariables for all dynamic variables",
+        placeholder="Dynamic variables: fischl.app/variables.html",
         max_length=4000,
         required=False,
     )

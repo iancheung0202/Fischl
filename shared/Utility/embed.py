@@ -313,7 +313,7 @@ class ButtonLinkModal(Modal):
         
         self.add_item(TextInput(
             label="Emoji (optional)",
-            placeholder="emoji name or ID",
+            placeholder="Format: <:name:id> or unicode emoji",
             default=link_data["emoji"],
             required=False
         ))
