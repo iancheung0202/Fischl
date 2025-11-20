@@ -216,8 +216,8 @@ async def createProfileCard(
     user,
     num: str,
     rank: str,
-    bg: str = "../Fischl/assets/mora_bg.png",
-    filename: str = "../Fischl/assets/mora.png",
+    bg: str = "../assets/mora_bg.png",
+    filename: str = "../assets/mora.png",
     profile_frame: str = None
 ):
     # Preload avatar once (RGBA circle)
@@ -230,10 +230,10 @@ async def createProfileCard(
     im_avatar.putalpha(mask)  # avatar is now circular RGBA
 
     # Preload fonts only once
-    font_display = ImageFont.truetype("../Fischl/assets/ja-jp.ttf", 45)
-    font_username = ImageFont.truetype("../Fischl/assets/ja-jp.ttf", 25)
-    font_mora = ImageFont.truetype("../Fischl/assets/ja-jp.ttf", 40)
-    font_rank = ImageFont.truetype("../Fischl/assets/ja-jp.ttf", 35)
+    font_display = ImageFont.truetype("../assets/ja-jp.ttf", 45)
+    font_username = ImageFont.truetype("../assets/ja-jp.ttf", 25)
+    font_mora = ImageFont.truetype("../assets/ja-jp.ttf", 40)
+    font_rank = ImageFont.truetype("../assets/ja-jp.ttf", 35)
 
     # Helper to load image frames
     def load_image_frames(path):
@@ -258,11 +258,11 @@ async def createProfileCard(
 
     # Determine if we need animated output
     bg_animated = bg and bg.lower().endswith('.gif') and os.path.exists(bg)
-    frame_animated = profile_frame and profile_frame.lower().endswith('.gif') and os.path.exists(f"../Fischl/assets/Profile Frame/{profile_frame}")
+    frame_animated = profile_frame and profile_frame.lower().endswith('.gif') and os.path.exists(f"../assets/Profile Frame/{profile_frame}")
     print("bg_animated:", bg_animated)
     print("frame_animated:", frame_animated)
     print("bg exists:", os.path.exists(bg) if bg else "no bg")
-    print("frame exists:", os.path.exists(f"../Fischl/assets/Profile Frame/{profile_frame}") if profile_frame else "no frame")
+    print("frame exists:", os.path.exists(f"../assets/Profile Frame/{profile_frame}") if profile_frame else "no frame")
 
     
     if bg_animated or frame_animated:
@@ -271,7 +271,7 @@ async def createProfileCard(
         bg_frames, bg_durations, bg_disposals = load_image_frames(bg) or ([Image.new('RGBA', (720, 256), (0,0,0,255))], [100], [2])
 
         # Load profile frame frames
-        frame_path = f"../Fischl/assets/Profile Frame/{profile_frame}" if profile_frame else None
+        frame_path = f"../assets/Profile Frame/{profile_frame}" if profile_frame else None
         frame_frames, frame_durations, frame_disposals = load_image_frames(frame_path) or ([None], [100], [2])
         print("Number of bg frames:", len(bg_frames))
         print("Number of frame frames:", len(frame_frames))
@@ -299,7 +299,7 @@ async def createProfileCard(
             frame.paste(im_avatar, (40, 30), im_avatar)
             
             try:
-                im_mora_icon = Image.open("../Fischl/assets/mora_icon.png").convert("RGBA")
+                im_mora_icon = Image.open("../assets/mora_icon.png").convert("RGBA")
                 # Create circular mask for Mora icon
                 icon_mask = Image.new("L", im_mora_icon.size, 0)
                 d_icon = ImageDraw.Draw(icon_mask)
@@ -348,15 +348,14 @@ async def createProfileCard(
     try:
         im_bg = Image.open(bg).convert("RGBA")
     except Exception:
-        im_bg = Image.open("../Fischl/assets/mora_bg.png").convert("RGBA")
+        im_bg = Image.open("../assets/mora_bg.png").convert("RGBA")
 
     # Paste the avatar onto background
     im_bg.paste(im_avatar, (40, 30), im_avatar)
-    im_profile_frame = Image.open(f"../Fischl/assets/Profile Frame/{profile_frame}").convert("RGBA") if profile_frame else None
-
+    im_profile_frame = Image.open(f"../assets/Profile Frame/{profile_frame}").convert("RGBA") if profile_frame else None
     # Paste the Mora icon
     try:
-        im_mora_icon = Image.open("../Fischl/assets/mora_icon.png").convert("RGBA")
+        im_mora_icon = Image.open("../assets/mora_icon.png").convert("RGBA")
         # Create circular mask for Mora icon
         icon_mask = Image.new("L", im_mora_icon.size, 0)
         d_icon = ImageDraw.Draw(icon_mask)
@@ -1144,18 +1143,18 @@ def profile_inventory(guild_id):
         import asyncio
         
         # Determine background and frame
-        bg_path = "../Fischl/assets/mora_bg.png"  # default
+        bg_path = "../assets/mora_bg.png"  # default
 
         animated_background = selected.get("animated_background")
         profile_frame = selected.get("profile_frame")
 
-        customized = os.path.isfile(f"../Fischl/assets/Mora Inventory Background/{user_id}.png") or bool(profile_frame) or bool(animated_background)
+        customized = os.path.isfile(f"../assets/Mora Inventory Background/{user_id}.png") or bool(profile_frame) or bool(animated_background)
 
         if customized:
             if animated_background:
-                bg_path = f"../Fischl/assets/Animated Mora Inventory Background/{animated_background}.gif"
+                bg_path = f"../assets/Animated Mora Inventory Background/{animated_background}.gif"
             else:
-                bg_path = f"../Fischl/assets/Mora Inventory Background/{user_id}.png"
+                bg_path = f"../assets/Mora Inventory Background/{user_id}.png"
 
         # Create unique filename for this user/guild
         card_filename = f"./assets/profile_cards/{user_id}_{guild_id}.png"

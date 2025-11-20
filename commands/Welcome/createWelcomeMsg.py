@@ -1,6 +1,7 @@
 from PIL import Image, ImageDraw, ImageFont
 
 ### ------ WELCOME IMAGE CARD ------ ###
+
 async def createWelcomeMsg(user, bg="./assets/bg.png", filename="./assets/welcome.png"):
     try:
         await user.avatar.with_static_format("png").with_size(256).save(filename)
@@ -30,6 +31,22 @@ async def createWelcomeMsg(user, bg="./assets/bg.png", filename="./assets/welcom
     d2.text((((1024/2)-(20*(textLen/2))),410), text, font=font, fill=color)
     im1.save(filename)
     return filename
+
+def word(n):
+    return str(n) + ("th" if 4 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
+
+def script(string, user, guild):
+    if "{mention}" in string:
+        string = string.replace("{mention}", f"{user.mention}")
+    if "{server}" in string:
+        string = string.replace("{server}", f"{guild.name}")
+    if "{user}" in string:
+        string = string.replace("{user}", f"{user.name}")
+    if "{count}" in string:
+        string = string.replace("{count}", f"{guild.member_count}")
+    if "{count-th}" in string:
+        string = string.replace("{count-th}", f"{word(guild.member_count)}")
+    return string
 
 async def setup(bot):
     pass
