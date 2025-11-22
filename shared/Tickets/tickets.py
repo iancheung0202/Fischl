@@ -146,10 +146,12 @@ async def create_ticket(interaction, topic=None, custom_opening_message=None, cl
         await chn.set_permissions(
             interaction.user, send_messages=True, read_messages=True, attach_files=True
         )
+        ticket_creation_message = f"**{interaction.user.mention}, welcome!**"
         if interaction.guild.id == 791534106919305226 and "Club/Clan Applications" in topic:
             club_president_role = interaction.guild.get_role(1429160134084661429)
             if club_president_role:
                 await chn.set_permissions(club_president_role, send_messages=True, read_messages=True, attach_files=True)
+                ticket_creation_message = f"<@&1429160134084661429> A new club/clan application has been created by {interaction.user.mention}."
     except Exception:
         await interaction.followup.send(
             content=f"<:no:1036810470860013639> **I'm missing permissions to create or edit text channels!** \nPlease make sure my role has `MANAGE_CHANNELS` permissions.", ephemeral=True
@@ -208,7 +210,7 @@ async def create_ticket(interaction, topic=None, custom_opening_message=None, cl
         inline=True,
     )
     await chn.send(
-        f"**{interaction.user.mention}, welcome!** {f'||<@&{PING_ROLE_ID}>||' if PING_ROLE_ID is not None else ''}",
+        f"{ticket_creation_message} {f'||<@&{PING_ROLE_ID}>||' if PING_ROLE_ID is not None else ''}",
         embed=embed,
         view=CloseTicketButton(),
     )
@@ -1406,21 +1408,6 @@ class SelectView(discord.ui.View):
     def __init__(self, placeholder=None, options=None, *, timeout=None):
         super().__init__(timeout=timeout)
         self.add_item(Select(placeholder, options))
-
-
-class CreateTicketButtonView(discord.ui.View):
-    def __init__(
-        self,
-        title="Create Ticket",
-        emoji="🎫",
-        color=discord.ButtonStyle.grey,
-        *,
-        timeout=None,
-    ):
-        super().__init__(timeout=timeout)
-        self.add_item(CreateTicketButton(title, emoji, color))
-        self.selected_option = None
-        self.button_data = None
 
 
 class CloseTicketButton(discord.ui.View):
