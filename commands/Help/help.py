@@ -108,17 +108,6 @@ class Select(discord.ui.Select):
                     else formatter(cmd)
                 )
             },
-            "sigils_giveaways": {
-                "title": "Sigils & Giveaway System",
-                "emoji": "<a:sigils:1402736987902967850>",
-                "description": "The Sigils system rewards users with Sigils for sending meaningful messages in chat, which are earned in batches up to a daily cap. These Sigils can then be spent to enter giveaways, with certain roles granting higher earning limits for increased participation. Use </giveaway enable:1402740034603319570> to setup and </giveaway settings:1402740034603319570> to modify the rewards.",
-                "condition": lambda cmd: "sigils" in cmd.name or "giveaway" in cmd.name,
-                "formatter": lambda cmd: (
-                    f" \n\n{cmd.mention}\n{REPLY} {cmd.description}"
-                    if "sigils" in cmd.name
-                    else formatter(cmd)
-                )
-            },
             "boosterrole": {
                 "title": "Booster Roles",
                 "emoji": "💎",

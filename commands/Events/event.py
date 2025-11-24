@@ -3241,14 +3241,6 @@ class MoraChestView(discord.ui.View):
                 description=f"{MORA_EMOTE} `{text}` is **added** to your inventory!",
                 color=discord.Color.green()
             )
-            
-            sigil_cog = interaction.client.get_cog("SigilSystem")
-            sigils_earned = None
-            if await sigil_cog.is_enabled(interaction.guild.id):
-                sigils_earned = random.randint(5, 10)
-                await sigil_cog.add_sigils(interaction.guild.id, interaction.user.id, sigils_earned)
-                embed.description += f"\n<:reply:1036792837821435976> *By the way, the sky dropped <a:sigils:1402736987902967850> `{sigils_earned}` Lunar Sigils for you.*"
-                embed.set_footer(text="Tip: Use /sigils to check your Lunar Sigils balance!")
 
             embed.add_field(name="Chest Breakdown", value=f"-# Base: {MORA_EMOTE} `{tier_map[view.tier]}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {'<a:streak:1371651844652273694>' if view.streak > 1 else ''}", inline=True)
 

@@ -1,5 +1,4 @@
 from commands.Partnership.partnershipSystem import PartnerRequestButtonView
-from commands.Sigils.sigils import GiveawayEntryView, PersistentSigilsInfoView
 
 from commands.CoOp.coOpSystem import CoOpButtonViewSystem
 from commands.CoOp.coOpSystem import CoOpView as CoOpViewSystem
@@ -13,7 +12,6 @@ from commands.Events.helperFunctions import PersistentXPQuestInfoView, TierRewar
 
 from commands.Custom.celestial import RefreshStaffViewCelestial, LeaksAccessCelestial
 from commands.Custom.levelUp import ShowPerksBulletin
-from commands.Custom.fourCorners import GameAnnounceView
 
 from shared.Tickets.tickets import CloseTicketButton, TicketAdminButtons, ConfirmCloseTicketButtons, CreateTicketButtonView, SelectView
 from shared.Boosters.booster import AutoResponseApprovalView, RoleApprovalView
@@ -35,10 +33,7 @@ views = [
     AutoResponseApprovalView,
     RoleApprovalView,
     PersistentXPQuestInfoView,
-    GameAnnounceView,
     TierRewardsView,
-    GiveawayEntryView,
-    PersistentSigilsInfoView,
     CloseTicketButton,
     TicketAdminButtons,
     ConfirmCloseTicketButtons,
