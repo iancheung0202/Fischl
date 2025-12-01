@@ -1,4 +1,5 @@
 from commands.Partnership.partnershipSystem import PartnerRequestButtonView
+from commands.Utility.topic import TopicAcceptRejectView
 
 from commands.CoOp.coOpSystem import CoOpButtonViewSystem
 from commands.CoOp.coOpSystem import CoOpView as CoOpViewSystem
@@ -39,4 +40,5 @@ views = [
     ConfirmCloseTicketButtons,
     CreateTicketButtonView,
     SelectView,
+    TopicAcceptRejectView,
 ]

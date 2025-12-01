@@ -3286,6 +3286,24 @@ class MoraChestView(discord.ui.View):
             print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
 
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title="",
+                    description=(
+                        "## <:YanfeiNote:1335644122253623458> **How do you even check your staff past experiences?**\n"
+                        "Introducing **ServerCV** — a **verified staff experience resume** applicants can share when applying for roles. "
+                        "It helps servers instantly spot real experience and reduce fake claims. <:PaimonWow:1188553806456291489>\n\n"
+                        "<:dot:1357188726047899760> Clean, trusted resume link (example: https://servercv.com/u/ian)\n"
+                        "<:dot:1357188726047899760> No setup required for your server. Just endorse your staff members!\n"
+                        "### <:CharlotteHeart:1191594476263702528> **Check us out for more info:** https://servercv.com/"
+                    ),
+                    color=discord.Color.blurple()
+                ).set_footer(text="Share this to your server owner or staff members!"),
+                ephemeral=True,
+                view=View().add_item(Button(label="Try ServerCV", url="https://servercv.com/", style=discord.ButtonStyle.link))
+            )
+
+
             return 
             await interaction.followup.send(
                 embed=discord.Embed(

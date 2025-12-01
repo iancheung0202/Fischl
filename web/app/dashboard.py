@@ -138,7 +138,7 @@ def api_dashboard_guilds():
         )
 
         for g in guilds_sorted:
-            if not (g.get("owner") or (int(g.get("permissions", 0)) & 0x8)):
+            if not (g.get("owner") or (int(g.get("permissions", 0)) & 0x8) or (int(g.get("permissions", 0)) & 0x32)):
                 continue
 
             icon = f"https://cdn.discordapp.com/icons/{g['id']}/{g['icon']}.png?size=128" if g.get("icon") else ""

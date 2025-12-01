@@ -44,7 +44,7 @@ def verify_guild_access(guild_id, discord_token, api_base=API_BASE, bot_token=BO
             if not guild:
                 return False, {"error": "Guild not found or you don't have access to this guild anymore."}, 404
 
-            if require_admin and not (guild.get("owner") or (int(guild.get("permissions", 0)) & 0x8)):
+            if require_admin and not (guild.get("owner") or (int(guild.get("permissions", 0)) & 0x8) or (int(guild.get("permissions", 0)) & 0x32)):
                 return False, {"error": "You need administrator permissions to configure this guild."}, 403
             
             return True, guild, None
