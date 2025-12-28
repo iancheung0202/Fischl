@@ -50,7 +50,7 @@ function updateDisplay() {
     }
 
     const diffSec = (now - lastPingDate) / 1000;
-    const isOnline = diffSec < 180;  // 3 minutes threshold to indicate offline
+    const isOnline = diffSec < 300;  // 5 minutes threshold to indicate offline
     statusDiv.textContent = isOnline ? "Online" : "Offline";
     statusDiv.className = "status-value " + (isOnline ? "online" : "offline");
 
@@ -140,15 +140,6 @@ db.ref('Bot Status/ping_history').limitToLast(100).on('child_added', snapshot =>
         }
         updateDisplay();
     }
-});
-
-db.ref('Bot Status/ping_history').limitToLast(100).once('value', snapshot => {
-    const val = snapshot.val() || {};
-    pingHistory = Object.values(val).map(p => ({
-        timestamp: p.timestamp,
-        latency_ms: p.latency_ms
-    })).sort((a,b) => a.timestamp - b.timestamp);
-    updateDisplay();
 });
 
 db.ref('Uptime').limitToFirst(1).once('value').then(snapshot => {

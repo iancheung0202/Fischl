@@ -58,18 +58,15 @@ class StatusCog(commands.Cog):
                 'timestamp': timestamp_ms,
                 'latency_ms': latency_ms
             })
-            db.reference('Bot Status/latency_history').push({
-                'timestamp': timestamp_ms,
-                'latency_ms': latency_ms
-            })
 
-            cutoff = timestamp_ms - 24 * 60 * 60 * 1000
-            for path in ['Bot Status/ping_history', 'Bot Status/latency_history']:
-                ref = db.reference(path)
+            # Cleanup every hour
+            if self.status_heartbeat.current_loop % 60 == 0:
+                cutoff = timestamp_ms - 24 * 60 * 60 * 1000
+                ref = db.reference('Bot Status/ping_history')
                 old_entries = ref.order_by_child('timestamp').end_at(cutoff).get()
                 if old_entries:
-                    for key in old_entries.keys():
-                        ref.child(key).delete()
+                    updates = {key: None for key in old_entries.keys()}
+                    ref.update(updates) 
 
         except Exception as e:
             print(f"Failed to send heartbeat: {e}")
