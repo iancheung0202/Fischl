@@ -3,13 +3,14 @@ import os
 import firebase_admin
 import threading
 import psutil
+import asyncpg
 
 from firebase_admin import credentials
 from discord.ext import commands
 from utils.persistent import views
 from utils.controls import BotControlServer
 from utils.uptime import app
-from assets.secret import DISCORD_TOKEN, DATABASE_PATH, DATABASE_URL
+from assets.secret import DISCORD_TOKEN, DATABASE_PATH, DATABASE_URL, DATABASE_USER, DATABASE_PASSWORD
 
 cred = credentials.Certificate(DATABASE_PATH)
 default_app = firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
@@ -28,6 +29,13 @@ class Fischl(commands.AutoShardedBot):
         )
 
     async def setup_hook(self):
+        self.pool = await asyncpg.create_pool(
+            database="db",
+            user=DATABASE_USER,
+            password=DATABASE_PASSWORD,
+            host="localhost",
+        )
+
         for directory in ["cogs", "commands", "shared"]:
             for path, _, files in os.walk(directory):
                 for name in files:

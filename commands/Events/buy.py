@@ -7,12 +7,23 @@ from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
 
-from commands.Events.helperFunctions import get_total_mora
-
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
 global_purchase_queue = asyncio.Queue()
-processing_global_queue = False
+
+async def purchase_worker():
+    while True:
+        request, future, process_func = await global_purchase_queue.get()
+        try:
+            await process_func(request)
+            if not future.done():
+                future.set_result(None)
+        except Exception as e:
+            print(f"Error in purchase worker: {e}")
+            if not future.done():
+                future.set_exception(e)
+        finally:
+            global_purchase_queue.task_done()
 
 async def process_pending_stock_edits(guild_id: int):
     current_time = time.time()
@@ -156,32 +167,6 @@ class ConfirmPurchaseView(discord.ui.View):
             await current_message.edit(embed=embed, view=self)
         except (discord.NotFound, IndexError, AttributeError):
             pass
-        
-    async def enqueue_global_request(self, request: PurchaseRequest):
-        await global_purchase_queue.put(request)
-        
-    async def wait_for_turn_and_process(self, my_request: PurchaseRequest):
-        global processing_global_queue
-        while True:
-            if not processing_global_queue:
-                processing_global_queue = True
-                break
-            await asyncio.sleep(1)
-
-        try:
-            while True:
-                next_request = await global_purchase_queue.get()
-                try:
-                    if next_request.interaction.message.id == my_request.interaction.message.id:
-                        await self.process_purchase(next_request)
-                        break  # Done
-                    else:
-                        await global_purchase_queue.put(next_request)
-                        await asyncio.sleep(1)
-                finally:
-                    global_purchase_queue.task_done()
-        finally:
-            processing_global_queue = False
 
     async def process_purchase(self, request):
         interaction, itemName = request.interaction, request.itemName
@@ -200,13 +185,32 @@ class ConfirmPurchaseView(discord.ui.View):
             await asyncio.sleep(1)  # Give a moment for DB to stabilize
         
         roleName = self.itemName
+
+        if interaction.guild.id == 1344543366372655164:  # Xianyun's Hangout
+            history_ref = db.reference(f"/Mora Purchase History/{interaction.guild.id}/{interaction.user.id}")
+            history_snapshot = history_ref.order_by_key().limit_to_last(10).get()
+            
+            if history_snapshot:
+                current_time = time.time()
+                for key, val in history_snapshot.items():
+                    if val.get('item_name') == roleName:
+                        purchase_time = val.get('timestamp', 0)
+                        if current_time - purchase_time < 60 * 60 * 24 * 45: # 45 days
+                            embed = discord.Embed(
+                                title="<:keksweat:1381225834110652497> Miss Xianyun wants to give someone else a chance!",
+                                description=f"You have already purchased **{roleName}** recently. You can only buy this item again in <t:{int(60 +  purchase_time)}:R>.",
+                                color=discord.Color.red()
+                            )
+                            await interaction.edit_original_response(embed=embed, view=None)
+                            return
+
         try:
             gangRole = interaction.guild.get_role(int(roleName))
         except Exception:
             gangRole = None
         if gangRole is not None and gangRole in interaction.user.roles:
             embed = discord.Embed(
-                title="Oops!",
+                title="<:DW_elhmm:971735422147379200> Oops!",
                 description=f"You already have the {gangRole.mention} role. Unlike some titles, you can only purchase roles **once**.",
                 color=discord.Color.red(),
             )
@@ -255,7 +259,7 @@ class ConfirmPurchaseView(discord.ui.View):
                 
         if len(rewards[x]) > 4 and rewards[x][4] == 0:
             embed = discord.Embed(
-                title="Out of Stock",
+                title="<a:out_of_stock:1384990609584033812> Out of Stock",
                 description=f"**{role_mention}** has run out of stock! Ask an admin to restock.",
                 color=discord.Color.red(),
             )
@@ -264,7 +268,7 @@ class ConfirmPurchaseView(discord.ui.View):
         
         if itemCost > total_available:
             embed = discord.Embed(
-                title="Insufficient Mora",
+                title="<:WrioShrug:1304094173795713114> Insufficient Mora",
                 description=f"We couldn't assign you **{role_mention}**. Please check your mora balance using </mora:1339721187953082543> to confirm if you have enough guild-specific mora for this purchase.",
                 color=discord.Color.red(),
             )
@@ -334,7 +338,7 @@ class ConfirmPurchaseView(discord.ui.View):
             xp_earned = f"\n> <:PinkConfused:1204614149628498010> You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"
                 
             embed = discord.Embed(
-                title="Successful Purchase",
+                title="<a:NekoHappy:1335019855920758855> Successful Purchase",
                 description=f"Congratulations! You have paid {MORA_EMOTE} **{itemCost:,}** and now own **{role_mention}**. {xp_earned}",
                 color=discord.Color.green(),
             )
@@ -396,10 +400,6 @@ class ConfirmPurchaseView(discord.ui.View):
                 print(f"Logged purchase to history: {purchase_id} for user {interaction.user.id} in guild {interaction.guild.id}")
             except Exception as e:
                 print(f"Error logging purchase to history: {e}")
-        
-    async def cog_unload(self):
-        self.queue_processor.cancel()
-        await asyncio.gather(self.queue_processor, return_exceptions=True)
 
     @discord.ui.button(label="Purchase Item", style=discord.ButtonStyle.green)
     async def purchaseItem(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -414,9 +414,10 @@ class ConfirmPurchaseView(discord.ui.View):
         await interaction.edit_original_response(view=None)
 
         request = PurchaseRequest(interaction, self.itemName)
-        await self.enqueue_global_request(request)
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
 
-        if processing_global_queue or global_purchase_queue.qsize() > 1:
+        if global_purchase_queue.qsize() > 0:
             embed = discord.Embed(
                 title="Purchase Queued",
                 description=f"Your purchase is in queue. Please wait while we validate your purchase <a:loading:1026905298088243240>",
@@ -431,7 +432,8 @@ class ConfirmPurchaseView(discord.ui.View):
             )
             await interaction.edit_original_response(embed=processing_embed)
 
-        await self.wait_for_turn_and_process(request)
+        await global_purchase_queue.put((request, future, self.process_purchase))
+        await future
 
     @discord.ui.button(
         label="Cancel", style=discord.ButtonStyle.grey, custom_id="cancelbuy"
@@ -448,6 +450,18 @@ class ConfirmPurchaseView(discord.ui.View):
 class Buy(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
+        self.worker_task = None
+
+    async def cog_load(self):
+        self.worker_task = self.bot.loop.create_task(purchase_worker())
+
+    async def cog_unload(self):
+        if self.worker_task:
+            self.worker_task.cancel()
+            try:
+                await self.worker_task
+            except asyncio.CancelledError:
+                pass
 
     @app_commands.command(
         name="buy", description="Purchase an item from the guild shop"
@@ -487,20 +501,9 @@ class Buy(commands.Cog):
             f"<@&{item}>" if isinstance(item, int) or item.isdigit() else item
         )
         embed = discord.Embed(
-            title="🛒 Confirm Purchase",
-            description="Click a button below to confirm your purchase.",
+            title="<:Paimon_Think:1414561896299888700> Confirm Purchase",
+            description=f"Are you sure you want to purchase **{role_mention}** for {MORA_EMOTE} **{itemCost:,}**?",
             color=discord.Color.gold()
-        )
-        embed.add_field(
-            name="Item",
-            value=role_mention,
-            inline=True
-        )
-
-        embed.add_field(
-            name="Cost",
-            value=f"{MORA_EMOTE} **{itemCost:,}**",
-            inline=True
         )
         embed.set_footer(text="Purchase buttons will timeout in 30 seconds")
         view = ConfirmPurchaseView(self.bot, item, interaction.user.id)

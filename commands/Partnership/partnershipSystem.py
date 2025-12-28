@@ -439,9 +439,10 @@ class Partner(commands.GroupCog, name="partner"):
             embed.add_field(name="Requester Mention", value=interaction.user.mention, inline=True)
             embed.set_footer(text="Status: 🟡 Pending")
             embed.set_thumbnail(url=server_icon_url)
-
+            
+            ping_role = f'<@&{partner_manager_role_id}>' if partner_manager_role_id not in [None, ''] else ''
             await thread.send(
-                content=f"{('<@&' + partner_manager_role_id + '>') if partner_manager_role_id not in [None, ''] else ''} {self.invite_link}",
+                content=f"{ping_role} {self.invite_link}",
                 embed=embed
             )
 

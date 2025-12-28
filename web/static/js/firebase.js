@@ -127,8 +127,25 @@ db.ref('Bot Status/last_latency_ms').on('value', snapshot => {
     }
 });
 
-db.ref('Bot Status/ping_history').limitToLast(500).on('value', snapshot => {
+db.ref('Bot Status/ping_history').limitToLast(500).on('child_added', snapshot => {
+    const p = snapshot.val();
+    if (p && p.timestamp) {
+        pingHistory.push({
+            timestamp: p.timestamp,
+            latency_ms: p.latency_ms
+        });
+        
+        // Keep local array at 500 to match the database limit
+        if (pingHistory.length > 500) {
+            pingHistory.shift(); 
+        }
+        updateDisplay();
+    }
+});
+
+db.ref('Bot Status/ping_history').limitToLast(500).once('value', snapshot => {
     const val = snapshot.val() || {};
+    // This initial 'once' fetch populates the array for the first time
     pingHistory = Object.values(val).map(p => ({
         timestamp: p.timestamp,
         latency_ms: p.latency_ms

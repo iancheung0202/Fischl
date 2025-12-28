@@ -863,8 +863,10 @@ class PostEmbedView(View):
                 )
                 await webhook.delete()
             else:
+                if channel.id == 1396565294582857738 and interaction.user.id == 692254240290242601:
+                    override_content = "<@&1391181456822501426> <@&792207033763758081>"
                 await channel.send(
-                    content=self.editor.message_content or None,
+                    content=override_content if 'override_content' in locals() else self.editor.message_content or None,
                     embed=embed,
                     view=final_view if self.editor.button_links else None
                 )
