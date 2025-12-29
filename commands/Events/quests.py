@@ -6,7 +6,7 @@ import random
 from firebase_admin import db
 from discord.ext import commands
 
-QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests"]
+QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests", "earn_big_mora", "gift_mora_unique", "summon_minigame", "customize_profile", "purchase_items", "unlock_drop_packs"]
 QUEST_GOAL_PRESETS = {
     "participate_minigames": {
         "daily": [4, 5],
@@ -37,6 +37,33 @@ QUEST_GOAL_PRESETS = {
         "daily": [1],
         "weekly": [5, 6, 7],
         "monthly": [20, 22, 24]
+    },
+    "earn_big_mora": {
+        "daily": [1, 2],
+        "weekly": [5, 7],
+        "monthly": [20, 25]
+    },
+    "gift_mora_unique": {
+        "daily": [2, 3],
+        "weekly": [5, 7],
+        "monthly": [15, 20]
+    },
+    "summon_minigame": {
+        "daily": [1],
+        "weekly": [3, 4, 5, 6],
+        "monthly": [15, 20]
+    },
+    "customize_profile": {
+        "daily": [1],
+        "weekly": [2, 3, 4],
+        "monthly": [10]
+    },
+    "purchase_items": {
+        "monthly": [1, 2, 3]
+    },
+    "unlock_drop_packs": {
+        "weekly": [2, 3],
+        "monthly": [5, 6, 7]
     }
 }
 QUEST_DESCRIPTIONS = {
@@ -45,7 +72,13 @@ QUEST_DESCRIPTIONS = {
     "win_1v1_minigames": "Win 1v1 minigames",
     "earn_mora": "Earn Mora",
     "gift_mora": "Gift Mora",
-    "collect_chests": "Collect chests"
+    "collect_chests": "Collect chests",
+    "earn_big_mora": "Earn 10k+ Mora in one go",
+    "gift_mora_unique": "Gift Mora to different users",
+    "summon_minigame": "Use /summon command",
+    "customize_profile": "Customize your profile",
+    "purchase_items": "Purchase shop items",
+    "unlock_drop_packs": "Unlock Mora Drop packs"
 }
 QUEST_XP_REWARDS = {
     "daily": 250,
@@ -81,7 +114,8 @@ def get_next_monthly_reset():
 
 def generate_quests(duration: str) -> dict:
     num_quests = 2 if duration == "daily" else 3
-    selected = random.sample(QUEST_TYPES, num_quests)
+    available_types = [q for q in QUEST_TYPES if duration in QUEST_GOAL_PRESETS.get(q, {})]
+    selected = random.sample(available_types, num_quests)
     quests = {}
     for q in selected:
         goal = random.choice(QUEST_GOAL_PRESETS[q][duration])
@@ -124,9 +158,19 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
             for q_type, amount in quest_dict.items():
                 if q_type in quests and q_type not in completed:
                     before = quests[q_type]["current"]
-                    quests[q_type]["current"] += amount
+                    
+                    if q_type == "gift_mora_unique":
+                        gifted = quests[q_type].get("gifted_users", [])
+                        if str(amount) not in [str(x) for x in gifted]:
+                            gifted.append(str(amount))
+                            quests[q_type]["gifted_users"] = gifted
+                            quests[q_type]["current"] = len(gifted)
+                            updated = True
+                    else:
+                        quests[q_type]["current"] += amount
+                        updated = True
+                    
                     after = quests[q_type]["current"]
-                    updated = True
 
                     if after >= quests[q_type]["goal"]:
                         completed[q_type] = True
@@ -170,7 +214,8 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                 user_id=userID,
                 old_xp=old_xp,
                 new_xp=new_xp,
-                channel=channel
+                channel=channel,
+                client=client
             )
             desc = "\n".join(messages) + f"\n\n**Total XP earned:** `{total_xp}` XP"
             await channel.send(

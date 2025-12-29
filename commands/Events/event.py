@@ -3290,6 +3290,22 @@ class MoraChestView(discord.ui.View):
                 embed=discord.Embed(
                     title="",
                     description=(
+                        "## <:MelonBread_KeqingNote:1342924552392671254> **Season 3 is Coming Soon!**\n"
+                        "We have preliminarily added **6 new quest types** for you to explore! Check if you have those new ones in </mora:1339721187953082543>.\n"
+                        "### <:CharlotteHeart:1191594476263702528> **Support Bot Development & Get Rewards**\n"
+                        "Consider purchasing the **Elite Track** to unlock exclusive cosmetics, boosts, and more! ***[View Elite Track](https://fischl.app/profile)***"
+                    ),
+                    color=discord.Color.gold()
+                ).set_thumbnail(url="https://media.discordapp.net/attachments/1106727534479032341/1381827880488669327/elite_track.png"),
+                ephemeral=True,
+                view=View().add_item(Button(label="Support Us", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
+            )
+
+            return 
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title="",
+                    description=(
                         "## <:YanfeiNote:1335644122253623458> **How do you even check your staff past experiences?**\n"
                         "Introducing **ServerCV** — a **verified staff experience resume** applicants can share when applying for roles. "
                         "It helps servers instantly spot real experience and reduce fake claims. <:PaimonWow:1188553806456291489>\n\n"
@@ -3303,8 +3319,6 @@ class MoraChestView(discord.ui.View):
                 view=View().add_item(Button(label="Try ServerCV", url="https://servercv.com/", style=discord.ButtonStyle.link))
             )
 
-
-            return 
             await interaction.followup.send(
                 embed=discord.Embed(
                     title="",
@@ -3435,7 +3449,6 @@ class MoraChestView(discord.ui.View):
             embed.set_footer(text="Thank you for helping keep things fair for everyone! 🫶")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-            return
             embed=discord.Embed(
                     title="",
                     description=(
@@ -3835,7 +3848,8 @@ class TheEventItself(commands.Cog):
                     user_id=user.id,
                     old_xp=old_xp,
                     new_xp=new_xp,
-                    channel=message.channel
+                    channel=message.channel,
+                    client=self.client
                 )
                 await message.channel.send(f"Added `{xp_amount}` XP to {user.mention}. Reached tier `{tier}`!")
             except Exception as e:
@@ -4043,6 +4057,8 @@ class Summon(commands.Cog):
         )
         embed.set_footer(text=f"You have {summons - 1} summon{'s' if summons - 1 != 1 else ''} remaining")
         await interaction.followup.send(embed=embed)
+        from commands.Events.quests import update_quest
+        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"summon_minigame": 1}, interaction.client)
         await minigame_func(interaction.channel, interaction.client)
         
 

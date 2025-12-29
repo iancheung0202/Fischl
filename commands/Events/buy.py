@@ -346,7 +346,9 @@ class ConfirmPurchaseView(discord.ui.View):
             from commands.Events.helperFunctions import TierRewardsView
             from commands.Events.event import add_xp
             from commands.Events.trackData import check_tier_rewards
+            from commands.Events.quests import update_quest
 
+            await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"purchase_items": 1}, interaction.client)
             tier, old_xp, new_xp = await add_xp(interaction.user.id, interaction.guild.id, int(itemCost / 100), interaction.client)
             print(f"Added {int(itemCost/100)} XP from purchase.")
             free_embed, elite_embed = await check_tier_rewards(
@@ -354,7 +356,8 @@ class ConfirmPurchaseView(discord.ui.View):
                 user_id=interaction.user.id,
                 old_xp=old_xp,
                 new_xp=new_xp,
-                channel=interaction.channel
+                channel=interaction.channel,
+                client=interaction.client
             )
             await interaction.edit_original_response(embed=embed, view=TierRewardsView(free_embed, elite_embed) if xp_earned != "" else None)
             

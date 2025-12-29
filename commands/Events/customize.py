@@ -7,6 +7,7 @@ from discord.ext import commands
 from firebase_admin import db
 from PIL import Image, ImageEnhance
 from commands.Events.createProfileCard import createProfileCard
+from commands.Events.quests import update_quest
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -212,6 +213,7 @@ class ConfirmCustomizationView(discord.ui.View):
             description=desc,
             color=discord.Color.green()
         )
+        await update_quest(self.user_id, self.guild_id, interaction.channel.id, {"customize_profile": 1}, interaction.client)
         await interaction.response.edit_message(embed=embed, view=None)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey)
@@ -333,6 +335,9 @@ class Customize(commands.Cog):
                 profile_frame,
                 processed_pin
             )
+        
+        if custom_embed_color or global_title or pin_item:
+             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"customize_profile": 1}, interaction.client)
 
     async def process_pin_item(self, interaction: discord.Interaction, pin_item: str):
         """Handle pin/unpin operations and return success status"""

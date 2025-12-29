@@ -331,9 +331,9 @@ class ToggleView(discord.ui.View):
         if current_tier == 31:
             bonus_tiers = data.get("bonus_tier", 0)
             current_tier_display = f"31 + {bonus_tiers} Bonus"
-            next_bonus_xp = TRACK_DATA[-1]["cumulative_xp"] + (bonus_tiers + 1) * 2500
-            xp_needed = next_bonus_xp - user_xp
-            next_tier_info = f"Next Bonus Tier: {2500 - xp_needed} / 2500 XP"
+            xp_past_max = user_xp - TRACK_DATA[-1]["cumulative_xp"]
+            current_progress = xp_past_max % 2500
+            next_tier_info = f"Next Bonus Tier: {current_progress} / 2500 XP"
         else:
             current_tier_display = str(current_tier)
             next_tier_info = f"\n Next Tier: {xp_in_current_tier} / {next_tier_xp} XP"
@@ -678,14 +678,10 @@ class Mora(commands.Cog):
                 bg=bg_path,
                 profile_frame=profile_frame if profile_frame else None
             )
-            embed.set_footer(
-                text="Tip: Use /customize to pin a role/title next to your name in minigames!"
-            )
+            followup = False
         else:
             filename = await createProfileCard(user, f"{guild_total:,}", guild_rank)
-            embed.set_footer(
-                text="Tip: use /customize to customize your own inventory background for FREE!"
-            )
+            followup = True
 
         chn = interaction.client.get_channel(1026968305208131645)
         msg_obj = await chn.send(file=discord.File(filename))
@@ -695,6 +691,8 @@ class Mora(commands.Cog):
         view = ToggleView(embed, user.id, interaction.user.id, message=None, guild_id=interaction.guild.id, custom_color=custom_color)
         message = await interaction.followup.send(embed=embed, view=view)
         view.message = message
+        if followup:
+            await interaction.followup.send("💡 Tip: Customize your inventory however you like (custom background, profile frame, titles) with </customize:1339721187953082544>!", ephemeral=True)
 
     @app_commands.command(name="gift", description="Gift mora to another user")
     @app_commands.describe(
@@ -749,7 +747,7 @@ class Mora(commands.Cog):
                 color=discord.Color.green()
             )
         )
-        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"gift_mora": amount}, interaction.client)
+        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"gift_mora": amount, "gift_mora_unique": user.id}, interaction.client)
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Mora(bot))

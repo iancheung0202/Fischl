@@ -28,12 +28,12 @@ REWARD_TYPES = {
     "Animated Badge Title": "global_title"
 }
 
-async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False):
+async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False, client=None):
     if is_elite:
         elite_claimed_ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/elite_claimed")
         elite_claimed = elite_claimed_ref.get() or []
         if tier in elite_claimed:
-            return
+            return (None, None)
         if tier != "Bonus":
             elite_claimed.append(tier)
             elite_claimed_ref.set(elite_claimed)
@@ -47,6 +47,9 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
     if reward_type == "drop_pack":
         is_bonus = tier == "Bonus"
         message = await create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier)
+        if client:
+            from commands.Events.quests import update_quest
+            await update_quest(user_id, guild_id, channel.id, {"unlock_drop_packs": 1}, client)
         if is_bonus:
             title = f"{'Elite ' if is_elite else ''}New Bonus Drop Pack"
             description = "**Bonus:** "
@@ -146,7 +149,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
 
     return (title, description)
 
-async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel):
+async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=None):
     unlocked_tiers = []
     TRACK_DATA = get_current_track()
     for tier in TRACK_DATA:
@@ -156,12 +159,12 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel):
     embed = discord.Embed(color=0xffd700)
     elite_embed = discord.Embed(color=0xfa0add)
     for tier in unlocked_tiers:
-        title, description = await grant_reward(guild_id, user_id, tier["free"], tier["tier"], channel)
+        title, description = await grant_reward(guild_id, user_id, tier["free"], tier["tier"], channel, client=client)
         if title is not None and description is not None:
             embed.add_field(name=title, value=f"-# {description}", inline=False)
         
         if is_elite_active(user_id, guild_id):
-            title, description = await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True)
+            title, description = await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client)
             if title is not None and description is not None:
                 elite_embed.add_field(name=title, value=f"-# {description}", inline=False)
     
@@ -179,14 +182,14 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel):
         bonus_tiers_earned = new_bonus_tiers - old_bonus_tiers
         
         for _ in range(bonus_tiers_earned):
-            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel)
+            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, client=client)
             
             if is_elite_active(user_id, guild_id):
-                await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True)
+                await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client)
 
     return (embed, elite_embed)
 
-async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp):
+async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, client=None):
     elite_claimed_ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/elite_claimed")
     elite_claimed = elite_claimed_ref.get() or []
     
@@ -194,7 +197,7 @@ async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp):
     TRACK_DATA = get_current_track()
     for tier in TRACK_DATA:
         if tier["cumulative_xp"] <= max_xp and tier["tier"] not in elite_claimed:
-            await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True)
+            await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client)
             rewards_granted.append(f"Tier {tier['tier']}: {tier['elite'].split('|')[0].strip()}")
     
     max_tier_xp = TRACK_DATA[-1]["cumulative_xp"]
@@ -202,7 +205,7 @@ async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp):
         total_bonus_tiers = (max_xp - max_tier_xp) // 2500
         
         for _ in range(total_bonus_tiers):
-            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True)
+            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client)
             rewards_granted.append(f"Bonus Drop Pack")
     
     return rewards_granted

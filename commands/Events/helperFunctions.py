@@ -72,6 +72,10 @@ async def addMora(userID: int, addedMora: int, channelID: int, guildID: int, cli
 
     asyncio.create_task(delayed_check_milestones(userID, guildID, channelID, client))
 
+    if addedMora > 10000 and client:
+        from commands.Events.quests import update_quest
+        await update_quest(userID, guildID, channelID, {"earn_big_mora": 1}, client)
+
     if baseMora > 0 and boost > 0:
         return f"{baseMora} + {addedMora - baseMora} ({boost}% boost)", addedMora
     return abs(addedMora), addedMora

@@ -53,7 +53,8 @@ class EliteTrack(commands.Cog):
                                     int(guild_id), 
                                     user_id, 
                                     channel, 
-                                    current_xp
+                                    current_xp,
+                                    client=self.bot
                                 )
                                 
                                 if rewards_granted:
@@ -128,7 +129,8 @@ class EliteTrack(commands.Cog):
                 server_id, 
                 user_id, 
                 message.channel, 
-                current_xp
+                current_xp,
+                client=self.bot
             )
 
             rewards_message = "***You've also automatically received these elite rewards from previous tiers:***\n" + "\n".join(rewards_granted) if rewards_granted else "⭐ *No elite rewards from previous tiers are automatically claimed.*"
