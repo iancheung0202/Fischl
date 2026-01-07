@@ -38,11 +38,12 @@ def get_guild_mora(user_id, guild_id):
                     total += mora
     return total
 
-def check_events_enabled(guild_id):
+def check_events_enabled(guild_id, stickies=None):
     """Check if events are enabled in any channel of a guild"""
-    ref = db.reference("/Global Events System")
-    stickies = ref.get() or {}
-    
+    if stickies is None:
+        ref = db.reference("/Global Events System")
+        stickies = ref.get() or {}
+             
     # Get all channels in the guild first
     try:
         channels = requests_session.get(f"{API_BASE}/guilds/{guild_id}/channels", 

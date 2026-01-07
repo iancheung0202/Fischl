@@ -6,6 +6,7 @@ from firebase_admin import db
 import pandas as pd
 
 from commands.Events.helperFunctions import get_total_mora, get_guild_mora
+from commands.Events.domain import get_rank_title
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -84,9 +85,10 @@ class Leaderboard(commands.Cog):
     @app_commands.describe(type="Specify which type of leaderboard you want to view")
     @app_commands.choices(
         type=[
-            app_commands.Choice(name="Global Leaderboard", value="global"),
-            app_commands.Choice(name="Server-specific Leaderboard", value="server"),
+            app_commands.Choice(name="Global Mora Leaderboard", value="global"),
+            app_commands.Choice(name="Server-specific Mora Leaderboard", value="server"),
             app_commands.Choice(name="Role/Title Leaderboard", value="server_items"),
+            app_commands.Choice(name="Server-specific Kingdom Leaderboard", value="kingdom"),
         ]
     )
     async def lb(
@@ -96,7 +98,28 @@ class Leaderboard(commands.Cog):
         dict_lb = []
 
         try:
-            if type.value == "server_items":
+            if type.value == "kingdom":
+                ref = db.reference(f"/Kingdom/{interaction.guild.id}")
+                data = ref.get() or {}
+                
+                ranking = []
+                for uid_str, user_data in data.items():
+                    buildings = user_data.get("buildings", {})
+                    total_level = sum(buildings.values())
+                    if total_level > 0:
+                        ranking.append({"User ID": int(uid_str), "Level": total_level})
+                    
+                ranking.sort(key=lambda x: x["Level"], reverse=True)
+                
+                # Fetch members
+                for member_data in ranking[:50]:
+                    try:
+                        if await interaction.guild.fetch_member(member_data["User ID"]):
+                            dict_lb.append(member_data)
+                    except (discord.NotFound, discord.HTTPException):
+                        continue
+
+            elif type.value == "server_items":
                 ref_inv = db.reference("/User Events Inventory")
                 inventories = ref_inv.get() or {}
                 
@@ -155,6 +178,10 @@ class Leaderboard(commands.Cog):
                 df = pd.DataFrame(dict_lb, columns=["User ID", "Count"])
                 df = df.astype({"User ID": int, "Count": int})
                 df = df.sort_values("Count", ascending=False).head(50)
+            elif type.value == "kingdom":
+                df = pd.DataFrame(dict_lb, columns=["User ID", "Level"])
+                df = df.astype({"User ID": int, "Level": int})
+                df = df.sort_values("Level", ascending=False).head(50)
             else:
                 df = pd.DataFrame(dict_lb, columns=["User ID", "Mora"])
                 df = df.astype({"User ID": int, "Mora": int})
@@ -162,17 +189,24 @@ class Leaderboard(commands.Cog):
 
         except Exception as e:
             print(f"[lb error] {e}")
-            df = pd.DataFrame(columns=["User ID", "Count" if type.value=="server_items" else "Mora"])
+            df = pd.DataFrame(columns=["User ID", "Count" if type.value=="server_items" else "Level" if type.value=="kingdom" else "Mora"])
 
         pages = []
         page_lines = []
         entries = df.to_dict("records")
         max_entries = 50 if type.value == "global" else len(entries)
         for idx, row in enumerate(entries[:max_entries], start=1):
-            val = row["Count"] if type.value == "server_items" else row["Mora"]
+            val = row["Count"] if type.value == "server_items" else row["Level"] if type.value == "kingdom" else row["Mora"]
             mention = f"<@{row['User ID']}>"
-            icon = "🏷️" if type.value=="server_items" else MORA_EMOTE
-            line = f"{idx}. {mention} - {icon} `{val:,}`"
+            icon = "🏷️" if type.value=="server_items" else "🏰" if type.value=="kingdom" else MORA_EMOTE
+            
+            # Add Rank Title for Kingdom
+            suffix = ""
+            if type.value == "kingdom":
+                rank_title = get_rank_title(val)
+                suffix = f" *({rank_title})*"
+                
+            line = f"{idx}. {mention} - {icon} `{val:,}`{suffix}"
             if row["User ID"] == interaction.user.id:
                 line += " <:you:1339737311319162890>"
 
@@ -184,6 +218,8 @@ class Leaderboard(commands.Cog):
                     if type.value == "global"
                     else f"{interaction.guild.name}'s Leaderboard"
                     if type.value == "server"
+                    else f"{interaction.guild.name}'s Kingdom Rankings"
+                    if type.value == "kingdom"
                     else f"{interaction.guild.name}'s Item Leaderboard"
                 )
                 desc_intro = (
@@ -191,6 +227,8 @@ class Leaderboard(commands.Cog):
                     if type.value=="global"
                     else "A ranking of users within this server based on their current total mora."
                     if type.value=="server"
+                    else "A ranking of noble domains within this server based on total Realm Level."
+                    if type.value=="kingdom"
                     else "A ranking of users within this server based on their total owned roles/titles."
                 )
                 embed = discord.Embed(
@@ -201,6 +239,8 @@ class Leaderboard(commands.Cog):
                         if type.value=="global"
                         else 0x2A7E19
                         if type.value=="server"
+                        else discord.Color.purple()
+                        if type.value=="kingdom"
                         else 0x6A0DAD
                     )
                 )

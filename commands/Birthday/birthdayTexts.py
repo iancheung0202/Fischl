@@ -55,6 +55,11 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/b/b2/Lyney_Icon.png",
         "birthday": "02-02",
     },
+    "Aino": {
+        "line": "Looks like someone's waiting for an Aino surprise... Tada! Hehe, it's the Spinny Chanty Wishing Lantern! When you light the candle, it sings happy birthday and spins around. Isn't it fun, USER? If you like it, then you have to play with me next year too! Oh, uh, now you gotta make a wish, and you gotta say it out loud so I can hear it! Whatever you wish for, Aino the genius can make it come true!",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a3/Aino_Icon.png/",
+        "birthday": "09-21",
+    },
     "Alhaitham": {
         "line": "Happy birthday, USER. I've always thought people are a little too enthusiastic about celebrating the day they were born. Wouldn't it be better to apply all that enthusiasm towards their daily lives and improve their standards of living? But you seem to have done well for yourself. I didn't know what kind of gift to get, so I'll just set up a special application channel, reserved for your submissions alone.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/2/2c/Alhaitham_Icon.png",
@@ -485,6 +490,46 @@ characters_dict = {
         "line": "Happy birthday, USER. This is a dried Glaze Lily that came into bloom on the day of your birth. Long ago, the people of Liyue would say that this flower blooms bearing the weight of the beautiful memories and prayers of the land. I believe this to have been applied on the day you were born as well.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a6/Zhongli_Icon.png",
         "birthday": "12-31",
+    },
+    "Dahlia": {
+        "line": "May this fertile land bless me with a bountiful harvest of grains, to brew into fine wine for my USER. May the returning wind bless me with blossoms, to rain down in celebration of this gathering here today. May our god bless this day of my dear friend's birth, and watch over them I pray... 'Kay, you wanna blow the candles out now?",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/6/6d/Dahlia_Icon.png",
+        "birthday": "05-25",
+    },
+    "Durin": {
+        "line": "It feels like your birthday's come around so fast! I'm sorry, I keep thinking of new details to add, so I still haven't finished... This is an origami boat I've been making for you — the paper animals on board are our friends. And this person standing at the bow, who I haven't had time to color in yet, is you. In my mind, you helm the ship, radiating golden light... Do you want to help me paint you gold? Oh, I almost forgot — this boat is called 'The Traveler.' May you continue to sail forward alongside your friends! Happy birthday, USER!",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/b/ba/Durin_Icon.png",
+        "birthday": "03-14",
+    },
+    "Flins": {
+        "line": "Those who love you will celebrate your arrival in this world by preparing a feast, singing songs, and offering blessings. When you pass away, those who miss you will grieve by holding a funeral and lighting lanterns. In life and in death, there will always be those who are moved by your existence. So, take the chance, while your soul is full of life, to come together with your loved ones and be happy — you deserve it. ...Uh, excuse me? You want me to... be your birthday candle, USER?",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/af/Flins_Icon.png",
+        "birthday": "10-31",
+    },
+    "Ineffa": {
+        "line": "Congratulation mode for special days, activated. Please select a suitable location to sit and rest for a few moments, while I clean your room and put up ribbons, balloons, and flowers. Then, I will prepare your favorite meal and cake, as per the data recorded in my memory banks. If you have any other requests to add to this list, please do not hesitate to raise them. Let's make today a special one for you. Happy Birthday, USER!",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/0/0b/Ineffa_Icon.png",
+        "birthday": "04-02",
+    },
+    "Jahoda": {
+        "line": "Happy Birthday, USER! Here ya go, this doll's for you! I just finished sewing it. It was my first time trying this technique — took ages, you know! I stuffed it with calming herbs that'll help you sleep, so just put it next to your pillow and I promise you'll sleep nice and soundly, 100% nightmare-free. The bandage on my hand...? Ah... just a little scratch from... playing with Ashru, hahaha... It's nothing, really...",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/b/bf/Jahoda_Icon.png",
+        "birthday": "01-05",
+    },
+    "Lauma": {
+        "line": "To you, our honored guest, USER, cherished by the moonlight and our tranquil forest, I give this blessed dagger. For a dagger does not have to be an object of violence — indeed, they are often used as symbolic items in prayer ceremonies. That said, you're of course free to use it for whatever purpose you wish.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/2/27/Lauma_Icon.png",
+        "birthday": "03-01",
+    },
+    "Nefer": {
+        "line": "Happy Birthday, USER! I'm not the best at picking gifts, so how about this: I'll pose three questions to you, and if you find the correct answers, I'll... Relax, that was meant to be a joke. Here, take this book. It's a collection of desert folklore and fairy tales — some of the most complete versions that exist. Generations of desert-dwellers have grown up hearing them, then passed them on themselves. Who knows? Once you've finished reading them, perhaps you'll be able to thrive in the desert too.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/5/5b/Nefer_Icon.png",
+        "birthday": "05-09",
+    },
+    "Skirk": {
+        "line": "Happy Birthday, USER! I know some people like to throw a huge party, while others prefer a quieter affair. I don't know which kind of person you are, but for me, birthdays are a time to reflect on the past year — sometimes with pride in my progress, other times with profound regret. ...It's probably best not to ascribe so much meaning to birthdays after all. Each place has its own festivals for celebrating the land, one's ancestors, friendship... but your birthday is the one day of the year that is meant just for you. Okay, speech over — once again, I wish you a Happy Birthday, and I hope you keep growing into the person you aspire to become. Feelings About Ascension: Intro Icon Character Ascension Unlocked Ascension Phase 1",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/0/03/Skirk_Icon.png",
+        "birthday": "11-05",
     },
 }
 

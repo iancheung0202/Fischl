@@ -175,6 +175,13 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                     if after >= quests[q_type]["goal"]:
                         completed[q_type] = True
                         xp_reward = QUEST_XP_REWARDS[duration]
+                        
+                        ref_stats = db.reference(f"/User Events Stats/{guildID}/{userID}")
+                        stats = ref_stats.get() or {}
+                        realm_boost = stats.get("realm_xp_boost", 0)
+                        if realm_boost > 0:
+                            xp_reward = int(xp_reward * (1 + realm_boost / 100))
+                            
                         total_xp += xp_reward
                         messages.append(
                             f"<:yes:1036811164891480194> **{QUEST_DESCRIPTIONS[q_type]}** ({duration}): "

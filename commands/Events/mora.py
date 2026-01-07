@@ -17,6 +17,7 @@ from commands.Events.helperFunctions import get_total_mora, get_guild_mora, addM
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
+from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -179,10 +180,12 @@ class ToggleView(discord.ui.View):
         self.user_id = user_id
         self.command_user_id = command_user_id
         self.message = message
-        self.state = "home"  # home, graph, track, quests
+        self.state = "home"  # home, graph, track, quests, domain
         self.guild_id = guild_id
         self.purchase_button = None
         self.custom_color = custom_color
+        
+        self.upgrade_select = None
 
         self.profile_button = Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1)
         self.add_item(self.profile_button)
@@ -190,6 +193,8 @@ class ToggleView(discord.ui.View):
         is_elite = is_elite_active(self.user_id, self.guild_id)
         self.purchase_button = ThanksEliteTrack() if is_elite else PurchaseEliteTrack()
         self.add_item(self.purchase_button)
+
+        self.update_buttons() # Ensure initial state is correct 
         
     async def on_timeout(self) -> None:
         for child in self.children:
@@ -437,16 +442,110 @@ class ToggleView(discord.ui.View):
         self.update_buttons()
         await interaction.response.edit_message(embed=quests_embed, view=self)
 
+    @discord.ui.button(label="Kingdom", style=discord.ButtonStyle.grey, custom_id="domain", emoji="🏰")
+    async def domain_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.command_user_id:
+            await interaction.response.send_message("You can't use this button!", ephemeral=True)
+            return
+
+        self.state = "domain"
+        self.update_buttons()
+        
+        target_user = await interaction.guild.fetch_member(self.user_id)
+        embed = get_kingdom_embed(target_user, interaction.guild.id, self.custom_color)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def upgrade_select_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.command_user_id:
+            return await interaction.response.send_message("You can't use this button!", ephemeral=True)
+            
+        building_key = self.upgrade_select.values[0].replace("upgrade_", "")
+        
+        success, msg = await upgrade_building(interaction.user.id, interaction.guild.id, building_key, interaction)
+        
+        if success:
+            embed = get_kingdom_embed(interaction.user, interaction.guild.id, self.custom_color)
+            self.update_buttons()
+            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.followup.send(f"<:yes:1036811164891480194> {msg}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"<:no:1036810470860013639> {msg}", ephemeral=True)
+
     def update_buttons(self):
         for child in self.children:
-            if child.custom_id in ["home", "graph", "track", "quests"]:
+            if child.custom_id in ["home", "graph", "track", "quests", "domain"]:
                 child.disabled = False
                 child.style = discord.ButtonStyle.grey
             if self.state == child.custom_id:
                 child.disabled = True
                 child.style = discord.ButtonStyle.blurple
-
         
+        show_profile_promo = (self.state != "domain")
+        
+        items_to_remove = []
+        
+        if self.profile_button in self.children and not show_profile_promo:
+            items_to_remove.append(self.profile_button)
+            
+        if self.purchase_button in self.children and not show_profile_promo:
+            items_to_remove.append(self.purchase_button)
+            
+        for child in self.children:
+            cid = getattr(child, "custom_id", "")
+            if cid:
+                if cid.startswith("upgrade_") or cid in ["kingdom_upgrade_select", "kingdom_upgrade_select_disabled"]:
+                    items_to_remove.append(child)
+                    
+        for item in items_to_remove:
+            self.remove_item(item)
+            
+        if show_profile_promo:
+             if self.profile_button not in self.children:
+                 self.add_item(self.profile_button)
+             if self.purchase_button not in self.children:
+                 self.add_item(self.purchase_button)
+            
+        if self.state == "domain":
+            is_viewer = (self.user_id != self.command_user_id)
+
+            if is_viewer:
+                 self.upgrade_select = Select(
+                    placeholder=f"Viewing Kingdom (Read Only)",
+                    options=[discord.SelectOption(label="Only the owner can upgrade", value="dummy")], 
+                    disabled=True, 
+                    custom_id="kingdom_upgrade_select_disabled",
+                    row=2
+                 )
+                 self.add_item(self.upgrade_select)
+            else:
+                ref = db.reference(f"/Kingdom/{self.guild_id}/{self.user_id}/buildings")
+                data = ref.get() or {}
+                
+                options = []
+                for key, info in BUILDINGS.items():
+                    lvl = data.get(key, 0)
+                    cost = calculate_cost(lvl)
+                    
+                    label = f"{info['name']}"
+                    desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {cost:,}"
+                    emoji = info['emoji']
+                    
+                    options.append(discord.SelectOption(
+                        label=label,
+                        description=desc,
+                        value=f"upgrade_{key}",
+                        emoji=emoji
+                    ))
+                
+                self.upgrade_select = Select(
+                    placeholder="Choose a building to upgrade...",
+                    options=options,
+                    custom_id="kingdom_upgrade_select",
+                    row=2
+                )
+                self.upgrade_select.callback = self.upgrade_select_callback
+                self.add_item(self.upgrade_select)
+
 class Mora(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -684,6 +783,16 @@ class Mora(commands.Cog):
             followup = True
 
         chn = interaction.client.get_channel(1026968305208131645)
+        
+        kingdom_ref = db.reference(f"/Kingdom/{interaction.guild.id}/{user.id}/buildings")
+        k_data = kingdom_ref.get() or {}
+        k_level = sum(k_data.values())
+        if k_level > 0:
+            rank_title = get_rank_title(k_level)
+            
+            current_footer = f"| {embed.footer.text}" if embed.footer else ""
+            embed.set_footer(text=f"Kingdom Rank: {rank_title} (Lv. {k_level}) {current_footer}")
+
         msg_obj = await chn.send(file=discord.File(filename))
         url = msg_obj.attachments[0].proxy_url
         embed.set_image(url=url)

@@ -503,7 +503,28 @@ def api_profile_data():
         return requests_session.get(f"{API_BASE}/users/@me/guilds", headers={"Authorization": f"Bearer {token}"}).json()
     
     def fetch_bot_guilds():
-        return requests_session.get(f"{API_BASE}/users/@me/guilds", headers={"Authorization": f"Bot {BOT_TOKEN}"}).json()
+        all_guilds = []
+        last_id = None
+        while True:
+            params = {"limit": 200}
+            if last_id:
+                params["after"] = last_id
+            
+            try:
+                resp = requests_session.get(f"{API_BASE}/users/@me/guilds", headers={"Authorization": f"Bot {BOT_TOKEN}"}, params=params)
+                if resp.status_code != 200:
+                    break
+                data = resp.json()
+                if not data:
+                    break
+                all_guilds.extend(data)
+                if len(data) < 200:
+                    break
+                last_id = data[-1]["id"]
+            except Exception as e:
+                print(f"Error fetching bot guilds: {e}")
+                break
+        return all_guilds
 
     # Execute all API calls concurrently
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -517,10 +538,13 @@ def api_profile_data():
 
     guild_cards = ""
     guilds_with_events = []
+    
+    # Pre-fetch stickies for optimization
+    stickies_data = db.reference("/Global Events System").get() or {}
 
     # Filter guilds where bot is present and events are enabled
     for g in guilds:
-        if g["id"] in bot_guild_ids and check_events_enabled(g["id"]):
+        if g["id"] in bot_guild_ids and check_events_enabled(g["id"], stickies_data):
             guilds_with_events.append(g)
 
     guilds_sorted = sorted(guilds_with_events, key=lambda g: g["name"].lower())

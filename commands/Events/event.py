@@ -3658,6 +3658,16 @@ class MoraChestView(discord.ui.View):
             }
             streak_total = min((view.streak * 100), 10000)
             total = tier_map[view.tier] + streak_total
+            
+            stats_ref = db.reference(f"/User Events Stats/{view.guild_id}/{view.user_id}")
+            stats = stats_ref.get() or {}
+            bonus_chance = stats.get("realm_chest_bonus_chance", 0)
+            is_bonus = False
+            
+            if bonus_chance > 0 and random.random() * 100 < bonus_chance:
+                is_bonus = True
+                current_summons = stats.get("minigame_summons", 0)
+                stats_ref.update({"minigame_summons": current_summons + 1})
 
             ref = db.reference(f"/Mora Chest Streaks/{view.guild_id}/{view.user_id}")
             data = ref.get() or {}
@@ -3672,7 +3682,11 @@ class MoraChestView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            embed.add_field(name="Chest Breakdown", value=f"-# Base: {MORA_EMOTE} `{tier_map[view.tier]}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {'<a:streak:1371651844652273694>' if view.streak > 1 else ''}", inline=True)
+            breakdown_val = f"-# Base: {MORA_EMOTE} `{tier_map[view.tier]}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {'<a:streak:1371651844652273694>' if view.streak > 1 else ''}"
+            if is_bonus:
+                breakdown_val += f"\n-# 🌹 **Realm Bonus:** +1 Summon!"
+
+            embed.add_field(name="Chest Breakdown", value=breakdown_val, inline=True)
 
             reset_unix = get_next_reset_unix()
             embed.add_field(
@@ -4213,6 +4227,9 @@ class DailyChestSystem:
         stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
         stats = stats_ref.get() or {}
         clicks_remaining = stats.get("chest_upgrades", 4)
+        
+        realm_upgrades = stats.get("realm_chest_upgrades", 0)
+        clicks_remaining += realm_upgrades
 
         view = MoraChestView(cog, user_id, guild_id, "Common", new_streak, clicks_remaining)
         embed = discord.Embed(
@@ -4497,14 +4514,28 @@ class Summon(commands.Cog):
         if not minigame_func:
             return await interaction.followup.send("<:no:1036810470860013639> Invalid minigame selection!")
 
-        stats_ref.update({"minigame_summons": summons - 1})
+        # Check for Theater Perk: Encore Chance
+        encore_chance = stats.get("realm_encore_chance", 0)
+        import random
+        saved = False
+        # Cap at 50% max to be safe
+        eff_chance = min(50, encore_chance)
+        
+        if random.random() * 100 < eff_chance:
+            saved = True
+        else:
+            stats_ref.update({"minigame_summons": summons - 1})
+
+        footer_text = f"You have {summons if saved else summons - 1} summon{'s' if (summons if saved else summons - 1) != 1 else ''} remaining"
+        if saved:
+            footer_text += " | 🎭 Encore! This summon is not consumed."
 
         embed = discord.Embed(
             title=":magnet: Minigame Summoned!",
             description=f"{interaction.user.mention} successfully started the **{minigame.replace('The', 'the').replace('Pfp', 'PFP').title()}** minigame.",
             color=discord.Color.green()
         )
-        embed.set_footer(text=f"You have {summons - 1} summon{'s' if summons - 1 != 1 else ''} remaining")
+        embed.set_footer(text=footer_text)
         await interaction.followup.send(embed=embed)
         from commands.Events.quests import update_quest
         await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"summon_minigame": 1}, interaction.client)
