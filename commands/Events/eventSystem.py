@@ -9,8 +9,8 @@ from PIL import Image, ImageEnhance, ImageSequence
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
-letter_emojis = [ "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", ] 
-letterList = [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", ]
+letter_emojis = [ "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿" ] 
+letterList = [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" ]
 letterString = "".join(letterList)
 
 minigame_titles = [
@@ -37,7 +37,9 @@ minigame_titles = [
     "Know Your Members",
     "Hangman",
     "Mora Auction House",
-    "Mora Heist"
+    "Mora Heist",
+    "Simple Math Game",
+    "Tik Tac Tok"
 ]
 
 

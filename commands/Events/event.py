@@ -139,6 +139,171 @@ def userAndTitle(userID, guildID):
 
 ### --- DEFEAT THE BOSS --- ###
 
+class BossAttackButton(discord.ui.Button):
+    def __init__(self, disabled=False):
+        super().__init__(
+            style=discord.ButtonStyle.red,
+            label="Attack!",
+            emoji="⚔️",
+            disabled=disabled,
+            custom_id="boss_attack_btn"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        view = self.view
+        if not view.active or view.current_hp <= 0:
+            await interaction.response.send_message("The boss is already defeated!", ephemeral=True)
+            return
+
+        damage = random.randint(50, 150)
+        is_crit = False
+        if random.random() < 0.15: # 15% Crit Chance
+            damage *= 2
+            is_crit = True
+
+        async with view.lock:
+            if view.current_hp > 0:
+                actual_damage = min(damage, view.current_hp)
+                view.current_hp -= actual_damage
+                view.participants[interaction.user.id] = view.participants.get(interaction.user.id, 0) + actual_damage
+                view.total_damage += actual_damage
+                view.last_hitter = interaction.user.id
+                
+                if view.current_hp <= 0:
+                    view.active = False
+                    view.stop()
+        
+        await view.update_ui(interaction)
+
+class BossBattleView(discord.ui.View):
+    def __init__(self, hp, boss_name, client, channel, start_time):
+        super().__init__(timeout=None)
+        self.max_hp = hp
+        self.current_hp = hp
+        self.boss_name = boss_name
+        self.client = client
+        self.channel = channel
+        self.start_time = start_time
+        self.participants = {}
+        self.total_damage = 0
+        self.last_hitter = None
+        self.active = True
+        self.dirty = False
+        self.message = None
+        self.lock = asyncio.Lock()
+        self.add_item(BossAttackButton())
+
+    async def update_loop(self):
+        while self.active and self.current_hp > 0:
+            if (time.time() - self.start_time) >= 60:
+                self.active = False
+                break
+            await asyncio.sleep(1.0)
+        
+        if self.current_hp <= 0:
+            await self.end_game()
+        else:
+            await self.timeout_game()
+
+    async def update_ui(self, interaction=None):
+        if not self.message: return
+        
+        try:
+            embed = self.message.embeds[0]
+            percent = max(0, self.current_hp / self.max_hp)
+            
+            # HP Bar
+            bar_len = 15
+            filled = int(percent * bar_len)
+            bar = "█" * filled + "░" * (bar_len - filled)
+            
+            status = "🔥 **BOSS IS ENRAGED!** 🔥" if percent < 0.3 else "⚔️ **BATTLE IN PROGRESS** ⚔️"
+            if self.current_hp <= 0: status = "💀 **BOSS DEFEATED** 💀"
+            
+            embed.description = (
+                f"{status} (Ending <t:{self.start_time + 60}:R>)\n\n"
+                f"**HP:** `{self.current_hp}/{self.max_hp}`\n"
+                f"`[{bar}]` **{int(percent*100)}%**\n\n"
+                f"**Battle Stats:**\n"
+                f"-# Total Damage: `{self.total_damage}`\n"
+                f"-# Attackers: `{len(self.participants)}`"
+            )
+
+            # Leaderboard
+            sorted_dmg = sorted(self.participants.items(), key=lambda x: x[1], reverse=True)[:5]
+            lb_text = ""
+            for i, (uid, dmg) in enumerate(sorted_dmg, 1):
+                lb_text += f"`#{i}` <@{uid}>: **{dmg}** damage\n"
+            
+            if not lb_text: lb_text = "Waiting for attackers..."
+            
+            if len(embed.fields) > 0:
+                embed.set_field_at(0, name="🏆 Top Damage Dealers", value=lb_text, inline=False)
+            else:
+                embed.add_field(name="🏆 Top Damage Dealers", value=lb_text, inline=False)
+            
+            if self.current_hp <= 0:
+                embed.color = discord.Color.green()
+                for item in self.children:
+                    item.disabled = True
+                    item.style = discord.ButtonStyle.success
+            elif (time.time() - self.start_time) >= 60 or not self.active:
+                 for item in self.children:
+                    item.disabled = True
+                    item.style = discord.ButtonStyle.secondary
+            
+            if interaction:
+                await interaction.response.edit_message(embed=embed, view=self)
+            else:
+                await self.message.edit(embed=embed, view=self)
+        except Exception as e:
+            print(f"Error updating boss UI: {e}")
+
+    async def end_game(self):
+        # Distribute rewards
+        summary = []
+        
+        # Sort by damage
+        sorted_users = sorted(self.participants.items(), key=lambda x: x[1], reverse=True)
+        
+        for rank, (uid, dmg) in enumerate(sorted_users, 1):
+            amount = 3000 # Base participation
+            
+            # Damage Bonus (1 mora per 1 dmg)
+            amount += dmg 
+            
+            # First Place Bonus
+            if rank == 1: amount += 2000
+            
+            # Last Hit Bonus
+            if uid == self.last_hitter: amount += 1500
+            
+            text, addedMora = await addMora(uid, amount, self.channel.id, self.channel.guild.id, self.client)
+            
+            # Quest Update
+            quest_data = {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}
+            await update_quest(uid, self.channel.guild.id, self.channel.id, quest_data, self.client)
+            
+            entry = f"**#{rank}** <@{uid}>: {MORA_EMOTE} `{text}` ({dmg} damage)"
+            if uid == self.last_hitter: entry += " 🗡️ **Last Hit!**"
+            if rank == 1: entry += " 🥇 **Best Damage Dealer!**"
+            summary.append(entry)
+            
+        result_embed = discord.Embed(
+            title=f"Boss Defeated! - {self.boss_name}",
+            description="Rewards have been distributed:\n\n" + "\n".join(summary),
+            color=discord.Color.gold()
+        )
+        await self.message.reply(embed=result_embed)
+
+    async def timeout_game(self):
+        embed = discord.Embed(
+            title="Boss Escaped!",
+            description=f"**{self.boss_name}** got away! The raid failed.",
+            color=discord.Color.red()
+        )
+        await self.message.reply(embed=embed)
+        self.stop()
 
 async def defeatTheBoss(channel, client):
     bosses = [
@@ -201,44 +366,25 @@ async def defeatTheBoss(channel, client):
         "The Past, Present, and Eternal Show",
     ]
     boss = random.choice(bosses)
-    punches = random.randint(4, 6)
-    reward = random.randint(3000, 5000)
-    seconds = random.randint(15, 20)
-    msg = await channel.send(
-        embed=discord.Embed(
-            title=f"Boss Battle Blitz - {boss}",
-            description=f"`{punches}` users must react with `👊` to defeat **{boss}** within `{seconds} Seconds`.\nEach user will be rewarded {MORA_EMOTE} `{reward}` if successful!",
-            color=discord.Color.purple(),
-        )
+    hp = random.randint(3000, 8000)
+    start_time = int(time.time())
+    
+    view = BossBattleView(hp, boss, client, channel, start_time)
+    
+    embed = discord.Embed(
+        title=f"Boss Battle Blitz - {boss}",
+        description=(
+            f"A wild **{boss}** has appeared!\n"
+            f"**HP:** `{hp}/{hp}`\n\n"
+            f"Everyone click **Attack** to deal damage <t:{int(start_time + 60)}:R>"
+        ),
+        color=discord.Color.dark_red(),
     )
-    await msg.add_reaction("👊")
-    await asyncio.sleep(seconds)
-    msg = await msg.channel.fetch_message(msg.id)
-    if msg.reactions[0].count >= punches and str(msg.reactions[0].emoji) == "👊":
-        users = []
-        summary_lines = []
-        async for user in msg.reactions[0].users():
-            if user.bot:
-                continue
-            users.append(user)
-            text, addedMora = await addMora(user.id, reward, channel.id, channel.guild.id, client)
-            await update_quest(user.id, channel.guild.id, channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, client)
-            summary_lines.append(f"-# - {userAndTitle(user.id, channel.guild.id)}: {MORA_EMOTE} `{text}`")
-        
-        final_embed = discord.Embed(
-            title=f"{boss} has been defeated!",
-            description=f"Congratulations! Everyone who participated earned:\n\n" + "\n".join(summary_lines),
-            color=discord.Color.green(),
-        )
-        await msg.reply(embed=final_embed)
-    elif msg.reactions[0].count < punches and str(msg.reactions[0].emoji) == "👊":
-        await msg.reply(
-            embed=discord.Embed(
-                title=f"{boss} NOT defeated...",
-                description=f"Uh oh, only **{msg.reactions[0].count}** users reacted with `👊`. \nGood effort and best of luck next time!",
-                color=discord.Color.red(),
-            )
-        )
+    embed.add_field(name="🏆 Top Damage Dealers", value="No attacks yet...", inline=False)
+    
+    msg = await channel.send(embed=embed, view=view)
+    view.message = msg
+    asyncio.create_task(view.update_loop())
 
 ### --- PICK UP THE WATERMELON --- ###
 
@@ -506,7 +652,7 @@ async def reverseQuicktype(channel, client):
     start_time = time.time()
     timeout = 300
 
-    words = "".join(str(random.randint(0, 9)) for _ in range(6))
+    words = "".join(str(random.randint(0, 9)) for _ in range(8))
     reversed_words = words[::-1]
 
     filename = await createImage(words, bg="./assets/94e3fe.png")
@@ -864,6 +1010,81 @@ async def rollADice(channel, client):
     view.message = message
 
 
+class QuizButton(discord.ui.Button):
+    def __init__(self, label):
+        super().__init__(style=discord.ButtonStyle.primary, label=label)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: QuizView = self.view
+        
+        if interaction.user.id in view.participants:
+             await interaction.response.send_message("You have already answered!", ephemeral=True)
+             return
+
+        view.participants.add(interaction.user.id)
+        
+        if self.label == view.answer:
+            view.winner_id = interaction.user.id
+            await interaction.response.defer()
+            
+            for child in view.children:
+                child.disabled = True
+                if child.label == view.answer:
+                    child.style = discord.ButtonStyle.success
+                else:
+                    child.style = discord.ButtonStyle.secondary
+            
+            view.stop()
+            
+            text, addedMora = await addMora(interaction.user.id, view.reward, view.channel.id, view.channel.guild.id, view.client)
+            success_embed = view.win_embed_factory(interaction.user, text)
+            await view.game_msg.edit(embed=success_embed, view=view)
+
+            await update_quest(
+                interaction.user.id,
+                view.channel.guild.id,
+                view.channel.id,
+                {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora},
+                view.client
+            )
+        else:
+            await interaction.response.send_message("That is incorrect!", ephemeral=True)
+
+class QuizView(discord.ui.View):
+    def __init__(self, answer, options, reward, client, channel, win_embed_factory, timeout_embed_factory=None):
+        super().__init__(timeout=300)
+        self.answer = answer
+        self.options = options
+        
+        # Ensure answer is in options, just in case
+        if self.answer not in self.options:
+            self.options.append(self.answer)
+            
+        random.shuffle(self.options)
+        self.reward = reward
+        self.client = client
+        self.channel = channel
+        self.game_msg = None
+        self.win_embed_factory = win_embed_factory
+        self.timeout_embed_factory = timeout_embed_factory
+        self.winner_id = None
+        self.participants = set()
+
+        for option in self.options:
+            self.add_item(QuizButton(option))
+            
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        
+        if self.game_msg:
+            if self.timeout_embed_factory:
+                embed = self.timeout_embed_factory()
+                await self.game_msg.edit(embed=embed, view=self)
+            else:
+                 await self.game_msg.edit(view=self)
+
+
 ### --- GUESS THE VOICELINE --- ###
 
 async def guessTheVoiceline(channel, client):
@@ -876,37 +1097,6 @@ async def guessTheVoiceline(channel, client):
     )
     characterEmojis = dict(zip(df["Character Name"], df["Emojis"]))
     valid_names = {name.lower() for name in characterEmojis.keys()}
-
-    char = None
-    while not char:
-        char = random.choice(list(characterEmojis.keys()))
-        formatted_char = char.replace(" ", "_")
-        url = f"https://genshin-impact.fandom.com/wiki/{formatted_char}/Voice-Overs"
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-        except:
-            char = None
-
-    soup = BeautifulSoup(response.content, "html.parser")
-    voice_lines = []
-    tables = soup.find_all("table", class_="wikitable")
-    for table in tables:
-        rows = table.find_all("tr")
-        for row in rows[1:]:
-            cells = row.find_all("td")
-            if cells:
-                line = cells[0].get_text(separator=" ", strip=True)
-                if line:
-                    voice_lines.append(line)
-
-    for ul in soup.find_all("ul"):
-        for li in ul.find_all("li"):
-            text = li.get_text(separator=" ", strip=True)
-            if text.startswith('"') and text.endswith('"'):
-                voice_lines.append(text)
-
-    voice_lines = list(dict.fromkeys(voice_lines)) 
 
     def replace_character_name(text, character_name):
         if " " not in character_name:
@@ -926,101 +1116,96 @@ async def guessTheVoiceline(channel, client):
         return text
 
     processed_voice_lines = []
-    for line in voice_lines:
-        if "class=hidden" not in line:
-            split_line = line.split(".ogg")
-            if len(split_line) > 2:
-                try:
-                    new_line = split_line[2]
-                    processed_line = replace_character_name(new_line, char)
-                    processed_voice_lines.append(processed_line)
-                except Exception as e:
-                    print(e)
 
+    while not processed_voice_lines:
+        char = None
+        while not char:
+            char = random.choice(list(characterEmojis.keys()))
+            formatted_char = char.replace(" ", "_")
+            url = f"https://genshin-impact.fandom.com/wiki/{formatted_char}/Voice-Overs"
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+            except:
+                char = None
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        voice_lines = []
+        tables = soup.find_all("table", class_="wikitable")
+        for table in tables:
+            rows = table.find_all("tr")
+            for row in rows[1:]:
+                cells = row.find_all("td")
+                if cells:
+                    line = cells[0].get_text(separator=" ", strip=True)
+                    if line:
+                        voice_lines.append(line)
+
+        for ul in soup.find_all("ul"):
+            for li in ul.find_all("li"):
+                text = li.get_text(separator=" ", strip=True)
+                if text.startswith('"') and text.endswith('"'):
+                    voice_lines.append(text)
+
+        voice_lines = list(dict.fromkeys(voice_lines))
+
+        for line in voice_lines:
+            if "class=hidden" not in line:
+                split_line = line.split(".ogg")
+                if len(split_line) > 2:
+                    try:
+                        new_line = split_line[2]
+                        processed_line = replace_character_name(new_line, char)
+                        processed_voice_lines.append(processed_line)
+                    except Exception as e:
+                        print(e)
+    
     voiceline = random.choice(processed_voice_lines).strip()
-    underscores = " ".join("_" * len(part) for part in char.split(" "))
 
     embed = discord.Embed(
         title="Teyvat Voiceline Quiz | Genshin Character",
-        description=f"First to guess the character wins {MORA_EMOTE} `{reward}`.\n\n```{voiceline}```\nHint: `{underscores}`",
+        description=f"First to guess the character wins {MORA_EMOTE} `{reward}`.\n\n```{voiceline}```",
         color=discord.Color.blue(),
     )
     embed.set_footer(text="Voicelines from Genshin Impact Wiki Fandom • 5-minute time limit")
     print(voiceline)
     print(char)
-    game_msg = await channel.send(embed=embed)
 
-    def check(message):
-        return (
-            message.channel == channel and
-            not message.author.bot
+    # Generate Distractors
+    all_chars = list(characterEmojis.keys())
+    distractors = random.sample([n for n in all_chars if n != char], 4)
+    options = [char] + distractors
+
+    def win_embed_factory(user, text):
+        return discord.Embed(
+            title="Teyvat Voiceline Quiz | Genshin Character",
+            description=(
+                f"```{voiceline}```\n"
+                f"{userAndTitle(user.id, user.guild.id)} "
+                f"answered `{char}` and won {MORA_EMOTE} `{text}`."
+            ),
+            color=discord.Color.brand_green(),
         )
 
-    qualified_users = set()
-    winner_id = None
+    def timeout_embed_factory():
+        return discord.Embed(
+            title="Genshin Voiceline Quiz - Time Out! ⌛",
+            description=(
+                f"**Voiceline:** ```{voiceline}```\n"
+                f"**Character:** `{char}`\n"
+                "No one guessed in time!"
+            ),
+            color=discord.Color.light_grey(),
+        )
 
-    while True:
-        try:
-            elapsed = time.time() - start_time
-            answer = await client.wait_for('message', check=check)
-            typed = answer.content.strip().lower()
+    view = QuizView(char, options, reward, client, channel, win_embed_factory, timeout_embed_factory)
+    game_msg = await channel.send(embed=embed, view=view)
+    view.game_msg = game_msg
 
-            if typed == char.strip().lower():
-                try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
-                except Exception:
-                    continue
-                    
-                winner_id = answer.author.id
-                text, addedMora = await addMora(answer.author.id, reward, answer.channel.id, answer.guild.id, client)
-                success_embed = discord.Embed(
-                    title="Teyvat Voiceline Quiz | Genshin Character",
-                    description=(
-                        f"```{voiceline}```\n"
-                        f"{userAndTitle(answer.author.id, answer.guild.id)} "
-                        f"answered `{char}` and won {MORA_EMOTE} `{text}`."
-                    ),
-                    color=discord.Color.brand_green(),
-                )
-                await game_msg.edit(embed=success_embed)
+    await view.wait()
 
-                await update_quest(
-                    answer.author.id,
-                    channel.guild.id,
-                    channel.id,
-                    {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora},
-                    client
-                )
-                break
-
-            elif typed in valid_names:
-                try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
-                except Exception:
-                    continue
-                qualified_users.add(answer.author.id)
-
-            if elapsed >= timeout:
-                timeout_embed = discord.Embed(
-                    title="Genshin Voiceline Quiz - Time Out! ⌛",
-                    description=(
-                        f"**Voiceline:** ```{voiceline}```\n"
-                        f"**Character:** `{char}`\n"
-                        "No one guessed in time!"
-                    ),
-                    color=discord.Color.light_grey(),
-                )
-                await game_msg.edit(embed=timeout_embed)
-                break
-
-        except asyncio.TimeoutError:
-            continue
-        except Exception as e:
-            print(f"Voiceline Quiz error: {e}")
-            return
-
-    for uid in qualified_users:
-        if uid != winner_id:
+    for uid in view.participants:
+        if uid != view.winner_id:
             await update_quest(
                 uid,
                 channel.guild.id,
@@ -1045,93 +1230,56 @@ async def hsrEmojiRiddle(channel, client):
 
     character = random.choice(list(characterEmojis.keys()))
     response = characterEmojis[character]
-    underscores = " ".join("_" * len(part) for part in character.split(" "))
 
     embed = discord.Embed(
         title="Galaxy *Emojified* Riddles | HSR Character",
         description=(
             f"The following emojis describe a **Honkai: Star Rail** character. "
-            f"First to guess wins {MORA_EMOTE} `{reward}`.\n\n```{response}```\nHint: `{underscores}`"
+            f"First to guess wins {MORA_EMOTE} `{reward}`.\n\n```{response}```"
         ),
         color=0xFFEB20,
     )
     embed.set_footer(text="Credits: schaeffly, treble4tea_03755, rubi134 • 5-minute time limit")
-    game_msg = await channel.send(embed=embed)
+    
+    # Generate Distractors
+    all_chars = list(characterEmojis.keys())
+    distractors = random.sample([n for n in all_chars if n != character], 4)
+    options = [character] + distractors
 
-    def check(message):
-        return (
-            message.channel == channel and
-            not message.author.bot
+    def win_embed_factory(user, text):
+        success_embed = discord.Embed(
+            title="Galaxy *Emojified* Riddles | HSR Character",
+            description=(
+                f"```{response}```\n"
+                f"{userAndTitle(user.id, user.guild.id)} "
+                f"answered `{character}` and won {MORA_EMOTE} `{text}`."
+            ),
+            color=discord.Color.brand_green(),
+        )
+        success_embed.set_footer(
+            text="Credits: schaeffly, treble4tea_03755, rubi134, maraudersacrusader, fishyfishery"
+        )
+        return success_embed
+
+    def timeout_embed_factory():
+        return discord.Embed(
+            title="HSR Emoji Riddle - Time Out! ⌛",
+            description=(
+                f"**Emojis:** ```{response}```\n"
+                f"**Correct Answer:** `{character}`\n"
+                "No one guessed in time!"
+            ),
+            color=discord.Color.light_grey()
         )
 
-    qualified_users = set()
-    winner_id = None
+    view = QuizView(character, options, reward, client, channel, win_embed_factory, timeout_embed_factory)
+    game_msg = await channel.send(embed=embed, view=view)
+    view.game_msg = game_msg
 
-    while True:
-        try:
-            elapsed = time.time() - start_time
-            answer = await client.wait_for('message', check=check)
-            typed = answer.content.strip().lower()
-
-            if typed == character.strip().lower():
-                try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
-                except Exception:
-                    continue
-                    
-                winner_id = answer.author.id
-                text, addedMora = await addMora(answer.author.id, reward, answer.channel.id, answer.guild.id, client)
-                success_embed = discord.Embed(
-                    title="Galaxy *Emojified* Riddles | HSR Character",
-                    description=(
-                        f"```{response}```\n"
-                        f"{userAndTitle(answer.author.id, answer.guild.id)} "
-                        f"answered `{character}` and won {MORA_EMOTE} `{text}`."
-                    ),
-                    color=discord.Color.brand_green(),
-                )
-                success_embed.set_footer(
-                    text="Credits: schaeffly, treble4tea_03755, rubi134, maraudersacrusader, fishyfishery"
-                )
-                await game_msg.edit(embed=success_embed)
-
-                await update_quest(
-                    answer.author.id,
-                    channel.guild.id,
-                    channel.id,
-                    {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora},
-                    client
-                )
-                break
-
-            elif typed in valid_names:
-                try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
-                except Exception:
-                    continue
-                qualified_users.add(answer.author.id)
-
-            if elapsed >= timeout:
-                timeout_embed = discord.Embed(
-                    title="HSR Emoji Riddle - Time Out! ⌛",
-                    description=(
-                        f"**Emojis:** ```{response}```\n"
-                        f"**Correct Answer:** `{character}`\n"
-                        "No one guessed in time!"
-                    ),
-                    color=discord.Color.light_grey()
-                )
-                await game_msg.edit(embed=timeout_embed)
-                break
-
-        except asyncio.TimeoutError:
-            continue
-        except Exception as e:
-            print(f"HSR Emoji Riddle error: {e}")
-            return
-
-    for uid in qualified_users:
-        if uid != winner_id:
+    await view.wait()
+    
+    for uid in view.participants:
+        if uid != view.winner_id:
             await update_quest(
                 uid,
                 channel.guild.id,
@@ -1156,87 +1304,54 @@ async def genshinEmojiRiddle(channel, client):
 
     character = random.choice(list(characterEmojis.keys()))
     response = characterEmojis[character]
-    underscores = " ".join("_" * len(part) for part in character.split(" "))
 
     embed = discord.Embed(
         title="Teyvat *Emojified* Riddles | Genshin Character",
         description=(
             f"The following emojis describe a **Genshin Impact** character. "
-            f"First to guess wins {MORA_EMOTE} `{reward}`.\n\n```{response}```\nHint: `{underscores}`"
+            f"First to guess wins {MORA_EMOTE} `{reward}`.\n\n```{response}```"
         ),
         color=0xFFEB20,
     )
     embed.set_footer(text="Credits: schaeffly, treble4tea_03755 • 5-minute time limit")
-    game_msg = await channel.send(embed=embed)
 
-    def check(message):
-        return message.channel == channel and not message.author.bot
+    # Generate Distractors
+    all_chars = list(characterEmojis.keys())
+    distractors = random.sample([n for n in all_chars if n != character], 4)
+    options = [character] + distractors
 
-    qualified_users = set()
-    winner_id = None
+    def win_embed_factory(user, text):
+        success_embed = discord.Embed(
+            title="Teyvat *Emojified* Riddles | Genshin Character",
+            description=(
+                f"```{response}```\n"
+                f"{userAndTitle(user.id, user.guild.id)} "
+                f"answered `{character}` and won {MORA_EMOTE} `{text}`."
+            ),
+            color=discord.Color.brand_green(),
+        )
+        success_embed.set_footer(text="Credits: schaeffly, treble4tea_03755")
+        return success_embed
+    
+    def timeout_embed_factory():
+        return discord.Embed(
+            title="Genshin Emoji Riddle - Time Out! ⌛",
+            description=(
+                f"**Emojis:** ```{response}```\n"
+                f"**Correct Answer:** `{character}`\n"
+                "No one guessed in time!"
+            ),
+            color=discord.Color.light_grey(),
+        )
 
-    while True:
-        try:
-            elapsed = time.time() - start_time
-            answer = await client.wait_for("message", check=check)
-            typed = answer.content.strip().lower()
+    view = QuizView(character, options, reward, client, channel, win_embed_factory, timeout_embed_factory)
+    game_msg = await channel.send(embed=embed, view=view)
+    view.game_msg = game_msg
 
-            if typed == character.strip().lower():
-                try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
-                except Exception:
-                    continue
-                winner_id = answer.author.id
-                text, addedMora = await addMora(answer.author.id, reward, answer.channel.id, answer.guild.id, client)
-                success_embed = discord.Embed(
-                    title="Teyvat *Emojified* Riddles | Genshin Character",
-                    description=(
-                        f"```{response}```\n"
-                        f"{userAndTitle(answer.author.id, answer.guild.id)} "
-                        f"answered `{character}` and won {MORA_EMOTE} `{text}`."
-                    ),
-                    color=discord.Color.brand_green(),
-                )
-                success_embed.set_footer(text="Credits: schaeffly, treble4tea_03755")
-                await game_msg.edit(embed=success_embed)
+    await view.wait()
 
-                await update_quest(
-                    answer.author.id,
-                    channel.guild.id,
-                    channel.id,
-                    {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora},
-                    client,
-                )
-                break
-
-            elif typed in valid_names:
-                try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
-                except Exception:
-                    continue
-                qualified_users.add(answer.author.id)
-
-            if elapsed >= timeout:
-                timeout_embed = discord.Embed(
-                    title="Genshin Emoji Riddle - Time Out! ⌛",
-                    description=(
-                        f"**Emojis:** ```{response}```\n"
-                        f"**Correct Answer:** `{character}`\n"
-                        "No one guessed in time!"
-                    ),
-                    color=discord.Color.light_grey(),
-                )
-                await game_msg.edit(embed=timeout_embed)
-                break
-
-        except asyncio.TimeoutError:
-            continue
-        except Exception as e:
-            print(f"Genshin Emoji Riddle error: {e}")
-            return
-
-    for uid in qualified_users:
-        if uid != winner_id:
+    for uid in view.participants:
+        if uid != view.winner_id:
             await update_quest(
                 uid,
                 channel.guild.id,
@@ -1249,7 +1364,7 @@ async def genshinEmojiRiddle(channel, client):
 ### --- EGGWALK --- ###
 
 async def eggWalk(channel, client): 
-    reward = random.randint(2000, 4000)
+    reward = random.randint(2000, 3000)
     start_time = time.time()
     timeout = 300
 
@@ -1364,80 +1479,86 @@ async def guessTheNumber(channel, client):
     embed = discord.Embed(
         title="Guess The Mystery Number",
         description=(
-            "First to guess what number in **between 1 and 10 (inclusive)** I am thinking of. \n"
-            f"First one to guess correctly will earn {MORA_EMOTE} `{reward}`.\n\n"
-            "Reacted `⬆️` means the actual number is **higher**\n"
-            "Reacted `⬇️` means the actual number is **lower**\n\n"
-            "_Do not spam numbers in chat as I might not be able to process them._"
+            "First to guess what number in **between 1 and 10 (inclusive)** I am thinking of "
+            f"will earn {MORA_EMOTE} `{reward}`."
         ),
         color=discord.Color.dark_purple(),
     )
-    game_msg = await channel.send(embed=embed)
-
-    def check(message):
-        return message.channel == channel and not message.author.bot
 
     number = random.randint(1, 10)
-    winner_id = None
-    addedMora = 0
-    participants = set()
+    view = GuessNumberView(number)
+    game_msg = await channel.send(embed=embed, view=view)
+    
+    await view.wait()
+    
+    if view.winner_id:
+        embed.color = discord.Color.green()
+        embed.description += f"\n\n🏆 {userAndTitle(view.winner_id, channel.guild.id)} got it and earned {MORA_EMOTE} `{view.winner_text}`."
+        await game_msg.edit(embed=embed, view=view)
+    else:
+        timeout_embed = discord.Embed(
+            title="Guess The Mystery Number",
+            description="⏳ Was it really that hard to guess a number between 1 to 10?",
+            color=discord.Color.light_grey(),
+        )
+        for child in view.children:
+            child.disabled = True
+        await game_msg.edit(embed=timeout_embed, view=view)
 
-    while True:
-        try:
-            elapsed = time.time() - start_time
-            answer = await client.wait_for("message", check=check)
-
-            if answer.content.isnumeric():
-                participants.add(answer.author.id)
-                guess = int(answer.content.strip())
-
-                if guess == number:
-                    try:
-                        await answer.add_reaction("<:yes:1036811164891480194>")
-                    except Exception:
-                        continue
-                    winner_id = answer.author.id
-                    text, addedMora = await addMora(winner_id, reward, channel.id, channel.guild.id, client)
-                    await answer.reply(
-                        embed=discord.Embed(
-                            title="Guess The Mystery Number",
-                            description=f"{userAndTitle(winner_id, answer.guild.id)} got it and earned {MORA_EMOTE} `{text}`.",
-                            color=discord.Color.green(),
-                        )
-                    )
-                    break
-                elif guess > number:
-                    try:
-                        await answer.add_reaction("⬇️")
-                    except Exception:
-                        continue
-                else:
-                    try:
-                        await answer.add_reaction("⬆️")
-                    except Exception:
-                        continue
-
-            elif elapsed >= timeout:
-                timeout_embed = discord.Embed(
-                    title="Guess The Mystery Number",
-                    description="⏳ Was it really that hard to guess a number between 1 to 10?",
-                    color=discord.Color.light_grey(),
-                )
-                await game_msg.edit(embed=timeout_embed)
-                break
-
-        except asyncio.TimeoutError:
-            continue
-        except Exception as e:
-            print(f"Guess The Mystery Number: {e}")
-            return
-
-    for uid in participants:
+    for uid in view.participants:
         quest_data = {"participate_minigames": 1}
-        if uid == winner_id:
+        if uid == view.winner_id:
             quest_data.update({"win_minigames": 1})
-            quest_data.update({"earn_mora": addedMora})
+            quest_data.update({"earn_mora": view.addedMora})
         await update_quest(uid, channel.guild.id, channel.id, quest_data, client)
+
+class GuessNumberButton(discord.ui.Button):
+    def __init__(self, number, row):
+        super().__init__(label=str(number), style=discord.ButtonStyle.secondary, row=row)
+        self.number = number
+
+    async def callback(self, interaction: discord.Interaction):
+        view: GuessNumberView = self.view
+        
+        if interaction.user.id not in view.participants:
+            view.participants.add(interaction.user.id)
+            
+        if self.number == view.target_number:
+            self.style = discord.ButtonStyle.success
+            view.winner_id = interaction.user.id
+            reward = int(interaction.message.embeds[0].description.split("`")[1])
+            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            view.addedMora = addedMora
+            view.winner_text = text
+            
+            for child in view.children:
+                child.disabled = True
+                if child.label == str(view.target_number):
+                    child.style = discord.ButtonStyle.success
+            
+            view.stop()
+            await interaction.response.defer()
+        else:
+            self.style = discord.ButtonStyle.danger
+            self.disabled = True
+            await interaction.response.edit_message(view=view)
+
+class GuessNumberView(discord.ui.View):
+    def __init__(self, target_number):
+        super().__init__(timeout=300)
+        self.target_number = target_number
+        self.participants = set()
+        self.winner_id = None
+        self.addedMora = 0
+        self.winner_text = ""
+        
+        # Row 0: 1-5
+        for i in range(1, 6):
+            self.add_item(GuessNumberButton(i, row=0))
+            
+        # Row 1: 6-10
+        for i in range(6, 11):
+            self.add_item(GuessNumberButton(i, row=1))
 
 
 ### --- COUNTING CURRENCY --- ###
@@ -1468,7 +1589,7 @@ async def countingCurrency(channel, client):
     itemToCount = random.choice([A, B, C])
     embed = discord.Embed(
         title="Currency Counting",
-        description=f"{gridString}\nFirst to count how many {itemToCount} there are wins {MORA_EMOTE} `{reward}`",
+        description=f"{gridString}\nFirst to count how many {itemToCount} there are wins {MORA_EMOTE} `{reward}`. Type the number in chat.",
         color=discord.Color.blue(),
     )
     game_msg = await channel.send(embed=embed)
@@ -1540,163 +1661,163 @@ async def countingCurrency(channel, client):
 
 def choose_word():
     from assets.words import words
-    return random.choice(words).lower()
+    # Filter out words containing 'z'
+    available_words = [w for w in words if 'z' not in w.lower()]
+    if not available_words:
+        return "error"
+    return random.choice(available_words).lower()
 
 def update_word(word, guessed_letters):
     return ''.join([letter if letter in guessed_letters else '_' for letter in word])
 
+def format_guess_dict(d):
+    return "\n".join([f"- <@{uid}>: {', '.join(sorted(letters))}" for uid, letters in d.items()]) or "`None`"
+
+class HangmanButton(discord.ui.Button):
+    def __init__(self, letter, row):
+        super().__init__(label=letter, style=discord.ButtonStyle.secondary, row=row)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: HangmanView = self.view
+        letter = self.label.lower()
+        
+        if interaction.user.id not in view.participants:
+            view.participants.add(interaction.user.id)
+
+        if letter in view.word:
+            self.style = discord.ButtonStyle.success
+            view.guessed_letters.add(letter)
+            if interaction.user.id not in view.correct_letters:
+                view.correct_letters[interaction.user.id] = set()
+            view.correct_letters[interaction.user.id].add(letter)
+        else:
+            self.style = discord.ButtonStyle.danger
+            view.tries -= 1
+            if interaction.user.id not in view.incorrect_letters:
+                view.incorrect_letters[interaction.user.id] = set()
+            view.incorrect_letters[interaction.user.id].add(letter)
+
+        self.disabled = True
+        
+        display_word = update_word(view.word, view.guessed_letters)
+        
+        view.embed.set_field_at(0, name="Word:", value=f"`{display_word}`", inline=False)
+        view.embed.set_field_at(1, name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(view.correct_letters), inline=True)
+        view.embed.set_field_at(2, name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(view.incorrect_letters), inline=True)
+        view.embed.set_field_at(3, name="Tries remaining:", value=f"`{view.tries}`", inline=True)
+
+        if "_" not in display_word:
+             view.winner_id = interaction.user.id
+             text, addedMora = await addMora(interaction.user.id, 3000, interaction.channel.id, interaction.guild.id, interaction.client)
+             view.addedMora = addedMora
+             view.winner_text = text
+             
+             # Disable all buttons
+             for child in view.children:
+                 child.disabled = True
+                 
+             view.stop()
+             await interaction.response.defer()
+        elif view.tries <= 0:
+             # Disable all buttons
+             for child in view.children:
+                 child.disabled = True
+
+             view.stop()
+             await interaction.response.defer()
+        else:
+             await interaction.response.edit_message(embed=view.embed, view=view)
+
+class HangmanView(discord.ui.View):
+    def __init__(self, word, embed, tries):
+        super().__init__(timeout=300)
+        self.word = word
+        self.embed = embed
+        self.tries = tries
+        self.guessed_letters = set()
+        self.correct_letters = {}
+        self.incorrect_letters = {}
+        self.participants = set()
+        self.winner_id = None
+        self.addedMora = 0
+        self.winner_text = ""
+
+        letters = "ABCDEFGHIJKLMNOPQRSTUVWXY"
+        for i, letter in enumerate(letters):
+            self.add_item(HangmanButton(letter, row=i // 5))
+
 async def hangmanGame(channel, client):
     word = choose_word().lower()
     print(word)
-    start_time = time.time()
-    timeout = 300  # 5 minutes
     tries = round(5 + 0.4 * len(word))
+    
     guessed_letters = set()
     incorrect_letters = {}
     correct_letters = {}
-    already_guessed = set()
-    participants = set()
-    winner_id = None
-
-    def format_guess_dict(d):
-        return "\n".join([f"- <@{uid}>: {', '.join(sorted(letters))}" for uid, letters in d.items()]) or "`None`"
-
+    
     display_word = update_word(word, guessed_letters)
     embed = discord.Embed(
         title="Hangman Game",
-        description=f"**Guess a letter or the full word!** Earn {MORA_EMOTE} **1500** per correct letter and an extra {MORA_EMOTE} **3000** for completing the word.",
+        description=f"**Guess a letter!** Earn {MORA_EMOTE} **1500** per correct letter and an extra {MORA_EMOTE} **3000** for completing the word.",
         color=discord.Color.blurple(),
     )
     embed.add_field(name="Word:", value=f"`{display_word}`", inline=False)
     embed.add_field(name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(correct_letters), inline=True)
     embed.add_field(name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(incorrect_letters), inline=True)
     embed.add_field(name="Tries remaining:", value=f"`{tries}`", inline=True)
-    embed.set_footer(text="Enter a single letter or the full word to guess • 5-minute time limit")
+    embed.set_footer(text="Click a letter to guess • 5-minute time limit")
     
-    game_msg = await channel.send(embed=embed)
-
-    def check(message):
-        return (
-            message.channel == channel and
-            not message.author.bot
+    view = HangmanView(word, embed, tries)
+    game_msg = await channel.send(embed=embed, view=view)
+    
+    # Wait for the view to finish (timeout or win/loss)
+    await view.wait()
+    
+    # After game ends (loop logic replacement)
+    
+    if view.winner_id or "_" not in update_word(word, view.guessed_letters):
+        final_embed = discord.Embed(
+            title="Hangman Game",
+            description=f"Success! Everyone got {MORA_EMOTE} **`1500`** per correct letter. {userAndTitle(view.winner_id, channel.guild.id)} earned an extra {MORA_EMOTE} **`{view.winner_text}`**.",
+            color=discord.Color.green()
         )
-
-    addedMora = 3000
-    while True:
-        try:
-            elapsed = time.time() - start_time
-            answer = await client.wait_for('message', check=check)
-            content = answer.content.lower().strip()
-            uid = answer.author.id
-
-            if (content.isalpha() and (len(content) == 1 or content == word)):
-                participants.add(uid)
-            else:
-                if elapsed >= timeout:
-                    timeout_embed = discord.Embed(
-                        title="Hangman - Time Out! ⌛",
-                        description=f"Game over! The word was `{word}`. Better luck next time!",
-                        color=discord.Color.light_grey()
-                    )
-                    await game_msg.edit(embed=timeout_embed)
-                    return
-                continue
-
-            if content == word:
-                try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
-                except Exception:
-                    continue
-                guessed_letters.update(word)
-                winner_id = uid
-                text, addedMora = await addMora(uid, 3000, answer.channel.id, answer.guild.id, client)
-                break
-
-            letter = content
-            if letter in already_guessed:
-                try:
-                    await answer.add_reaction("🟡")
-                except Exception:
-                    continue
-                asyncio.create_task(handle_message_deletion(answer))
-                continue
-
-            already_guessed.add(letter)
-
-            if letter in word:
-                try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
-                except Exception:
-                    continue
-                guessed_letters.add(letter)
-                if uid not in correct_letters:
-                    correct_letters[uid] = set()
-                correct_letters[uid].add(letter)
-            else:
-                try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
-                except Exception:
-                    continue
-                tries -= 1
-                if uid not in incorrect_letters:
-                    incorrect_letters[uid] = set()
-                incorrect_letters[uid].add(letter)
-
-            display_word = update_word(word, guessed_letters)
-            embed.set_field_at(0, name="Word:", value=f"`{display_word}`", inline=False)
-            embed.set_field_at(1, name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(correct_letters), inline=True)
-            embed.set_field_at(2, name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(incorrect_letters), inline=True)
-            embed.set_field_at(3, name="Tries remaining:", value=f"`{tries}`", inline=True)
-            await game_msg.edit(embed=embed)
-            asyncio.create_task(handle_message_deletion(answer))
-
-            if "_" not in display_word:
-                if not winner_id:
-                    winner_id = uid
-                    text, addedMora = await addMora(uid, 3000, answer.channel.id, answer.guild.id, client)
-                break
-
-            if tries <= 0:
-                break
-
-        except asyncio.TimeoutError:
-            continue
-        except Exception as e:
-            print(f"Hangman error: {e}")
-            return
-
-    if "_" in update_word(word, guessed_letters):
+    elif view.tries <= 0:
         final_embed = discord.Embed(
             title="Hangman Game",
             description=f"Game over! The word was `{word}`. Better luck next time!",
             color=discord.Color.red()
         )
-    else:
+    else: # Timeout
         final_embed = discord.Embed(
-            title="Hangman Game",
-            description=f"Success! Everyone got {MORA_EMOTE} **`1500`** per correct letter. {userAndTitle(winner_id, answer.guild.id)} earned an extra {MORA_EMOTE} **`{text}`**.",
-            color=discord.Color.green()
+            title="Hangman - Time Out! ⌛",
+            description=f"Game over! The word was `{word}`. Better luck next time!",
+            color=discord.Color.light_grey()
         )
+        
+        # Disable buttons on timeout if not already
+        for child in view.children:
+            child.disabled = True
+        await game_msg.edit(view=view)
 
-    display_word = update_word(word, guessed_letters)
+    display_word = update_word(word, view.guessed_letters)
     final_embed.add_field(name="Word:", value=f"`{display_word}`", inline=False)
-    final_embed.add_field(name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(correct_letters), inline=True)
-    final_embed.add_field(name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(incorrect_letters), inline=True)
-    final_embed.add_field(name="Tries remaining:", value=f"`{tries}`", inline=True)
+    final_embed.add_field(name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(view.correct_letters), inline=True)
+    final_embed.add_field(name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(view.incorrect_letters), inline=True)
+    final_embed.add_field(name="Tries remaining:", value=f"`{view.tries}`", inline=True)
 
-    for user_id, letters in correct_letters.items():
+    for user_id, letters in view.correct_letters.items():
         count = sum(word.count(letter) for letter in letters)
         reward = count * 1500
         if reward > 0:
             await addMora(user_id, reward, channel.id, game_msg.guild.id, client)
 
-    await game_msg.edit(embed=final_embed)
+    await game_msg.edit(embed=final_embed, view=view)
 
-    for uid in participants:
+    for uid in view.participants:
         quest_data = {"participate_minigames": 1}
-        if uid == winner_id:
+        if uid == view.winner_id:
             quest_data["win_minigames"] = 1
-            quest_data["earn_mora"] = addedMora
+            quest_data["earn_mora"] = view.addedMora
         await update_quest(uid, channel.guild.id, channel.id, quest_data, client)
 
 
@@ -1735,7 +1856,15 @@ class MatchPFPButton(discord.ui.Button):
                 color=discord.Color.green()
             )
             embed.set_image(url=game_state.avatar_url)
-            await interaction.response.edit_message(embed=embed, view=None)
+            
+            for child in self.view.children:
+                child.disabled = True
+                if child.label == self.label:
+                    child.style = discord.ButtonStyle.success
+                else:
+                    child.style = discord.ButtonStyle.secondary
+            
+            await interaction.response.edit_message(embed=embed, view=self.view)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
             del active_pfp_games[interaction.message.id]
         else:
@@ -1828,7 +1957,15 @@ class WhoSaidItButton(discord.ui.Button):
                 description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} guessed **{self.label}** correctly and earned {MORA_EMOTE} `{text}`.\n\n[Message Jump URL]({game_state.jump_url})",
                 color=discord.Color.green()
             )
-            await interaction.response.edit_message(embed=embed, view=None)
+            
+            for child in self.view.children:
+                child.disabled = True
+                if child.label == self.label:
+                    child.style = discord.ButtonStyle.success
+                else:
+                    child.style = discord.ButtonStyle.secondary
+
+            await interaction.response.edit_message(embed=embed, view=self.view)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
             del active_who_said_it_games[interaction.message.id]
         else:
@@ -1893,9 +2030,9 @@ async def whoSaidIt(channel, client):
 ### --- KNOW YOUR MEMBERS --- ###
 
 class KnowMembersState:
-    def __init__(self, correct_member, question_type, participants):
+    def __init__(self, correct_member, question, participants):
         self.correct_member = correct_member
-        self.question_type = question_type
+        self.question = question
         self.participants = participants
         self.answerers = []
 
@@ -1926,12 +2063,19 @@ class KnowMembersButton(discord.ui.Button):
             )
             
             text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
-            embed = discord.Embed(
-                title="Know Your Members",
-                description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} answered correctly and earned {MORA_EMOTE} `{text}`!\n\n**Server Join Dates:**\n{participants_info}",
-                color=discord.Color.green()
-            )
-            await interaction.response.edit_message(embed=embed, view=None)
+            
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            embed.description = f"**{game_state.question}**\n\n{userAndTitle(interaction.user.id, interaction.guild.id)} answered correctly and earned {MORA_EMOTE} `{text}`!\n\n**Server Join Dates:**\n{participants_info}"
+            
+            for child in self.view.children:
+                child.disabled = True
+                if child.label == self.label:
+                    child.style = discord.ButtonStyle.success
+                else:
+                    child.style = discord.ButtonStyle.secondary
+
+            await interaction.response.edit_message(embed=embed, view=self.view)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
             del active_know_members_games[interaction.message.id]
         else:
@@ -1989,7 +2133,7 @@ async def knowYourMembers(channel, client):
 
     active_know_members_games[game_message.id] = KnowMembersState(
         correct_member=correct_member,
-        question_type=mode,
+        question=question,
         participants=selected
     )
 
@@ -2008,8 +2152,9 @@ async def knowYourMembers(channel, client):
 ### --- MEMORY GAME --- ###
 
 class MemoryGameState:
-    def __init__(self, correct_emote):
+    def __init__(self, correct_emote, chosen_col):
         self.correct_emote = correct_emote
+        self.chosen_col = chosen_col
         self.participants = []
 
 class memoryBtn(discord.ui.Button):
@@ -2033,13 +2178,20 @@ class memoryBtn(discord.ui.Button):
         if str(self.emoji) == game_state.correct_emote:
             game_state.participants.append(interaction.user.id)
             text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
-            embed = discord.Embed(
-                title=f"Memory Game",
-                description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} guessed correctly and earned {MORA_EMOTE} `{text}`.",
-                color=discord.Color.green(),
-            )
+            
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            embed.description = f"**Which emote was in Column {game_state.chosen_col}?**\n\n{userAndTitle(interaction.user.id, interaction.guild.id)} guessed correctly and earned {MORA_EMOTE} `{text}`."
+            
+            for child in self.view.children:
+                child.disabled = True
+                if str(child.emoji) == str(self.emoji):
+                    child.style = discord.ButtonStyle.success
+                else:
+                    child.style = discord.ButtonStyle.secondary
+
             await interaction.response.edit_message(
-                content="", embed=embed, view=None
+                content="", embed=embed, view=self.view
             )
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
             del active_memory_games[interaction.message.id]
@@ -2086,7 +2238,8 @@ async def memoryGame(channel, client):
     )
     
     active_memory_games[game_message.id] = MemoryGameState(
-        correct_emote=str(chosen_emote)
+        correct_emote=str(chosen_emote),
+        chosen_col=chosen_col
     )
 
 
@@ -2121,16 +2274,21 @@ class answerLieBtn(discord.ui.Button):
         
         if str(self.emoji) == str(game_state.correct_emote):
             embed = interaction.message.embeds[0]
-            await interaction.message.edit(content="", embed=embed, view=None)
+            
+            for child in self.view.children:
+                child.disabled = True
+                if str(child.emoji) == str(self.emoji):
+                    child.style = discord.ButtonStyle.success
+                else:
+                    child.style = discord.ButtonStyle.secondary
+
             text, addedMora = await addMora(interaction.user.id, game_state.reward, interaction.channel.id, interaction.guild.id, interaction.client)
             
-            result_embed = discord.Embed(
-                title=f"Two Truths, One Lie",
-                description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} chose {self.emoji} correctly and earned {MORA_EMOTE} `{text}`!",
-                color=discord.Color.green()
-            ).set_footer(text="Now y'all know a little bit more about each other.")
-            
-            await interaction.response.send_message(embed=result_embed)
+            embed.color = discord.Color.green()
+            embed.description += f"\n\n🏆 {userAndTitle(interaction.user.id, interaction.guild.id)} chose {self.emoji} correctly and earned {MORA_EMOTE} `{text}`!"
+            embed.set_footer(text="Now y'all know a little bit more about each other.")
+
+            await interaction.response.edit_message(content="", embed=embed, view=self.view)
             
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
             del active_ttol_games[interaction.message.id]
@@ -2916,17 +3074,6 @@ async def get_accurate_time(client) -> float:
         print(f"Time sync failed: {e}")
         return time.time()
     
-async def calculate_profit(box_value: int, bid: int) -> int:
-    """New profit formula with risk/reward balance"""
-    difference = abs(box_value - bid)
-
-    if bid > box_value:  # Overbid (Lose 50% of the overbid amount, capped at 3K loss)
-        loss = min(int((bid - box_value) * 0.5), 3000)
-        return -loss
-    else:  # Underbid (Win full difference + 10% bonus for close bids)
-        bonus = int(box_value - bid) * 0.2 if difference <= 500 else 0
-        return (box_value - bid) + bonus
-
 async def moraAuctionHouse(channel, client):
     start_time = await get_accurate_time(client)
     end_time = int(start_time) + 90
@@ -2934,12 +3081,8 @@ async def moraAuctionHouse(channel, client):
     embed = discord.Embed(
         title="Mora Auction House 🏛️",
         description=(
-            f"A mysterious box worth anywhere **between {MORA_EMOTE} `5000` and `15000`** spawned!\n\n"
-            "**How to play:**\n"
-            "-# 1. Highest bid always wins\n"
-            "-# <:dot:1357188726047899760> **Underbid** = Gain `(box value - bid)` + **20%** bonus for close bids\n"
-            "-# <:dot:1357188726047899760> **Overbid** = Lose **50%** of overbid (maximum of `3000`)\n"
-            f"-# 2. Auction ends <t:{end_time}:R>"
+            f"A mysterious box worth anywhere **between {MORA_EMOTE} `5000` and `15000`** spawned! "
+            f"**Closest bid UNDER the value of the box wins!** Auction ends <t:{end_time}:R>"
         ),
         color=0x3498db
     )
@@ -2960,33 +3103,49 @@ async def moraAuctionHouse(channel, client):
         await view.message.reply(embed=discord.Embed(description="<:no:1036810470860013639> Auction ended with no bids.", color=discord.Color.red()))
         return
 
-    winner_id = max(view.bids, key=lambda k: view.bids[k])
-    winner_bid = view.bids[winner_id]
-    profit = await calculate_profit(box_value, winner_bid)
-
-    result_embed = discord.Embed(
-        description=(
-            f"### 🏆 Highest Bidder: <@{winner_id}>\n"
-            f"**Box Value:** {MORA_EMOTE} `{box_value}`\n"
-            f"**<@{winner_id}>'s Bid:** {MORA_EMOTE} `{winner_bid}`\n"
-            f"**Difference:** {MORA_EMOTE} `{box_value - winner_bid}`"
-        )
-    )
+    # Determine winner: Closest bid under (or equal to) box_value
+    valid_bids = {uid: bid for uid, bid in view.bids.items() if bid <= box_value}
     
-    if profit > 0:
-        text, addedMora = await addMora(winner_id, profit, channel.id, channel.guild.id, client)
-        result_embed.add_field(name="Outcome", value=f"🏅 <@{winner_id}> **earned** {MORA_EMOTE} `{text}`!")
-        result_embed.color = discord.Color.green()
-    else:
-        text, addedMora = await addMora(winner_id, profit, channel.id, channel.guild.id, client)
-        result_embed.add_field(name="Outcome", value=f"⚡ <@{winner_id}> unfortunately **lost** {MORA_EMOTE} `{text}`")
-        result_embed.color = discord.Color.red()
+    if not valid_bids:
+        result_embed = discord.Embed(
+            title="Auction Failed! 🏚️",
+            description=(
+                f"**Box Value:** {MORA_EMOTE} `{box_value}`\n\n"
+                "Everyone overbid! No one takes the box home."
+            ),
+            color=discord.Color.red()
+        )
+        await view.message.reply(embed=result_embed)
+        # Update participation but no win
+        for uid in view.participant_ids:
+             await update_quest(uid, channel.guild.id, channel.id, {"participate_minigames": 1}, client)
+        return
+
+    # Winner is the highest bid among valid bids
+    winner_id = max(valid_bids, key=valid_bids.get)
+    winner_bid = valid_bids[winner_id]
+    
+    # User wins the box value, but paid the bid. Net profit = box_value - winner_bid.
+    profit = box_value - winner_bid
+    
+    text, addedMora = await addMora(winner_id, profit, channel.id, channel.guild.id, client)
+    
+    result_embed = discord.Embed(
+        title="Auction Results! 🎉",
+        description=(
+            f"### 🏆 Winner: <@{winner_id}>\n"
+            f"**Box Value:** {MORA_EMOTE} `{box_value}`\n"
+            f"**Winning Bid:** {MORA_EMOTE} `{winner_bid}`\n"
+            f"**Net Profit:** {MORA_EMOTE} `{text}`"
+        ),
+        color=discord.Color.green()
+    )
     
     await view.message.reply(embed=result_embed)
     
     for uid in view.participant_ids:
         quest_data = {"participate_minigames": 1}
-        if uid == winner_id and profit > 0:
+        if uid == winner_id:
             quest_data["win_minigames"] = 1
             if addedMora > 0:
                 quest_data["earn_mora"] = addedMora
@@ -3122,6 +3281,277 @@ class MoraHeistButton(discord.ui.Button):
         
         await interaction.response.edit_message(embed=embed)
     
+
+### --- SIMPLE MATH GAME --- ###
+
+class SimpleMathButton(discord.ui.Button):
+    def __init__(self, label, is_correct):
+        super().__init__(style=discord.ButtonStyle.secondary, label=str(label))
+        self.is_correct = is_correct
+
+    async def callback(self, interaction: discord.Interaction):
+        view: SimpleMathView = self.view
+        if interaction.user.id in view.participants:
+            await interaction.response.send_message("You have already guessed!", ephemeral=True)
+            return
+
+        view.participants.add(interaction.user.id)
+
+        if self.is_correct:
+            view.winner_id = interaction.user.id
+            view.stop()
+            for child in view.children:
+                child.disabled = True
+                if child == self:
+                    child.style = discord.ButtonStyle.success
+            
+            reward = view.reward
+            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, view.client)
+            await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, view.client)
+
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            if "\nFirst to" in embed.description:
+                embed.description = embed.description.split("\nFirst to")[0]
+            
+            embed.description += f"\n:nerd: <@{interaction.user.id}> solved it correctly and earned {MORA_EMOTE} `{text}`!"
+            await interaction.response.edit_message(embed=embed, view=view)
+        else:
+            await interaction.response.send_message("That is incorrect!", ephemeral=True)
+
+
+class SimpleMathView(discord.ui.View):
+    def __init__(self, correct_val, options, reward, client):
+        super().__init__(timeout=300)
+        self.correct_val = correct_val
+        self.reward = reward
+        self.client = client
+        self.winner_id = None
+        self.participants = set()
+        self.message = None
+
+        random.shuffle(options)
+        
+        for val in options:
+            is_correct = (val == correct_val)
+            self.add_item(SimpleMathButton(val, is_correct))
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except:
+                pass
+
+async def simpleMathGame(channel, client):
+    import operator
+    ops = {
+        "+": operator.add,
+        "-": operator.sub,
+        "*": operator.mul,
+        "/": operator.truediv
+    }
+    
+    while True:
+        nums = [random.randint(1, 20) for _ in range(3)]
+        op_symbols = [random.choice(list(ops.keys())) for _ in range(2)]
+        
+        expr_str = f"{nums[0]} {op_symbols[0]} {nums[1]} {op_symbols[1]} {nums[2]}"
+        try:
+            res = eval(expr_str)
+        except ZeroDivisionError:
+            continue
+            
+        # If not integer
+        if int(res) != res:
+            continue
+        if not (0 <= res <= 1000):
+            continue
+        
+        ground_truth = int(res)
+        break
+
+    distractors = set()
+    attempts = 0
+    while len(distractors) < 4 and attempts < 50:
+        op_symbols_d = [random.choice(list(ops.keys())) for _ in range(2)]
+        expr_str_d = f"{nums[0]} {op_symbols_d[0]} {nums[1]} {op_symbols_d[1]} {nums[2]}"
+        try:
+            res_d = eval(expr_str_d)
+            # if integer
+            if int(res_d) == res_d:
+                val_d = int(res_d)
+                if val_d != ground_truth:
+                    distractors.add(val_d)
+        except ZeroDivisionError:
+            pass
+        attempts += 1
+        
+    while len(distractors) < 4:
+        val_d = random.randint(0, 1000)
+        if val_d != ground_truth:
+            distractors.add(val_d)
+            
+    options = list(distractors) + [ground_truth]
+    reward = random.randint(4000, 6000)
+    
+    view = SimpleMathView(ground_truth, options, reward, client)
+    
+    display_eq = f"{nums[0]} {op_symbols[0].replace('*', '×').replace('/', '÷')} {nums[1]} {op_symbols[1].replace('*', '×').replace('/', '÷')} {nums[2]}"
+    
+    embed = discord.Embed(
+        title="Simple Math Game 🧮",
+        description=f"Calculate the result:\n# {display_eq}\nFirst to answer correctly wins {MORA_EMOTE} `{reward}`. One try per person!",
+        color=discord.Color.gold()
+    )
+    
+    msg = await channel.send(embed=embed, view=view)
+    view.message = msg
+
+
+### --- TIC TAC TOK --- ###
+
+class TicTacTokButton(discord.ui.Button):
+    def __init__(self, x, y):
+        super().__init__(style=discord.ButtonStyle.secondary, label="\u200b", row=x)
+        self.x = x
+        self.y = y
+
+    async def callback(self, interaction: discord.Interaction):
+        view: TicTacTokView = self.view
+        
+        if interaction.user.id != view.current_player:
+            if interaction.user.id in view.players.values():
+                await interaction.response.send_message("It's not your turn!", ephemeral=True)
+            else:
+                await interaction.response.send_message("You are not part of this game!", ephemeral=True)
+            return
+            
+        player_symbol = view.current_symbol
+        self.disabled = True
+        self.label = ""
+        self.emoji = "<:cross:1458355882940170280>" if player_symbol == "X" else "<:circle:1458355853731168307>"
+        self.style = discord.ButtonStyle.secondary
+        
+        view.board[self.x][self.y] = player_symbol
+        
+        winner_symbol = view.check_win()
+        if winner_symbol:
+            view.stop()
+            view.winner_id = interaction.user.id
+            
+            winning_line = view.get_winning_line()
+            for child in view.children:
+                child.disabled = True
+                if isinstance(child, TicTacTokButton):
+                    if (child.x, child.y) in winning_line:
+                        child.style = discord.ButtonStyle.success
+            
+            reward = view.reward
+            text, addedMora = await addMora(view.winner_id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            await update_quest(view.winner_id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
+
+            winner_text = f"🎉 <@{view.winner_id}> won the Tik Tac Tok match and earned {MORA_EMOTE} `{text}`!"
+            await interaction.response.edit_message(content=winner_text, view=view)
+            return
+
+        if all(cell is not None for row in view.board for cell in row):
+            view.stop()
+            for child in view.children:
+                child.disabled = True
+            await interaction.response.edit_message(content="It's a draw!", view=view)
+            return
+
+        if view.current_player == view.player1_id:
+            view.current_player = view.player2_id
+            view.current_symbol = "O"
+        else:
+            view.current_player = view.player1_id
+            view.current_symbol = "X"
+            
+        content, embed = view.get_game_state()
+        await interaction.response.edit_message(content=content, embed=embed, view=view)
+
+
+class TicTacTokView(discord.ui.View):
+    def __init__(self, player1, player2, reward):
+        super().__init__(timeout=300)
+        self.player1_id = player1.id
+        self.player2_id = player2.id
+        self.players = {player1.id: player1, player2.id: player2}
+        self.reward = reward
+        
+        self.current_player = player1.id
+        self.current_symbol = "X"
+        
+        self.board = [[None for _ in range(3)] for _ in range(3)]
+        self.winner_id = None
+        
+        for r in range(3):
+            for c in range(3):
+                self.add_item(TicTacTokButton(r, c))
+
+    def get_game_state(self):
+        p1 = self.players[self.player1_id]
+        p2 = self.players[self.player2_id]
+        
+        turn_msg = f"It's {'<:cross:1458355882940170280>' if self.current_symbol == 'X' else '<:circle:1458355853731168307>'} <@{self.current_player}>'s turn!"
+        
+        embed = discord.Embed(
+            title="Tik Tac Tok", 
+            description=f"First to match 3 symbols in a line wins {MORA_EMOTE} `{self.reward}`.\n\n<:cross:1458355882940170280> {p1.mention}\n<:circle:1458355853731168307> {p2.mention}",
+            color=discord.Color.blurple()
+        )
+        
+        return turn_msg, embed
+
+    def check_win(self):
+        for i in range(3):
+            if self.board[i][0] == self.board[i][1] == self.board[i][2] and self.board[i][0] is not None:
+                return self.board[i][0]
+        for i in range(3):
+            if self.board[0][i] == self.board[1][i] == self.board[2][i] and self.board[0][i] is not None:
+                return self.board[0][i]
+        if self.board[0][0] == self.board[1][1] == self.board[2][2] and self.board[0][0] is not None:
+            return self.board[0][0]
+        if self.board[0][2] == self.board[1][1] == self.board[2][0] and self.board[0][2] is not None:
+            return self.board[0][2]
+        return None
+
+    def get_winning_line(self):
+        for i in range(3):
+            if self.board[i][0] == self.board[i][1] == self.board[i][2] and self.board[i][0] is not None:
+                return [(i, 0), (i, 1), (i, 2)]
+        for i in range(3):
+            if self.board[0][i] == self.board[1][i] == self.board[2][i] and self.board[0][i] is not None:
+                return [(0, i), (1, i), (2, i)]
+        if self.board[0][0] == self.board[1][1] == self.board[2][2] and self.board[0][0] is not None:
+            return [(0, 0), (1, 1), (2, 2)]
+        if self.board[0][2] == self.board[1][1] == self.board[2][0] and self.board[0][2] is not None:
+            return [(0, 2), (1, 1), (2, 0)]
+        return []
+
+async def ticTacTok(channel, client):
+    players = []
+    async for msg in channel.history(limit=50):
+        if not msg.author.bot and msg.author not in players:
+            players.append(msg.author)
+            if len(players) == 2:
+                break
+                
+    if len(players) < 2:
+        return
+        
+    p1 = players[0]
+    p2 = players[1]
+    
+    reward = random.randint(5000, 7000)
+    view = TicTacTokView(p1, p2, reward)
+    content, embed = view.get_game_state()
+    await channel.send(content=content, embed=embed, view=view)
+
 
 # --- DAILY MORA CHESTS --- #
     
@@ -3290,18 +3720,33 @@ class MoraChestView(discord.ui.View):
                 embed=discord.Embed(
                     title="",
                     description=(
-                        "## <:MelonBread_KeqingNote:1342924552392671254> **Season 3 is Coming Soon!**\n"
-                        "We have preliminarily added **6 new quest types** for you to explore! Check if you have those new ones in </mora:1339721187953082543>.\n"
-                        "### <:CharlotteHeart:1191594476263702528> **Support Bot Development & Get Rewards**\n"
-                        "Consider purchasing the **Elite Track** to unlock exclusive cosmetics, boosts, and more! ***[View Elite Track](https://fischl.app/profile)***"
+                        "## <:PinkCelebrate:1204614140044386314> **Minigames Just Got a Fresh New Look!**\n"
+                        "We’ve given **many minigames a visual revamp** with cleaner layouts, smoother flow, and an overall fresher feel. "
+                        "Everything should now feel clearer and more fun to play! <:PaimonWow:1188553806456291489>\n"
+                        "### <:YanfeiNote:1335644122253623458> **2 New Minigames Added**\n"
+                        "<:dot:1357188726047899760> **Simple Math Game** — Quick mental math challenges to test your speed and accuracy 🧠\n"
+                        "<:dot:1357188726047899760> **Tik Tac Tok** — The classic **tic-tac-toe**, but with a *punny twist* 😏\n\n"
+                        "-# Jump in and try them out — your usual rewards, streaks, and progression all work just like before!"
+                    ),
+                    color=discord.Color.green()
+                ),
+                ephemeral=True
+            )
+            return 
+
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title="",
+                    description=(
+                        "## <:CharlotteHeart:1191594476263702528> **Bot Development Isn't Cheap**\n"
+                        f"<:reply:1036792837821435976> Consider purchasing the **Elite Track** for **{interaction.guild.name}** to unlock exclusive cosmetics and boosts, all while supporting ~~your favorite bot~~ Fischl! ***[:yum: Click the link and select {interaction.guild.name} to view and purchase the Elite Track!](https://fischl.app/profile)***"
                     ),
                     color=discord.Color.gold()
-                ).set_thumbnail(url="https://media.discordapp.net/attachments/1106727534479032341/1381827880488669327/elite_track.png"),
+                ),
                 ephemeral=True,
-                view=View().add_item(Button(label="Support Us", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
+                view=View().add_item(Button(label="Your Support Would Mean A Lot!", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
             )
 
-            return 
             await interaction.followup.send(
                 embed=discord.Embed(
                     title="",
@@ -3950,9 +4395,11 @@ class TheEventItself(commands.Cog):
                         knowYourMembers,
                         hangmanGame,
                         moraAuctionHouse,
-                        moraHeist
+                        moraHeist,
+                        simpleMathGame,
+                        ticTacTok
                     ]
-                    letters = list("ABCDEFGHIJKLMNOPQRSTUVWX")
+                    letters = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
                     letter_to_event = dict(zip(letters, events))
                     eligible_events = [
                         letter_to_event[letter]
@@ -4007,7 +4454,9 @@ class Summon(commands.Cog):
             "knowYourMembers": knowYourMembers,
             "hangmanGame": hangmanGame,
             "moraAuctionHouse": moraAuctionHouse,
-            "moraHeist": moraHeist
+            "moraHeist": moraHeist,
+            "simpleMathGame": simpleMathGame,
+            "ticTacTok": ticTacTok
         }
 
     async def minigame_autocomplete(

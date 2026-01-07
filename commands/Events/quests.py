@@ -55,15 +55,15 @@ QUEST_GOAL_PRESETS = {
     },
     "customize_profile": {
         "daily": [1],
-        "weekly": [2, 3, 4],
-        "monthly": [10]
+        "weekly": [2, 3],
+        "monthly": [5, 6]
     },
     "purchase_items": {
         "monthly": [1, 2, 3]
     },
     "unlock_drop_packs": {
-        "weekly": [2, 3],
-        "monthly": [5, 6, 7]
+        "weekly": [1],
+        "monthly": [2, 3]
     }
 }
 QUEST_DESCRIPTIONS = {
@@ -75,9 +75,9 @@ QUEST_DESCRIPTIONS = {
     "collect_chests": "Collect chests",
     "earn_big_mora": "Earn 10k+ Mora in one go",
     "gift_mora_unique": "Gift Mora to different users",
-    "summon_minigame": "Use /summon command",
-    "customize_profile": "Customize your profile",
-    "purchase_items": "Purchase shop items",
+    "summon_minigame": "</summon:1382148690155802656> a minigame",
+    "customize_profile": "</customize:1339721187953082544> your profile",
+    "purchase_items": "Purchase </shop:1345883946105311383> items with </buy:1345883946105311382>",
     "unlock_drop_packs": "Unlock Mora Drop packs"
 }
 QUEST_XP_REWARDS = {

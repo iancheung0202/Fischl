@@ -865,6 +865,8 @@ class PostEmbedView(View):
             else:
                 if channel.id == 1396565294582857738 and interaction.user.id == 692254240290242601:
                     override_content = "<@&1391181456822501426> <@&792207033763758081>"
+                elif channel.id == 1335752228031430778 and interaction.user.id == 692254240290242601:
+                    override_content = ":tada: Happy New Year to all <@&799901172449935390>! **We wish you and your loved ones a joyful year ahead.** May 2026 be your best year yet! <:DumplingHeart:1394194310483939348>"
                 await channel.send(
                     content=override_content if 'override_content' in locals() else self.editor.message_content or None,
                     embed=embed,
