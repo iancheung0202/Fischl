@@ -94,7 +94,7 @@ def get_kingdom_embed(user, guild_id, custom_color=None):
             boost = min(50, lvl)
             perk_val = f"`+{boost}%` XP"
         elif key == "garten": 
-            func_desc = "Bonus Chest Loot"
+            func_desc = "Bonus Summon in Chest"
             chance = min(50, lvl)
             perk_val = f"`{chance}%` chance"
         
@@ -115,7 +115,7 @@ def get_kingdom_embed(user, guild_id, custom_color=None):
         ),
         color=custom_color or discord.Color.purple()
     )
-    embed.set_footer(text="Realm Level is the sum of all your building levels.")
+    embed.set_footer(text="+1% per level • Max rewards capped at Lv. 50")
     
     perks = []
     

@@ -6,8 +6,61 @@ import os
 from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
-from PIL import Image, ImageEnhance
-from commands.Welcome.createWelcomeMsg import createWelcomeMsg, script
+from PIL import Image, ImageEnhance, ImageDraw, ImageFont
+
+### ------ WELCOME IMAGE CARD ------ ###
+
+async def createWelcomeMsg(user, bg="./assets/bg.png", filename="./assets/welcome.png"):
+    try:
+        await user.avatar.with_static_format("png").with_size(256).save(filename)
+        im1 = Image.open(bg)
+        im2 = Image.open(filename)
+    except Exception:
+        im1 = Image.open(bg)
+        im2 = Image.open("./assets/DefaultIcon.png")
+
+    bigsize = (im2.size[0] * 3, im2.size[1] * 3)
+    mask = Image.new('L', bigsize, 0)
+    draw = ImageDraw.Draw(mask) 
+    draw.ellipse((0, 0) + bigsize, fill=255)
+    mask = mask.resize(im2.size, Image.LANCZOS)
+    im2.putalpha(mask)
+
+    im1.paste(im2, (384, 50), im2.convert("RGBA"))
+    color = (255, 255, 255)
+    try:
+        font = ImageFont.truetype("./assets/ja-jp.ttf", 75)
+    except Exception:
+        font = ImageFont.truetype("./assets/LilitaOne-Regular.ttf", 90)
+    d1 = ImageDraw.Draw(im1)
+    d1.text((325, 320), "Welcome", font=font, fill=color)
+    im1.save(filename)
+    try:
+        font = ImageFont.truetype("./assets/ja-jp.ttf", 35)
+    except Exception:
+        font = ImageFont.truetype("./assets/LilitaOne-Regular.ttf", 50)
+    text = f"{user.name}"
+    textLen = len(text)
+    d2 = ImageDraw.Draw(im1)
+    d2.text((((1024/2)-(20*(textLen/2))),410), text, font=font, fill=color)
+    im1.save(filename)
+    return filename
+
+def word(n):
+    return str(n) + ("th" if 4 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
+
+def script(string, user, guild):
+    if "{mention}" in string:
+        string = string.replace("{mention}", f"{user.mention}")
+    if "{server}" in string:
+        string = string.replace("{server}", f"{guild.name}")
+    if "{user}" in string:
+        string = string.replace("{user}", f"{user.name}")
+    if "{count}" in string:
+        string = string.replace("{count}", f"{guild.member_count}")
+    if "{count-th}" in string:
+        string = string.replace("{count-th}", f"{word(guild.member_count)}")
+    return string
 
 class WelcomeEditor:
     def __init__(self, user_id, guild_id, existing_data=None):
@@ -1042,5 +1095,142 @@ class Welcome(commands.GroupCog, name="welcome"):
         except:
             await interaction.followup.send(f"```{str(error)}```", ephemeral=True)
 
+class OnWelcomeMemberJoin(commands.Cog): 
+    def __init__(self, bot):
+        self.client = bot
+  
+    @commands.Cog.listener() 
+    async def on_member_join(self, member):
+        ref = db.reference(f"/WelcomeV2/{member.guild.id}")
+        welcome_data = ref.get()
+        
+        if welcome_data:
+            # New system
+            await self.handle_new_welcome(member, welcome_data)
+        else:
+            # Legacy system
+            await self.handle_legacy_welcome(member)
+    
+    async def handle_new_welcome(self, member, welcome_data):
+        editor_data = welcome_data
+        channel_id = editor_data.get('channel_id')
+        welcome_image_enabled = editor_data.get('welcome_image_enabled', False)
+        
+        if not channel_id:
+            return
+        
+        channel = self.client.get_channel(channel_id)
+        if not channel:
+            return
+        
+        embed = discord.Embed(
+            title=script(editor_data['embed']['title'], member, member.guild) if editor_data['embed']['title'] else None,
+            description=script(editor_data['embed']['description'], member, member.guild) if editor_data['embed']['description'] else None,
+            color=editor_data['embed']['color']
+        )
+        
+        if editor_data['embed']['footer']['text']:
+            embed.set_footer(
+                text=script(editor_data['embed']['footer']['text'], member, member.guild),
+                icon_url=editor_data['embed']['footer']['icon_url'] or None
+            )
+        
+        if editor_data['embed']['author']['name']:
+            embed.set_author(
+                name=script(editor_data['embed']['author']['name'], member, member.guild),
+                icon_url=editor_data['embed']['author']['icon_url'] or None
+            )
+        
+        if editor_data['embed']['thumbnail']:
+            embed.set_thumbnail(url=editor_data['embed']['thumbnail'])
+        
+        if welcome_image_enabled:
+            filename = await createWelcomeMsg(member, bg=f"./assets/Welcome Image Background/{member.guild.id}.png")
+            chn = self.client.get_channel(1026904121237831700)
+            msg = await chn.send(f"**Guild Name:** {member.guild}", file=discord.File(filename))
+            url = msg.attachments[0].proxy_url 
+            embed.set_image(url=url)
+        elif editor_data['embed']['image']:
+            embed.set_image(url=editor_data['embed']['image'])
+        
+        for field in editor_data['embed'].get('fields', []):
+            embed.add_field(
+                name=script(field['name'], member, member.guild),
+                value=script(field['value'], member, member.guild),
+                inline=field['inline']
+            )
+        
+        if editor_data['embed']['timestamp']:
+            embed.timestamp = discord.utils.utcnow()
+        
+        view = discord.ui.View()
+        for link in editor_data.get('button_links', []):
+            try:
+                emoji = discord.PartialEmoji.from_str(link["emoji"]) if link["emoji"] else None
+            except:
+                emoji = None
+            button = discord.ui.Button(
+                label=script(link["label"], member, member.guild),
+                url=script(link["url"], member, member.guild),
+                emoji=emoji,
+                style=discord.ButtonStyle.link
+            )
+            view.add_item(button)
+        
+        message_content = script(editor_data.get('message_content', ''), member, member.guild)
+        await channel.send(
+            content=message_content or None,
+            embed=embed,
+            view=view if editor_data.get('button_links') else None
+        )
+    
+    async def handle_legacy_welcome(self, member):
+        ref = db.reference("/Welcome")
+        welcome = ref.get()
+
+        welcomeChannel = found = False
+        file = embed = None
+
+        for key, val in welcome.items():
+            if val['Server ID'] == member.guild.id:
+                welcomeChannel = val["Welcome Channel ID"]
+                welcomeImageEnabled = val["Welcome Image Enabled"]
+                break
+
+        if welcomeChannel is not False:
+            ref2 = db.reference("/Welcome Content")
+            welcomecontent = ref2.get()
+        
+            for key, val in welcomecontent.items():
+                if val['Server ID'] == member.guild.id:
+                    if (val['Title'] != "" or val['Description'] != ""):
+                        hex = val['Color']
+                        if hex.startswith('#'):
+                            hex = hex[1:]
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get('https://www.thecolorapi.com/id', params={"hex": hex}) as server:
+                              if server.status == 200:
+                                  js = await server.json()
+                                  try:
+                                      color = discord.Color(int(f"0x{js['hex']['clean']}", 16))
+                                  except:
+                                      color = discord.Color.blurple()
+                            
+                        embed = discord.Embed(title=script(val['Title'], member, member.guild), description=script(val['Description'], member, member.guild), color=color)
+                        if welcomeImageEnabled:
+                            filename = await createWelcomeMsg(member, bg=f"./assets/Welcome Image Background/{member.guild.id}.png")
+                            chn = self.client.get_channel(1026904121237831700)
+                            msg = await chn.send(f"**Guild Name:** {member.guild}", file=discord.File(filename))
+                            url = msg.attachments[0].proxy_url 
+                            embed.set_image(url=url)
+                    elif (val['Title'] == "" and val['Description'] == ""):
+                        if welcomeImageEnabled:
+                            filename = await createWelcomeMsg(member, bg=f"./assets/Welcome Image Background/{member.guild.id}.png")
+                            file = discord.File(filename)
+
+                    channel = self.client.get_channel(welcomeChannel)
+                    await channel.send(script(val['Message Content'], member, member.guild), embed=embed, file=file)
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Welcome(bot))
+    await bot.add_cog(OnWelcomeMemberJoin(bot))
