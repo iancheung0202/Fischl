@@ -1788,9 +1788,9 @@ async def perform_ticket_close(interaction: discord.Interaction, closing_message
         try:
             summary = await generate(
                 f"The following is the entire history of the ticket in a Discord server for a user. "
-                "Please summarise the entire interaction into 1 or 2 sentences. "
+                "Please summarise the entire interaction into 1 sentence. "
                 "Only give 1 response option. Do not output additional text such as 'Here is the summary:'. "
-                f"Exclude the channel names, user IDs, server names, Fischl (bot name), or the fact that a ticket is created or closed in your response.\n\n"
+                f"Do not include any metadata or user info. Only focus on the conversation content.\n\n"
                 "Full transcript:\n"
                 f"{f.read().split('<!DOCTYPE html>')[1]}")
         except Exception as e:

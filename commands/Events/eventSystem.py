@@ -30,7 +30,7 @@ minigame_titles = [
     "Currency Counting",
     "Rock Paper Scissors Duel",
     "Roll A Dice",
-    "Teyvat Voiceline Quiz",
+    "Group Blackjack",
     "Teyvat Emoji Riddles",
     "Galaxy Emoji Riddles",
     "Double or Keep",

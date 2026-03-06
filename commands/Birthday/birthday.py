@@ -1,6 +1,7 @@
 import discord
 import datetime
 import pytz
+import re
 
 from firebase_admin import db
 from discord import app_commands
@@ -143,6 +144,97 @@ class Birthday(commands.GroupCog, name="birthday"):
     async def birthday_sync_error(self, interaction: discord.Interaction, error: Exception):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
+    # @app_commands.command(
+    #     name="import", description="Import birthday data from a TXT file (New Format)"
+    # )
+    # @app_commands.describe(file="The TXT file with the new format")
+    # @app_commands.checks.has_permissions(administrator=True)
+    # async def birthday_import(
+    #     self, interaction: discord.Interaction, file: discord.Attachment
+    # ) -> None:
+    #     await interaction.response.defer()
+
+    #     content = await file.read()
+    #     text = content.decode("utf-8")
+    #     # Handle literal \n as newlines if present, primarily for single-line files with literal escapes
+    #     if "\\n" in text:
+    #          text = text.replace("\\n", "\n")
+    #     lines = text.splitlines()
+
+    #     month_name_to_num = {
+    #         "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+    #         "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
+    #     }
+
+    #     count = 0
+    #     ref = db.reference("/Birthday")
+    #     existing_birthdays = ref.get() or {}
+    #     # We want to overwrite existing birthdays, so we track keys to update
+    #     # user_id -> firebase_key
+    #     existing_user_keys = {}
+        
+    #     if existing_birthdays:
+    #         for key, value in existing_birthdays.items():
+    #             if isinstance(value, dict) and "User ID" in value:
+    #                  existing_user_keys[value.get("User ID")] = key
+
+    #     for line in lines:
+    #         line = line.strip()
+    #         if not line:
+    #             continue
+
+    #         match = re.search(r"__\*\*(.+?) (\d{1,2})\*\*__:", line)
+    #         if not match:
+    #             continue
+
+    #         month_str = match.group(1).strip()
+    #         day = int(match.group(2))
+    #         month = month_name_to_num.get(month_str)
+
+    #         if not month:
+    #             continue
+
+    #         # Extract user IDs
+    #         # Looking for <@123456789> or <@!123456789>
+    #         user_ids_strs = re.findall(r"<@!?(\d+)>", line)
+            
+    #         for user_id_str in user_ids_strs:
+    #             uid = int(user_id_str)
+                
+    #             timezone = "Atlantic/Azores"
+    #             # Use a leap year like 2024 so Feb 29 is valid
+    #             birth_date = datetime.datetime(2024, month, day, 0, 0, 0)
+    #             birth_timezone = pytz.timezone(timezone)
+    #             localized_birth_date = birth_timezone.localize(birth_date)
+    #             utc_birth_date = localized_birth_date.astimezone(pytz.utc)
+    #             display_utc_date = utc_birth_date.strftime("%m-%d %H:%M")
+
+    #             data = {
+    #                 "User ID": uid,
+    #                 "Month": month,
+    #                 "Day": day,
+    #                 "Timezone": timezone,
+    #                 "Display UTC Date": display_utc_date,
+    #                 "Fav Character": "None",
+    #             }   
+                
+    #             if uid in existing_user_keys:
+    #                 # Update existing record
+    #                 db.reference(f"/Birthday/{existing_user_keys[uid]}").update(data)
+    #             else:
+    #                 # Push new record
+    #                 new_ref = ref.push()
+    #                 new_ref.set(data)
+    #                 existing_user_keys[uid] = new_ref.key # Prevent duplicates within same import session if any
+
+    #             count += 1
+        
+    #     await interaction.followup.send(f"Imported **{count}** birthday records.")
+
+    # @birthday_import.error
+    # async def birthday_import_error(self, interaction: discord.Interaction, error: Exception):
+    #     await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+
     @app_commands.command(name="set", description="Set your birth date and timezone")
     @app_commands.choices(
         month=[
@@ -265,8 +357,10 @@ class Birthday(commands.GroupCog, name="birthday"):
             description=f":birthday: You have set your birthday to **{monthName} {day}** *({timezone})*. \n*<:YanfeiNote:1335644122253623458> Your birthday in UTC time is **{display_utc_date}** {time_to_emoji(display_utc_date.split(' ')[1])}*",
             color=0x04C607,
         )
-        icon_link = characters_dict[character]['icon']
-        embed.set_thumbnail(url=icon_link)
+        if character != "None" and character in characters_dict:
+            icon_link = characters_dict[character]['icon']
+            embed.set_thumbnail(url=icon_link)
+
         embed.set_footer(text="Missing your favorite character? Join discord.gg/BXkc8CC4uJ and let us know!")
         await interaction.response.send_message(embed=embed)
     @birthday_set.error
@@ -319,8 +413,11 @@ class Birthday(commands.GroupCog, name="birthday"):
                 description=f":birthday: {user.mention}'s birthday is **{months[month-1]} {day}** *({timezone})*.\n In UTC time, it is **{display_utc_date}** {time_to_emoji(display_utc_date.split(' ')[1])}",
                 color=0xF1EE0C,
             )
-        icon_link = characters_dict[character]['icon']
-        embed.set_thumbnail(url=icon_link)
+        
+        if character != "None" and character in characters_dict:
+            icon_link = characters_dict[character]['icon']
+            embed.set_thumbnail(url=icon_link)
+            
         await interaction.response.send_message(embed=embed)
     @birthday_get.error
     async def birthday_get_error(self, interaction: discord.Interaction, error: Exception):

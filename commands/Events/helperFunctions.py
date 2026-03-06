@@ -182,7 +182,6 @@ class PersistentXPQuestInfoView(discord.ui.View):
     ):
         embed = discord.Embed(
             title="What Are XP & Quests? <:AlbedoQuestion:1191574408544923799>",
-            description="-# Read the full patch notes [here](https://fischlbot.web.app/track/update/).",
             color=discord.Color.random()
         )
         embed.add_field(
@@ -246,7 +245,6 @@ class TierRewardsView(discord.ui.View):
     ):
         embed = discord.Embed(
             title="What Are XP & Quests? <:AlbedoQuestion:1191574408544923799>",
-            description="-# Read the full patch notes [here](https://fischlbot.web.app/track/update/).",
             color=discord.Color.random()
         )
         embed.add_field(

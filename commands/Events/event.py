@@ -1085,134 +1085,301 @@ class QuizView(discord.ui.View):
                  await self.game_msg.edit(view=self)
 
 
-### --- GUESS THE VOICELINE --- ###
+### --- GROUP BLACKJACK --- ###
 
-async def guessTheVoiceline(channel, client):
-    reward = random.randint(4000, 6000)
-    start_time = time.time()
-    timeout = 300
+class EventBlackjackGameView(View):
+    """Per-player blackjack game view (sent as ephemeral)."""
 
-    df = pd.read_csv(
-        "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVeIY2FLhHODz6nyJ5D8IWBtDRRttfIZNkUKnRmqoTksaHXxZnckUD7ou4s5DKT_CDRZbMBs9tlnd8/pub?output=csv"
-    )
-    characterEmojis = dict(zip(df["Character Name"], df["Emojis"]))
-    valid_names = {name.lower() for name in characterEmojis.keys()}
+    _DECK = [
+        (rank, suit)
+        for rank in ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+        for suit in ['♠', '♥', '♦', '♣']
+    ]
+    _SUIT_EMOJIS = {'♠': '♠️', '♥': '♥️', '♦': '♦️', '♣': '♣️'}
 
-    def replace_character_name(text, character_name):
-        if " " not in character_name:
-            return re.sub(
-                r"\b" + character_name + r"\b",
-                "_" * len(character_name),
-                text,
-                flags=re.IGNORECASE,
-            )
-        for word in character_name.split():
-            text = re.sub(
-                r"\b" + word + r"\b",
-                "_" * len(word),
-                text,
-                flags=re.IGNORECASE,
-            )
-        return text
+    def __init__(self, client, channel, user_id, reward, dealer_cards, player_cards, active_players):
+        super().__init__(timeout=60)
+        self.client = client
+        self.channel = channel
+        self.user_id = user_id
+        self.reward = reward
+        self.dealer_cards = dealer_cards
+        self.player_cards = player_cards
+        self.active_players = active_players
+        self.game_over = False
+        self.message = None
 
-    processed_voice_lines = []
+    # ── helpers ──────────────────────────────────────────────────────────────
 
-    while not processed_voice_lines:
-        char = None
-        while not char:
-            char = random.choice(list(characterEmojis.keys()))
-            formatted_char = char.replace(" ", "_")
-            url = f"https://genshin-impact.fandom.com/wiki/{formatted_char}/Voice-Overs"
+    def _hand_value(self, cards):
+        value, aces = 0, 0
+        for rank, _ in cards:
+            if rank in ('J', 'Q', 'K'):
+                value += 10
+            elif rank == 'A':
+                aces += 1
+                value += 11
+            else:
+                value += int(rank)
+        while value > 21 and aces:
+            value -= 10
+            aces -= 1
+        return value
+
+    def _draw_card(self):
+        used = set(map(tuple, self.dealer_cards + self.player_cards))
+        available = [c for c in self._DECK if c not in used]
+        return random.choice(available)
+
+    def _fmt_cards(self, cards, hide_first=False):
+        parts = []
+        for i, (rank, suit) in enumerate(cards):
+            parts.append("`??`" if hide_first and i == 0 else f"`{rank}{self._SUIT_EMOJIS[suit]}`")
+        return " ".join(parts)
+
+    def _build_embed(self, title, description, color):
+        embed = discord.Embed(title=title, description=description, color=color)
+        dv = self._hand_value(self.dealer_cards)
+        pv = self._hand_value(self.player_cards)
+        if self.game_over:
+            embed.add_field(name="🎩 Dealer", value=f"{self._fmt_cards(self.dealer_cards)} (Value: {dv})", inline=False)
+        else:
+            embed.add_field(name="🎩 Dealer", value=f"{self._fmt_cards(self.dealer_cards, hide_first=True)} (Value: ?)", inline=False)
+        embed.add_field(name="🎲 Your Hand", value=f"{self._fmt_cards(self.player_cards)} (Value: {pv})", inline=False)
+        embed.add_field(name="🏆 Reward", value=f"{MORA_EMOTE} `{self.reward:,}` if you win!", inline=False)
+        return embed
+
+    async def _finish(self, interaction, title, description, color, mora_reward=0):
+        self.game_over = True
+        self.active_players.discard(self.user_id)
+        self.clear_items()
+        embed = self._build_embed(title, description, color)
+        await interaction.response.edit_message(embed=embed, view=self)
+        if mora_reward > 0:
+            _, added = await addMora(self.user_id, mora_reward, self.channel.id, self.channel.guild.id, self.client)
+            await update_quest(self.user_id, self.channel.guild.id, self.channel.id,
+                               {"win_minigames": 1, "earn_mora": added}, self.client)
+
+    async def _dealer_play_and_resolve(self, interaction):
+        """Dealer draws to 17+ then determines outcome."""
+        used = self.dealer_cards + self.player_cards
+        deck = list(self._DECK)
+        while self._hand_value(self.dealer_cards) < 17:
+            available = [c for c in deck if c not in used]
+            card = random.choice(available)
+            self.dealer_cards.append(card)
+            used.append(card)
+
+        dv = self._hand_value(self.dealer_cards)
+        pv = self._hand_value(self.player_cards)
+
+        if dv > 21 or pv > dv:
+            reason = "Dealer busted!" if dv > 21 else "You beat the dealer!"
+            await self._finish(interaction, "🎉 You Win!", f"{reason} You win {MORA_EMOTE} `{self.reward:,}`!", discord.Color.green(), mora_reward=self.reward)
+        elif dv > pv:
+            await self._finish(interaction, "💔 You Lose!", "Dealer wins! Better luck next time.", discord.Color.red())
+        else:
+            consolation = self.reward // 4
+            await self._finish(interaction, "🤝 Push!", f"It's a tie! You receive a consolation of {MORA_EMOTE} `{consolation:,}`.", discord.Color.yellow(), mora_reward=consolation)
+
+    # ── buttons ──────────────────────────────────────────────────────────────
+
+    @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary, emoji="🎯", row=0)
+    async def hit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your game!", ephemeral=True)
+        self.player_cards.append(self._draw_card())
+        pv = self._hand_value(self.player_cards)
+        if pv > 21:
+            await self._finish(interaction, "💥 Bust!", "You went over 21! No reward this time.", discord.Color.red())
+        elif pv == 21:
+            await self._dealer_play_and_resolve(interaction)
+        else:
+            embed = self._build_embed("🎲 Blackjack — Your Turn", "Hit or Stand?", discord.Color.blue())
+            embed.set_footer(text="You have 60 seconds to make each move!")
+            await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Stand", style=discord.ButtonStyle.green, emoji="✋", row=0)
+    async def stand_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your game!", ephemeral=True)
+        await self._dealer_play_and_resolve(interaction)
+
+    @discord.ui.button(label="Double Down", style=discord.ButtonStyle.red, emoji="💵", row=0)
+    async def double_down_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your game!", ephemeral=True)
+        self.reward *= 2
+        self.player_cards.append(self._draw_card())
+        if self._hand_value(self.player_cards) > 21:
+            await self._finish(interaction, "💥 Bust!", f"You went over 21 after doubling down! No reward.", discord.Color.red())
+        else:
+            await self._dealer_play_and_resolve(interaction)
+
+    @discord.ui.button(label="Surrender", style=discord.ButtonStyle.grey, emoji="🏳️", row=1)
+    async def surrender_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your game!", ephemeral=True)
+        consolation = self.reward // 4
+        await self._finish(interaction, "🏳️ Surrendered", f"You surrendered and receive a consolation of {MORA_EMOTE} `{consolation:,}`.", discord.Color.orange(), mora_reward=consolation)
+
+    async def on_timeout(self):
+        if not self.game_over and self.message:
+            self.game_over = True
+            self.active_players.discard(self.user_id)
+            self.clear_items()
+            embed = discord.Embed(title="⏰ Game Timeout!", description="You took too long! Your game has ended without a reward.", color=discord.Color.red())
+            embed.add_field(name="🎩 Dealer", value=f"{self._fmt_cards(self.dealer_cards)} (Value: {self._hand_value(self.dealer_cards)})", inline=False)
+            embed.add_field(name="🎲 Your Hand", value=f"{self._fmt_cards(self.player_cards)} (Value: {self._hand_value(self.player_cards)})", inline=False)
             try:
-                response = requests.get(url)
-                response.raise_for_status()
-            except:
-                char = None
+                await self.message.edit(embed=embed, view=self)
+            except Exception:
+                pass
 
-        soup = BeautifulSoup(response.content, "html.parser")
-        voice_lines = []
-        tables = soup.find_all("table", class_="wikitable")
-        for table in tables:
-            rows = table.find_all("tr")
-            for row in rows[1:]:
-                cells = row.find_all("td")
-                if cells:
-                    line = cells[0].get_text(separator=" ", strip=True)
-                    if line:
-                        voice_lines.append(line)
 
-        for ul in soup.find_all("ul"):
-            for li in ul.find_all("li"):
-                text = li.get_text(separator=" ", strip=True)
-                if text.startswith('"') and text.endswith('"'):
-                    voice_lines.append(text)
+class EventBlackjackLobbyView(View):
+    """The public event message view — players click to start their own game."""
 
-        voice_lines = list(dict.fromkeys(voice_lines))
+    def __init__(self, client, channel, reward, active_players, all_participants, deadline):
+        super().__init__(timeout=None)
+        self.client = client
+        self.channel = channel
+        self.reward = reward
+        self.active_players = active_players      # Set[int] — currently in-game
+        self.all_participants = all_participants  # Set[int] — everyone who joined
+        self.deadline = deadline
+        self.game_msg = None
 
-        for line in voice_lines:
-            if "class=hidden" not in line:
-                split_line = line.split(".ogg")
-                if len(split_line) > 2:
-                    try:
-                        new_line = split_line[2]
-                        processed_line = replace_character_name(new_line, char)
-                        processed_voice_lines.append(processed_line)
-                    except Exception as e:
-                        print(e)
-    
-    voiceline = random.choice(processed_voice_lines).strip()
+    @discord.ui.button(label="Play Blackjack", style=discord.ButtonStyle.green, emoji="🃏")
+    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user_id = interaction.user.id
+
+        if time.time() > self.deadline:
+            return await interaction.response.send_message("❌ The blackjack table is closed! No new games can be started.", ephemeral=True)
+        if user_id in self.active_players:
+            return await interaction.response.send_message("❌ You already have an active game!", ephemeral=True)
+        if user_id in self.all_participants:
+            return await interaction.response.send_message("❌ You've already played your game for this event!", ephemeral=True)
+
+        self.active_players.add(user_id)
+        self.all_participants.add(user_id)
+
+        # Deal initial cards
+        deck = list(EventBlackjackGameView._DECK)
+        random.shuffle(deck)
+        player_cards = [deck[0], deck[2]]
+        dealer_cards = [deck[1], deck[3]]
+
+        def _hv(cards):
+            v, a = 0, 0
+            for r, _ in cards:
+                if r in ('J','Q','K'): v += 10
+                elif r == 'A': a += 1; v += 11
+                else: v += int(r)
+            while v > 21 and a: v -= 10; a -= 1
+            return v
+
+        pv = _hv(player_cards)
+        dv = _hv(dealer_cards)
+
+        game_view = EventBlackjackGameView(
+            client=self.client,
+            channel=self.channel,
+            user_id=user_id,
+            reward=self.reward,
+            dealer_cards=dealer_cards,
+            player_cards=player_cards,
+            active_players=self.active_players,
+        )
+
+        # Natural blackjack checks
+        if pv == 21 and dv == 21:
+            game_view.game_over = True
+            self.active_players.discard(user_id)
+            embed = game_view._build_embed("🤝 Push!", "Both you and the dealer got blackjack! No reward.", discord.Color.yellow())
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        elif pv == 21:
+            game_view.game_over = True
+            self.active_players.discard(user_id)
+            bj_reward = int(self.reward * 1.5)
+            text, added = await addMora(user_id, bj_reward, self.channel.id, self.channel.guild.id, self.client)
+            embed = game_view._build_embed("🎰 Natural Blackjack!", f"You got blackjack! You win {MORA_EMOTE} `{text}`! (1.5× bonus)", discord.Color.gold())
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await update_quest(user_id, self.channel.guild.id, self.channel.id, {"win_minigames": 1, "earn_mora": added}, self.client)
+        elif dv == 21:
+            game_view.game_over = True
+            self.active_players.discard(user_id)
+            embed = game_view._build_embed("💔 Dealer Blackjack!", "The dealer got natural blackjack! Better luck next time.", discord.Color.red())
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embed = game_view._build_embed("🃏 Blackjack — Your Turn!", "Hit or Stand?", discord.Color.blue())
+            embed.set_footer(text="You have 60 seconds per move • Double Down & Surrender available!")
+            await interaction.response.send_message(embed=embed, view=game_view, ephemeral=True)
+            game_view.message = await interaction.original_response()
+
+        # Update lobby counter
+        try:
+            count = len(self.all_participants)
+            new_embed = discord.Embed(
+                title="🃏 Group Blackjack Event!",
+                description=(
+                    f"A blackjack table just opened! Click the button below to start **your own game**.\n\n"
+                    f"**Win:** {MORA_EMOTE} `{self.reward:,}` • **Natural BJ:** {MORA_EMOTE} `{int(self.reward * 1.5):,}` (1.5×)\n\n"
+                    f"-# New games close in 2 minutes from start • One game per player"
+                ),
+                color=0x1a6635,
+            )
+            new_embed.set_footer(text=f"{count} player{'s' if count != 1 else ''} playing so far!")
+            await self.game_msg.edit(embed=new_embed, view=self)
+        except Exception:
+            pass
+
+
+async def groupBlackjack(channel, client):
+    reward = random.randint(3000, 5000)
+    active_players: set = set()    # currently in a game
+    all_participants: set = set()  # everyone who clicked Join
+    deadline = time.time() + 120   # 2-minute join window
 
     embed = discord.Embed(
-        title="Teyvat Voiceline Quiz | Genshin Character",
-        description=f"First to guess the character wins {MORA_EMOTE} `{reward}`.\n\n```{voiceline}```",
-        color=discord.Color.blue(),
+        title="🃏 Group Blackjack Event!",
+        description=(
+            f"A blackjack table just opened! Click the button below to start **your own game**.\n\n"
+            f"**Win:** {MORA_EMOTE} `{reward:,}` • **Natural BJ:** {MORA_EMOTE} `{int(reward * 1.5):,}` (1.5×)\n\n"
+            f"-# New games close in 2 minutes • One game per player • Beat the dealer to win!"
+        ),
+        color=0x1a6635,
     )
-    embed.set_footer(text="Voicelines from Genshin Impact Wiki Fandom • 5-minute time limit")
-    print(voiceline)
-    print(char)
+    embed.set_footer(text="Hit, Stand, Double Down or Surrender!")
 
-    # Generate Distractors
-    all_chars = list(characterEmojis.keys())
-    distractors = random.sample([n for n in all_chars if n != char], 4)
-    options = [char] + distractors
+    lobby_view = EventBlackjackLobbyView(client, channel, reward, active_players, all_participants, deadline)
+    game_msg = await channel.send(embed=embed, view=lobby_view)
+    lobby_view.game_msg = game_msg
 
-    def win_embed_factory(user, text):
-        return discord.Embed(
-            title="Teyvat Voiceline Quiz | Genshin Character",
-            description=(
-                f"```{voiceline}```\n"
-                f"{userAndTitle(user.id, user.guild.id)} "
-                f"answered `{char}` and won {MORA_EMOTE} `{text}`."
-            ),
-            color=discord.Color.brand_green(),
-        )
+    # Hold the channel for the 2-minute join window
+    await asyncio.sleep(120)
 
-    def timeout_embed_factory():
-        return discord.Embed(
-            title="Genshin Voiceline Quiz - Time Out! ⌛",
-            description=(
-                f"**Voiceline:** ```{voiceline}```\n"
-                f"**Character:** `{char}`\n"
-                "No one guessed in time!"
-            ),
-            color=discord.Color.light_grey(),
-        )
+    # Disable the join button and close the lobby
+    lobby_view.join_button.disabled = True
+    count = len(all_participants)
+    closed_embed = discord.Embed(
+        title="🃏 Group Blackjack — Table Closed",
+        description=(
+            f"The blackjack table has closed. No new games can be started.\n\n"
+            f"**{count}** player{'s' if count != 1 else ''} participated!"
+        ),
+        color=discord.Color.greyple(),
+    )
+    try:
+        await game_msg.edit(embed=closed_embed, view=lobby_view)
+    except Exception:
+        pass
 
-    view = QuizView(char, options, reward, client, channel, win_embed_factory, timeout_embed_factory)
-    game_msg = await channel.send(embed=embed, view=view)
-    view.game_msg = game_msg
+    # Allow a short window for any ongoing games to finish before quest logging
+    await asyncio.sleep(30)
 
-    await view.wait()
-
-    for uid in view.participants:
-        if uid != view.winner_id:
-            await update_quest(
-                uid,
-                channel.guild.id,
-                channel.id,
-                {"participate_minigames": 1},
-                client
-            )
+    for uid in all_participants:
+        await update_quest(uid, channel.guild.id, channel.id, {"participate_minigames": 1}, client)
 
 
 ### --- HSR EMOJI RIDDLE  --- ###
@@ -4405,7 +4572,7 @@ class TheEventItself(commands.Cog):
                         countingCurrency,
                         rockPaperScissors,
                         rollADice,
-                        guessTheVoiceline,
+                        groupBlackjack,
                         genshinEmojiRiddle,
                         hsrEmojiRiddle,
                         doubleOrKeep,
@@ -4464,7 +4631,7 @@ class Summon(commands.Cog):
             "countingCurrency": countingCurrency,
             "rockPaperScissors": rockPaperScissors,
             "rollADice": rollADice,
-            "guessTheVoiceline": guessTheVoiceline,
+            "groupBlackjack": groupBlackjack,
             "genshinEmojiRiddle": genshinEmojiRiddle,
             "hsrEmojiRiddle": hsrEmojiRiddle,
             "doubleOrKeep": doubleOrKeep,

@@ -28,21 +28,24 @@ async def createWelcomeMsg(user, bg="./assets/bg.png", filename="./assets/welcom
 
     im1.paste(im2, (384, 50), im2.convert("RGBA"))
     color = (255, 255, 255)
+    lilita_font = False
     try:
         font = ImageFont.truetype("./assets/ja-jp.ttf", 75)
     except Exception:
+        lilita_font = True
         font = ImageFont.truetype("./assets/LilitaOne-Regular.ttf", 90)
     d1 = ImageDraw.Draw(im1)
-    d1.text((325, 320), "Welcome", font=font, fill=color)
+    d1.text((325, 320) if not lilita_font else (330, 330), "Welcome", font=font, fill=color)
     im1.save(filename)
     try:
         font = ImageFont.truetype("./assets/ja-jp.ttf", 35)
     except Exception:
+        lilita_font = True
         font = ImageFont.truetype("./assets/LilitaOne-Regular.ttf", 50)
     text = f"{user.name}"
     textLen = len(text)
     d2 = ImageDraw.Draw(im1)
-    d2.text((((1024/2)-(20*(textLen/2))),410), text, font=font, fill=color)
+    d2.text((((1024 / 2) - (20 * (textLen / 2))), 410) if not lilita_font else ((1024 / 2) - (24 * (textLen / 2)), 430), text, font=font, fill=color)
     im1.save(filename)
     return filename
 
@@ -1183,6 +1186,13 @@ class OnWelcomeMemberJoin(commands.Cog):
             embed=embed,
             view=view if editor_data.get('button_links') else None
         )
+        if member.guild.id in [791534106919305226, 1363145981235036360]:
+            # Send exact same message in DM
+            await member.send(
+                content=message_content or None,
+                embed=embed,
+                view=view if editor_data.get('button_links') else None
+            )
     
     async def handle_legacy_welcome(self, member):
         ref = db.reference("/Welcome")
