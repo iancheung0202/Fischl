@@ -87,7 +87,7 @@ class CustomCommands(commands.Cog):
 
         # MEROPIDE BULLETIN REPLACED SAPPHIRE INVITE LINK AUTOMOD RULE #
 
-        if message.guild.id == 1281655927791030293 and ("discord.com/invite/" in message.content or "discord.gg/" in message.content):
+        if message.guild.id == 1281655927791030293 and ("discord.com/invite/" in message.content or "discord.gg/" in message.content or "discordapp.com/invite/" in message.content):
             if (
                 message.channel.category.id in [1281655927791030302, 1299725218767568997, 1281690196357808240, 1301601587059490836]
                 or message.guild.get_role(1282396278071890086) in message.author.roles
@@ -138,6 +138,14 @@ class CustomCommands(commands.Cog):
                 except Exception as e:
                     await message.channel.send("⚠️ Failed to fetch the rule.", delete_after=10)
                     print(f"Error fetching rule: {e}")
+
+        # MEROPIDE BULLETIN AUTO PUBLISH IN ANNOUNCEMENT CHANNELS #
+        channel_ids = [1281673438435741696, 1281675540511850639, 1281675690416279633, 1281675725216284753]
+        if message.guild.id == 1281655927791030293 and message.channel.id in channel_ids:
+            try:
+                await message.publish()
+            except Exception as e:
+                print(f"Error auto publishing message: {e}")
 
 
 async def setup(bot):
