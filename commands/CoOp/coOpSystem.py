@@ -95,6 +95,12 @@ class CoOpHelpModal(discord.ui.Modal):
                 break
 
         coop_channel = interaction.client.get_channel(CO_OP_CHANNEL_ID)
+        if coop_channel is None:
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> Co-op channel not found. Please ask the server admin to set up the co-op system again.",
+                ephemeral=True,
+            )
+            return
         if "NA" in self.title:
             helperRole = interaction.guild.get_role(NA_HELPER_ROLE_ID)
             embedTitle = "NA Region Co-op Request"
