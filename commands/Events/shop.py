@@ -1028,19 +1028,16 @@ class Shop(commands.Cog):
         
         processed = await process_pending_stock_edits(interaction.guild.id)
         if processed > 0:
-            print(f"Processed {processed} scheduled stock updates for guild {interaction.guild.id}")
+            print(f"Processed {processed} scheduled stock edits for guild {interaction.guild.id}")
         
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
+        # Check if events are enabled in any channel of this guild
         found = None
-        try:
-            for channel in interaction.guild.channels:
-                for key, val in stickies.items():
-                    if val["Channel ID"] == channel.id:
-                        found = val["Events"]
-                        break
-        except Exception:
-            pass
+        for channel in interaction.guild.channels:
+            ref = db.reference(f"/Chat Minigames System/{channel.id}")
+            system_data = ref.get()
+            if system_data:
+                found = system_data.get("events", [])
+                break
 
         if found is not None:
             ref = db.reference("/Global Events Rewards")

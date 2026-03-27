@@ -5,12 +5,9 @@ import time
 from firebase_admin import db
 
 def get_minigame_list(channel_id):
-    ref = db.reference("/Global Events System")
-    events = ref.get() or {}
-    for key, val in events.items():
-        if val["Channel ID"] == channel_id:
-            return val["Events"]
-    return None
+    ref = db.reference(f"/Chat Minigames System/{channel_id}")
+    data = ref.get() or {}
+    return data.get("events", [])
 
 def get_total_mora(data: dict) -> int:
     total = 0
@@ -93,8 +90,8 @@ async def check_milestones(user_id, guild_id, channel_id, client):
     user_data = ref.get() or {}
     total_mora = get_guild_mora(user_data, str(guild_id))
 
-    milestones_ref = db.reference(f"/Milestones/{guild_id}")
-    milestones = milestones_ref.get() or {}
+    milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+    milestones = milestones_ref.get() or []
     
     inventory_ref = db.reference("/User Events Inventory")
     inventories = inventory_ref.get()
@@ -106,10 +103,12 @@ async def check_milestones(user_id, guild_id, channel_id, client):
                               if len(item) > 3 and item[3] == guild_id]
                 break
     
-    for milestone_id, milestone in milestones.items():
-        threshold = milestone.get("threshold", 0)
-        reward = milestone.get("reward")
-        description = milestone.get("description", "Reached milestone")
+    for milestone in milestones:
+        if not isinstance(milestone, list) or len(milestone) < 3:
+            continue
+        description = milestone[0]  # index 0
+        reward = milestone[1]  # index 1
+        threshold = milestone[2]  # index 2
         
         if reward in user_items or total_mora < threshold:
             continue

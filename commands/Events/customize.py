@@ -66,22 +66,25 @@ async def pin_title_autocomplete(
     )
     return items_list[:25]
 
-async def global_title_autocomplete(
+async def title_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference(f"/Global User Titles/{interaction.user.id}/global_titles")
+    ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/titles")
     titles = ref.get() or {}
     choices = []
     
-    for key, title in titles.items():
-        title_name = title["name"]
-        guild_id = title["guild_id"]
-        guild = interaction.client.get_guild(int(guild_id))
-        guild_name = guild.name if guild else f"Server {guild_id}"
+    for timestamp, title_data in titles.items():
+        if isinstance(title_data, dict):
+            title_name = title_data.get("name", "")
+        else:
+            title_name = str(title_data)
         
+        if not title_name:
+            continue
+        
+        display_name = title_name
         is_animated = "<a:" in title_name
-        display_name = f"{title_name} (from {guild_name})"
         
         if is_animated:
             display_name = re.sub(r"<a:[a-zA-Z]+:\d+>", "", display_name).strip()
@@ -89,16 +92,16 @@ async def global_title_autocomplete(
         
         if current.lower() in display_name.lower():
             choices.append(
-                app_commands.Choice(name=display_name, value=key)
+                app_commands.Choice(name=display_name, value=timestamp)
             )
     
     choices.insert(0, app_commands.Choice(
-        name="Unset global title", value="unset"
+        name="Unset title", value="unset"
     ))
     return choices[:25]
 
 async def animated_bg_autocomplete(interaction: discord.Interaction, current: str):
-    ref = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds")
+    ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds")
     bgs = ref.get() or []
     return [
         app_commands.Choice(name=bg, value=bg)
@@ -107,7 +110,7 @@ async def animated_bg_autocomplete(interaction: discord.Interaction, current: st
     ][:25]
 
 async def frame_autocomplete(interaction: discord.Interaction, current: str):
-    ref = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/profile_frames")
+    ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/profile_frames")
     frames = ref.get() or []
     choices = []
     for frame in frames:
@@ -174,7 +177,7 @@ class ConfirmCustomizationView(discord.ui.View):
                     f"<:no:1036810470860013639> Failed to save background: {e}", ephemeral=True
                 )
 
-        ref = db.reference(f"/Global Progression Rewards/{self.guild_id}/{interaction.user.id}/selected")
+        ref = db.reference(f"/Chat Minigames Cosmetics/{self.guild_id}/{interaction.user.id}/selected")
         selected = ref.get() or {}
         
         # Animated background
@@ -248,13 +251,13 @@ class Customize(commands.Cog):
         animated_background="Your desired animated inventory background",
         profile_frame="Your desried inventory profile frame (static or animated)",
         custom_embed_color="Your desired custom embed color in hex code (e.g. #ff0000)",
-        global_title="Your desired global title (static or animated) to display on your inventory"
+        title="Your desired server title (static or animated) to display on your inventory"
     )
     @app_commands.autocomplete(
         pin_item=pin_title_autocomplete,
         animated_background=animated_bg_autocomplete,
         profile_frame=frame_autocomplete,
-        global_title=global_title_autocomplete
+        title=title_autocomplete
     )
     async def customize(
         self,
@@ -264,11 +267,11 @@ class Customize(commands.Cog):
         animated_background: str = None,
         profile_frame: str = None,
         custom_embed_color: str = None,
-        global_title: str = None
+        title: str = None
     ) -> None:
         await interaction.response.defer(thinking=True)
         
-        if not any([background, pin_item, animated_background, profile_frame, custom_embed_color, global_title]):
+        if not any([background, pin_item, animated_background, profile_frame, custom_embed_color, title]):
             return await interaction.followup.send(
                 "<:no:1036810470860013639> Please specify at least one customization option!"
             )
@@ -283,7 +286,7 @@ class Customize(commands.Cog):
 
         # Custom embed color
         if custom_embed_color:
-            ref = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/embed_color")
+            ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/embed_color")
             embed_color = ref.get() or False
             if not embed_color:
                 return await interaction.followup.send(
@@ -303,7 +306,7 @@ class Customize(commands.Cog):
                     "<:no:1036810470860013639> Invalid hex characters! Use 0-9 and A-F only"
                 )
 
-            ref_selected = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/selected")
+            ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected")
             selected = ref_selected.get() or {}
             selected["embed_color_hex"] = hex_color
             ref_selected.set(selected)
@@ -317,9 +320,9 @@ class Customize(commands.Cog):
                 )
             )
             
-        # Global title
-        if global_title:
-            await self.process_global_title(interaction, global_title)
+        # Server title
+        if title:
+            await self.process_title(interaction, title)
             processed_global = True
             
         # Pin item
@@ -336,7 +339,7 @@ class Customize(commands.Cog):
                 processed_pin
             )
         
-        if custom_embed_color or global_title or pin_item:
+        if custom_embed_color or title or pin_item:
              await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"customize_profile": 1}, interaction.client)
 
     async def process_pin_item(self, interaction: discord.Interaction, pin_item: str):
@@ -411,26 +414,31 @@ class Customize(commands.Cog):
             )
             return True
         
-    async def process_global_title(self, interaction: discord.Interaction, global_title: str):
+    async def process_title(self, interaction: discord.Interaction, title_timestamp: str):
         ref_selected = db.reference(
-            f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/selected"
+            f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected"
         )
         selected = ref_selected.get() or {}
 
-        if global_title == "unset":
-            selected.pop("global_title", None)
-            message = "Your global title has been unset."
+        if title_timestamp == "unset":
+            selected.pop("title", None)
+            message = "Your title has been unset."
         else:
-            global_ref = db.reference(f"/Global User Titles/{interaction.user.id}/global_titles")
-            titles = global_ref.get() or {}
-
-            if global_title in titles:
-                selected["global_title"] = global_title
-                title_name = titles[global_title]["name"]
-                message = f"Global title set to: **{title_name}**"
+            title_ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/titles")
+            titles = title_ref.get() or {}
+            
+            if title_timestamp in titles:
+                selected["title"] = title_timestamp
+                title_data = titles[title_timestamp]
+                # Title data is just the name or a simple dict with name
+                if isinstance(title_data, dict):
+                    title_name = title_data.get("name", "Unknown")
+                else:
+                    title_name = str(title_data)
+                message = f"Title set to: **{title_name}**"
             else:
                 return await interaction.followup.send(
-                    "<:no:1036810470860013639> You don't own this global title!",
+                    "<:no:1036810470860013639> You don't own this title!",
                     ephemeral=True
                 )
 
@@ -448,13 +456,13 @@ class Customize(commands.Cog):
         profile_frame: str,
         pin_processed: bool
     ):
-        ref_selected = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/selected")
+        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
         
         # Animated background
         if animated_background:
             owned_bgs = db.reference(
-                f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds"
+                f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds"
             ).get() or []
             if animated_background not in owned_bgs:
                 return await interaction.followup.send(
@@ -471,7 +479,7 @@ class Customize(commands.Cog):
         # Profile frame
         if profile_frame:
             owned_frames = db.reference(
-                f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/profile_frames"
+                f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/profile_frames"
             ).get() or []
             if profile_frame not in owned_frames:
                 return await interaction.followup.send(
@@ -596,7 +604,7 @@ class Customize(commands.Cog):
                 f"<:no:1036810470860013639> Profile frame **{profile_frame.split('.')[0]}** not found!"
             )
         
-        ref_selected = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{interaction.user.id}/selected")
+        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
         bg_path = None
         

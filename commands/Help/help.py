@@ -433,21 +433,15 @@ class HelpPanel(discord.ui.View):
 
         ################
 
-        ref = db.reference("/Global Events System")
-        event = ref.get()
-
+        # Check for enabled event channels
         found = False
         eventchannels = []
         for channel in interaction.guild.text_channels:
-            for key, val in event.items():
-                if val["Channel ID"] == channel.id:
-                    eventchannels.append(channel.id)
-                    found = True
-        for channel in interaction.guild.threads:
-            for key, val in event.items():
-                if val["Channel ID"] == channel.id:
-                    eventchannels.append(channel.id)
-                    found = True
+            ref = db.reference(f"/Chat Minigames System/{channel.id}")
+            system_data = ref.get()
+            if system_data:
+                eventchannels.append(channel.id)
+                found = True
 
         if not found:
             embed.add_field(

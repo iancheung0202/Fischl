@@ -2370,18 +2370,18 @@ def api_milestones_info(guild_id):
                 guild_roles = {}
 
         # Get milestones from database
-        ref = db.reference(f"/Milestones/{guild_id}")
-        milestones_data = ref.get() or {}
+        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+        milestones_data = ref.get() or []
         
         # Parse milestones
         milestones = []
-        for milestone_id, milestone_data in milestones_data.items():
-            if isinstance(milestone_data, dict):
+        for idx, milestone_entry in enumerate(milestones_data):
+            if isinstance(milestone_entry, list) and len(milestone_entry) >= 3:
                 milestone_info = {
-                    "id": milestone_id,
-                    "threshold": milestone_data.get("threshold", 0),
-                    "reward": milestone_data.get("reward", ""),
-                    "description": milestone_data.get("description", "")
+                    "id": str(idx),  # Use index as ID
+                    "description": milestone_entry[0],
+                    "reward": milestone_entry[1],
+                    "threshold": milestone_entry[2]
                 }
                 
                 # Add role info if it's a role ID
@@ -2527,13 +2527,12 @@ def api_add_milestone(guild_id):
                 return jsonify({"success": False, "message": "Could not validate role"}), 500
 
         # Save to database
-        ref = db.reference(f"/Milestones/{guild_id}")
-        milestone_data = {
-            "threshold": threshold,
-            "reward": reward,
-            "description": description
-        }
-        ref.push().set(milestone_data)
+        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+        milestones = ref.get() or []
+        # New list format: [description, reward, threshold]
+        milestone_data = [description, reward, threshold]
+        milestones.append(milestone_data)
+        ref.set(milestones)
 
         # Award to existing users who meet the threshold (similar to bot logic)
         try:
@@ -2621,17 +2620,22 @@ def api_delete_milestone(guild_id):
         if not milestone_id:
             return jsonify({"success": False, "message": "Milestone ID is required"}), 400
 
-        # Delete from database
-        ref = db.reference(f"/Milestones/{guild_id}")
-        milestone_ref = ref.child(milestone_id)
-        
-        # Check if milestone exists
-        if not milestone_ref.get():
-            return jsonify({"success": False, "message": "Milestone not found"}), 404
+        # Delete from database - milestone_id is the index
+        try:
+            idx = int(milestone_id)
+            ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+            milestones = ref.get() or []
             
-        milestone_ref.delete()
-
-        return jsonify({"success": True, "message": "Milestone deleted successfully"})
+            if idx < 0 or idx >= len(milestones):
+                return jsonify({"success": False, "message": "Milestone not found"}), 404
+            
+            # Remove the milestone at the given index
+            milestones.pop(idx)
+            ref.set(milestones)
+            
+            return jsonify({"success": True, "message": "Milestone deleted successfully"})
+        except (ValueError, IndexError):
+            return jsonify({"success": False, "message": "Invalid milestone ID"}), 400
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -2672,21 +2676,21 @@ def api_edit_milestone(guild_id):
                 return jsonify({"success": False, "message": "Could not validate role"}), 500
 
         # Update in database
-        ref = db.reference(f"/Milestones/{guild_id}")
-        milestone_ref = ref.child(milestone_id)
-        
-        # Check if milestone exists
-        if not milestone_ref.get():
-            return jsonify({"success": False, "message": "Milestone not found"}), 404
+        try:
+            idx = int(milestone_id)
+            ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+            milestones = ref.get() or []
             
-        milestone_data = {
-            "threshold": threshold,
-            "reward": reward,
-            "description": description
-        }
-        milestone_ref.set(milestone_data)
-
-        return jsonify({"success": True, "message": "Milestone updated successfully"})
+            if idx < 0 or idx >= len(milestones):
+                return jsonify({"success": False, "message": "Milestone not found"}), 404
+            
+            # Update the milestone at the given index - new list format: [description, reward, threshold]
+            milestones[idx] = [description, reward, threshold]
+            ref.set(milestones)
+            
+            return jsonify({"success": True, "message": "Milestone updated successfully"})
+        except (ValueError, IndexError):
+            return jsonify({"success": False, "message": "Invalid milestone ID"}), 400
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500

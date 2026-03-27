@@ -10,7 +10,7 @@ from commands.Events.helperFunctions import get_guild_mora
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
-def get_milestone_embeds(interaction: discord.Interaction, milestones: dict) -> list:
+def get_milestone_embeds(interaction: discord.Interaction, milestones: list) -> list:
     if not milestones:
         return [discord.Embed(description="This server has no milestones set up yet.", color=discord.Color.default())]
     
@@ -26,14 +26,14 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: dict) -> 
     )
     count = 0
     sorted_milestones = sorted(
-        milestones.items(),
-        key=lambda x: x[1].get("threshold", 0)
+        enumerate(milestones),
+        key=lambda x: x[1][2]  
     )
     
-    for milestone_id, milestone in sorted_milestones:
-        threshold = milestone.get("threshold", 0)
-        reward = milestone.get("reward", "?")
-        description = milestone.get("description", "No description")
+    for idx, milestone in sorted_milestones:
+        description = milestone[0] 
+        reward = milestone[1]  
+        threshold = milestone[2]  
         
         if str(reward).isdigit():
             role = interaction.guild.get_role(int(reward))
@@ -117,14 +117,12 @@ class MilestoneModal(discord.ui.Modal, title="Add a Milestone"):
                 await interaction.followup.send("That role ID doesn't exist in this server!", ephemeral=True)
                 return
         
-        ref = db.reference(f"/Milestones/{interaction.guild.id}")
-        milestone_data = {
-            "threshold": threshold,
-            "reward": reward,
-            "description": description
-        }
-        new_milestone_ref = ref.push()
-        new_milestone_ref.set(milestone_data)
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        milestones = ref.get() or []
+        # New format: [description, reward, threshold]
+        milestone_data = [description, reward, threshold]
+        milestones.append(milestone_data)
+        ref.set(milestones)
         
         count = 0
         mora_ref = db.reference("/Mora")
@@ -195,18 +193,20 @@ class RemoveMilestoneModal(discord.ui.Modal, title="Remove a Milestone"):
 
     async def on_submit(self, interaction: discord.Interaction):
         name = self.milestone_name.value.strip()
-        ref = db.reference(f"/Milestones/{interaction.guild.id}")
-        milestones = ref.get() or {}
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        milestones = ref.get() or []
         removed = False
         
-        for milestone_id, milestone in milestones.items():
-            if milestone.get("reward") == name:
-                ref.child(milestone_id).delete()
+        new_milestones = []
+        for milestone in milestones:
+            if isinstance(milestone, list) and len(milestone) >= 2 and milestone[1] != name:
+                new_milestones.append(milestone)
+            elif milestone[1] == name:
                 removed = True
-                
+        
         if removed:
-            milestones = ref.get() or {}
-            self.pages = get_milestone_embeds(interaction, milestones)
+            ref.set(new_milestones)
+            self.pages = get_milestone_embeds(interaction, new_milestones)
             await interaction.response.send_message("✅ Milestone removed successfully.", ephemeral=True)
         else:
             await interaction.response.send_message("Milestone not found!", ephemeral=True)
@@ -313,8 +313,8 @@ class Milestones(commands.Cog):
         interaction: discord.Interaction,
     ) -> None:
         await interaction.response.defer(thinking=True)
-        ref = db.reference(f"/Milestones/{interaction.guild.id}")
-        milestones = ref.get() or {}
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        milestones = ref.get() or []
         
         pages = get_milestone_embeds(interaction, milestones)
         

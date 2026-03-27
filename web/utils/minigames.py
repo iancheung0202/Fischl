@@ -41,8 +41,10 @@ def get_guild_mora(user_id, guild_id):
 def check_events_enabled(guild_id, stickies=None):
     """Check if events are enabled in any channel of a guild"""
     if stickies is None:
-        ref = db.reference("/Global Events System")
-        stickies = ref.get() or {}
+        ref = db.reference("/Chat Minigames System")
+        system_data = ref.get() or {}
+    else:
+        system_data = stickies
              
     # Get all channels in the guild first
     try:
@@ -58,12 +60,13 @@ def check_events_enabled(guild_id, stickies=None):
         print(f"Error fetching channels for guild {guild_id}: {e}")
         return False
     
-    # Check if any channel in this guild has events enabled
-    for val in stickies.values():
-        if isinstance(val, dict):
-            channel_id = val.get("Channel ID")
-            if channel_id and int(channel_id) in guild_channel_ids:
+    # Check if any channel in this guild has events enabled (check against system_data keys)
+    for channel_id in system_data.keys():
+        try:
+            if int(channel_id) in guild_channel_ids:
                 return True
+        except (ValueError, TypeError):
+            continue
     return False
 
 

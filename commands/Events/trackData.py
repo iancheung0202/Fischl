@@ -24,13 +24,13 @@ REWARD_TYPES = {
     "Mora Gift Tax -5%": "gift_tax",
     "+3 Minigames Summon": "minigame_summon",
     "Custom Embed Color": "embed_color",
-    "Global Title": "global_title",
-    "Animated Badge Title": "global_title"
+    "Server Title": "title",
+    "Animated Title": "title"
 }
 
 async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False, client=None):
     if is_elite:
-        elite_claimed_ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/elite_claimed")
+        elite_claimed_ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/elite_claimed")
         elite_claimed = elite_claimed_ref.get() or []
         if tier in elite_claimed:
             return (None, None)
@@ -59,7 +59,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         description += f"You can claim your drop pack [here]({message.jump_url})!"
         
     elif reward_type == "animated_background":
-        ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/animated_backgrounds")
+        ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/animated_backgrounds")
         backgrounds = ref.get() or []
         reward_file_name = reward_str.split('|')[1].strip()
         background_name = f"{reward_file_name.split('/')[2].split('.')[0].strip()}"
@@ -69,23 +69,19 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
             title = f"{'Elite Reward: ' if is_elite else ''} Animated Inventory Background Unlocked 🖼️"
             description = f"**Tier `{tier}`:** You have unlocked **{background_name}**! Use </customize:1339721187953082544> to equip it in this server!"
         
-    elif reward_type == "global_title":
+    elif reward_type == "title":
         title_parts = reward_str.split('|')
         title_name = title_parts[1].strip() if len(title_parts) > 1 else reward_str
-        global_ref = db.reference(f"/Global User Titles/{user_id}/global_titles")
-        titles = global_ref.get() or {}
-        unique_key = f"{guild_id}_{int(time.time() * 1000)}"
-        titles[unique_key] = {
-            "name": title_name,
-            "guild_id": guild_id,
-            "timestamp": int(time.time())
-        }
-        global_ref.set(titles)
-        title = f"{'Elite Reward: ' if is_elite else ''} Global Title Unlocked 📍"
-        description = f"**Tier `{tier}`:** You have unlocked **{title_name}**! Use </customize:1339721187953082544> to equip it globally!"
+        cosmetics_ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/titles")
+        titles = cosmetics_ref.get() or {}
+        timestamp = str(int(time.time() * 1000))
+        titles[timestamp] = {"name": title_name}
+        cosmetics_ref.set(titles)
+        title = f"{'Elite Reward: ' if is_elite else ''} Server Title Unlocked 📍"
+        description = f"**Tier `{tier}`:** You have unlocked **{title_name}**! Use </customize:1339721187953082544> to equip it in this server!"
             
     elif reward_type == "static_frame" or reward_type == "animated_frame":
-        ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/profile_frames")
+        ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/profile_frames")
         profile_frames = ref.get() or []
         reward_file_name = reward_str.split('|')[1].strip()
         frame_name = f"{reward_file_name.split('/')[2].strip()}"
@@ -96,7 +92,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
             description = f"**Tier `{tier}`:** You have unlocked **{frame_name.split('.')[0]}**! Use </customize:1339721187953082544> to equip it in this server!"
             
     elif reward_type == "embed_color":
-        ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/embed_color")
+        ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/embed_color")
         ref.set(True)
         title = f"{'Elite Reward: ' if is_elite else ''} Custom Embed Color Unlocked 🎨"
         description = f"**Tier `{tier}`:** You can have a custom color on your inventory! Use </customize:1339721187953082544> to edit your favorite color!"
@@ -190,7 +186,7 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=
     return (embed, elite_embed)
 
 async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, client=None):
-    elite_claimed_ref = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/elite_claimed")
+    elite_claimed_ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/elite_claimed")
     elite_claimed = elite_claimed_ref.get() or []
     
     rewards_granted = []

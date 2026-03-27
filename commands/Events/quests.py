@@ -123,7 +123,7 @@ def generate_quests(duration: str) -> dict:
     return quests
 
 async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, client, refresh_only=False):
-    ref = db.reference(f"/Global User Quests/{userID}/{guildID}")
+    ref = db.reference(f"/Chat Minigames Quests/{guildID}/{userID}")
     quest_data = ref.get() or {}
     now = time.time()
     total_xp = 0

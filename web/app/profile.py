@@ -539,12 +539,12 @@ def api_profile_data():
     guild_cards = ""
     guilds_with_events = []
     
-    # Pre-fetch stickies for optimization
-    stickies_data = db.reference("/Global Events System").get() or {}
+    # Pre-fetch system data for optimization
+    system_data = db.reference("/Chat Minigames System").get() or {}
 
     # Filter guilds where bot is present and events are enabled
     for g in guilds:
-        if g["id"] in bot_guild_ids and check_events_enabled(g["id"], stickies_data):
+        if g["id"] in bot_guild_ids and check_events_enabled(g["id"], system_data):
             guilds_with_events.append(g)
 
     guilds_sorted = sorted(guilds_with_events, key=lambda g: g["name"].lower())
@@ -1274,8 +1274,8 @@ def profile_inventory(guild_id):
                 break
     
     # Get milestones like in Discord bot
-    milestones_ref = db.reference(f"/Milestones/{guild_id}")
-    milestones = milestones_ref.get() or {}
+    milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+    milestones = milestones_ref.get() or []
     
     # Fetch user's earned milestones
     user_milestones = []
@@ -1287,13 +1287,14 @@ def profile_inventory(guild_id):
                     if len(item) > 3 and item[2] == 0 and item[3] == int(guild_id):
                         # Find corresponding milestone info
                         milestone_name = item[0]
-                        for milestone_id, milestone_data in milestones.items():
-                            if isinstance(milestone_data, dict) and milestone_data.get("reward") == milestone_name:
-                                user_milestones.append({
-                                    "threshold": milestone_data.get("threshold", 0),
-                                    "reward": milestone_data.get("reward", "Unknown")
-                                })
-                                break
+                        for milestone in milestones:
+                            if isinstance(milestone, list) and len(milestone) >= 2:
+                                if milestone[1] == milestone_name:  # milestone[1] is reward
+                                    user_milestones.append({
+                                        "threshold": milestone[2] if len(milestone) > 2 else 0,  # milestone[2] is threshold
+                                        "reward": milestone[1]
+                                    })
+                                    break
                 break
     
     # Format milestones
@@ -1472,9 +1473,9 @@ def profile_track(guild_id):
     season = get_current_season()
     is_elite = is_elite_active(user_id, guild_id)
 
-    ref_selected = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/selected")
+    ref_selected = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/selected")
     selected = ref_selected.get() or {}
-    ref_color = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/embed_color")
+    ref_color = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/embed_color")
     color_unlocked = ref_color.get() or False
     color_status = "Not unlocked"
     if color_unlocked:
@@ -1557,7 +1558,7 @@ def profile_quests(guild_id):
     user_id = session['user_id']
     
     # Get quest data using the same structure as mora.py
-    ref = db.reference(f"/Global User Quests/{user_id}/{guild_id}")
+    ref = db.reference(f"/Chat Minigames Quests/{guild_id}/{user_id}")
     quest_data = ref.get() or {}
     
     quest_html = ""

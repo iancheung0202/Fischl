@@ -380,9 +380,9 @@ class ToggleView(discord.ui.View):
         embed.add_field(name=":gift: Gift Tax", value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' else ''}`", inline=True)
         embed.add_field(name="🧲 Minigame Summons", value=f"`{stats.get('minigame_summons', 0)}`", inline=True)
 
-        ref_selected = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{self.user_id}/selected")
+        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{self.user_id}/selected")
         selected = ref_selected.get() or {}
-        ref_color = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{self.user_id}/embed_color")
+        ref_color = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{self.user_id}/embed_color")
         color_unlocked = ref_color.get() or False
         color_status = "`Not unlocked`"
         if color_unlocked:
@@ -402,7 +402,7 @@ class ToggleView(discord.ui.View):
         
         await update_quest(self.user_id, interaction.guild.id, interaction.channel.id, 0, interaction.client, refresh_only=True)
         
-        ref = db.reference(f"/Global User Quests/{self.user_id}/{self.guild_id}")
+        ref = db.reference(f"/Chat Minigames Quests/{self.guild_id}/{self.user_id}")
         quest_data = ref.get() or {}
         
         quest_text = []
@@ -681,7 +681,7 @@ class Mora(commands.Cog):
         #         f"\n-# <a:legacy:1345876714240213073> *Legacy Player: `{beta_amount}`*"
         #     )
             
-        ref_selected = db.reference(f"/Global Progression Rewards/{interaction.guild.id}/{user.id}/selected")
+        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{user.id}/selected")
         selected = ref_selected.get() or {}
         custom_color_hex = selected.get("embed_color_hex")
         custom_color = discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
@@ -709,8 +709,8 @@ class Mora(commands.Cog):
 
         embed.add_field(name="Guild Inventory", value=inv, inline=False)
         
-        milestones_ref = db.reference(f"/Milestones/{interaction.guild.id}")
-        milestones = milestones_ref.get() or {}
+        milestones_ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        milestones = milestones_ref.get() or []
 
         user_milestones = []
         if inventories:
@@ -718,14 +718,15 @@ class Mora(commands.Cog):
                 if val["User ID"] == user.id:
                     for item in val.get("Items", []):
                         if len(item) > 3 and item[2] == 0 and item[3] == interaction.guild.id:
-                            for milestone_id, milestone in milestones.items():
-                                if milestone.get("reward") == item[0]:
-                                    user_milestones.append({
-                                        "threshold": milestone.get("threshold", 0),
-                                        "reward": item[0],
-                                        "description": item[1]
-                                    })
-                                    break
+                            for milestone in milestones:
+                                if isinstance(milestone, list) and len(milestone) >= 2:
+                                    if milestone[1] == item[0]:  # milestone[1] is reward
+                                        user_milestones.append({
+                                            "threshold": milestone[2] if len(milestone) > 2 else 0,  # milestone[2] is threshold
+                                            "reward": item[0],
+                                            "description": item[1]
+                                        })
+                                        break
 
         user_milestones.sort(key=lambda x: x["threshold"], reverse=True)
 
@@ -746,23 +747,27 @@ class Mora(commands.Cog):
         
         customized = os.path.isfile(f"./assets/Mora Inventory Background/{user.id}.png") or bool(profile_frame) or bool(animated_background)
             
-        global_title_key = selected.get("global_title")
-        global_title = None
-        if global_title_key:
-            global_ref = db.reference(f"/Global User Titles/{user.id}/global_titles")
-            global_titles = global_ref.get() or {}
-            if global_title_key in global_titles:
-                title_data = global_titles[global_title_key]
-                guild = self.bot.get_guild(int(title_data["guild_id"]))
-                server_name = guild.name if guild else f"Server {title_data['guild_id']}"
-                pin = ":round_pushpin:" if "<a:" not in title_data['name'] else ""
-                global_title = (
-                    f"### {pin}{title_data['name']} \n"
-                    f"-# *<:reply:1036792837821435976> Earned from **{server_name}***"
+        title_key = selected.get("title")
+        title_display = None
+        if title_key:
+            title_ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{user.id}/titles")
+            titles = title_ref.get() or {}
+            
+            if title_key in titles:
+                title_data = titles[title_key]
+                # Title data is just the name or a simple dict with name
+                if isinstance(title_data, dict):
+                    title_name = title_data.get("name", "Unknown")
+                else:
+                    title_name = str(title_data)
+                
+                pin = ":round_pushpin:" if "<a:" not in title_name else ""
+                title_display = (
+                    f"### {pin}{title_name}"
                 )
 
-        if global_title:
-            embed.description = f"{global_title}\n{embed.description}"
+        if title_display:
+            embed.description = f"{title_display}\n{embed.description}"
 
         if customized:
             if animated_background:

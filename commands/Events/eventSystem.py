@@ -56,22 +56,15 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
     async def on_submit(self, interaction: discord.Interaction):
         # await interaction.response.defer()
         channelID = int(str(self.title).split(":")[1].replace(")", "").strip())
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
-        originalList = None
-        try:
-            for key, val in stickies.items():
-                if val["Channel ID"] == channelID:
-                    originalList = val.get("Events", [])
-                    frequency = val["Frequency"]
-                    break
-        except Exception as e:
-            print(e)
+        ref = db.reference(f"/Chat Minigames System/{channelID}")
+        system_data = ref.get() or {}
+        originalList = system_data.get("events", [])
+        frequency = system_data.get("frequency", 50)
 
         for letter in list(str(self.letter)):
             self.toggleLetter = str(letter).upper()
 
-            if self.toggleLetter in letterList and originalList is not None:
+            if self.toggleLetter in letterList:
                 if self.toggleLetter in originalList:
                     originalList.remove(self.toggleLetter)
                 else:
@@ -82,20 +75,11 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
                 break
 
         if not (error):
-            for key, val in stickies.items():
-                if val["Channel ID"] == channelID:
-                    db.reference("/Global Events System").child(key).delete()
-                    break
-
             data = {
-                channelID: {
-                    "Channel ID": channelID,
-                    "Frequency": frequency,
-                    "Events": originalList,
-                }
+                "frequency": frequency,
+                "events": originalList,
             }
-            for key, value in data.items():
-                ref.push().set(value)
+            ref.set(data)
 
             string = "\n> ".join(
                 [
@@ -166,16 +150,12 @@ class EnableEventButton(discord.ui.Button):
 
         frequency_value = 50 # Uncommon (~2%)
 
-        ref = db.reference("/Global Events System")
+        ref = db.reference(f"/Chat Minigames System/{channel.id}")
         data = {
-            channel.id: {
-                "Channel ID": channel.id,
-                "Frequency": frequency_value,
-                "Events": letterList,  # All enabled by default
-            }
+            "frequency": frequency_value,
+            "events": letterList,  # All enabled by default
         }
-        for key, value in data.items():
-            ref.push().set(value)
+        ref.set(data)
 
         with open("./commands/Events/enabledChannels.py", "r") as file:
             lines = file.readlines()
@@ -233,13 +213,8 @@ class DisableEventButton(discord.ui.Button):
         )
         channel = interaction.guild.get_channel(channel_id)
 
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
-
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                db.reference("/Global Events System").child(key).delete()
-                break
+        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        ref.delete()
 
         with open("./commands/Events/enabledChannels.py", "r") as file:
             lines = file.readlines()
@@ -289,13 +264,11 @@ class FrequencySelect(discord.ui.Select):
 
         new_frequency = int(self.values[0])
 
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
-
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                db.reference("/Global Events System").child(key).update({"Frequency": new_frequency})
-                break
+        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        system_data = ref.get() or {}
+        system_data["Frequency"] = new_frequency
+        system_data["frequency"] = new_frequency
+        ref.set(system_data)
 
         with open("./commands/Events/enabledChannels.py", "r") as file:
             lines = file.readlines()
@@ -312,10 +285,8 @@ class FrequencySelect(discord.ui.Select):
 
         # Get current events
         events = []
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                events = val.get("Events", [])
-                break
+        system_data = ref.get() or {}
+        events = system_data.get("events", [])
 
         # Create settings embed
         string = "\n> ".join(
@@ -352,17 +323,15 @@ class EventSettingsView(discord.ui.View):
         super().__init__()
         self.channel = channel
 
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
+        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        system_data = ref.get()
         enabled = False
         frequency = None
         events = []
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                enabled = True
-                frequency = val.get("Frequency", 50)
-                events = val.get("Events", [])
-                break
+        if system_data:
+            enabled = True
+            frequency = system_data.get("frequency", 50)
+            events = system_data.get("events", [])
 
         if enabled:
             self.add_item(FrequencySelect(current_frequency=frequency))
@@ -394,17 +363,15 @@ class EventSystem(commands.GroupCog, name="events"):
 
         view = EventSettingsView(channel)
 
-        ref = db.reference("/Global Events System")
-        stickies = ref.get()
+        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        system_data = ref.get()
         enabled = False
         frequency = None
         events = []
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                enabled = True
-                frequency = val.get("Frequency", 50)
-                events = val.get("Events", [])
-                break
+        if system_data:
+            enabled = True
+            frequency = system_data.get("frequency", 50)
+            events = system_data.get("events", [])
 
         if enabled:
             string = "\n> ".join(
@@ -517,36 +484,28 @@ class NewGameUpdate(commands.Cog):
         if message.content.startswith("-newgameupdate") and message.author.id == 692254240290242601:
             LETTER = message.content.split(" ")[1].strip().upper()  # NEW GAME LETTER
 
-            ref = db.reference("/Global Events System")
-            stickies = ref.get()
-            originalList = None
+            ref = db.reference("/Chat Minigames System")
+            all_channels = ref.get() or {}
             count = 0
 
-            for key, val in stickies.items():
-                if ("beta" in message.content and 1303235296254759008 != val["Channel ID"]) or ("beta" not in message.content and 1303235296254759008 == val["Channel ID"]):
+            for channel_id, system_data in all_channels.items():
+                if ("beta" in message.content and 1303235296254759008 != int(channel_id)) or ("beta" not in message.content and 1303235296254759008 == int(channel_id)):
                     continue
 
-                originalList = val["Events"]
-                frequency = val["Frequency"]
-                channelID = val["Channel ID"]
+                originalList = system_data.get("events", [])
+                frequency = system_data.get("frequency", 50)
                 originalList.append(LETTER)
-                db.reference("/Global Events System").child(key).delete()
-
-                data = {
-                    channelID: {
-                        "Channel ID": channelID,
-                        "Frequency": frequency,
-                        "Events": originalList,
-                    }
+                
+                updated_data = {
+                    "frequency": frequency,
+                    "events": originalList,
                 }
-
-                for key, value in data.items():
-                    ref.push().set(value)
+                db.reference(f"/Chat Minigames System/{channel_id}").set(updated_data)
 
                 count += 1
 
-                if "beta" in message.content and 1303235296254759008 == val["Channel ID"]:
-                    await message.channel.send(f"<#{channelID}> updated with `{LETTER}` enabled by default.")
+                if "beta" in message.content and 1303235296254759008 == int(channel_id):
+                    await message.channel.send(f"<#{channel_id}> updated with `{LETTER}` enabled by default.")
                     break
 
             await message.channel.send(f"`{count}` channels updated with `{LETTER}` enabled by default.")
@@ -554,37 +513,30 @@ class NewGameUpdate(commands.Cog):
         if message.content.startswith("-removegame") and message.author.id == 692254240290242601:
             LETTER = message.content.split(" ")[1].strip().upper()  # GAME LETTER TO REMOVE
 
-            ref = db.reference("/Global Events System")
-            stickies = ref.get()
-            originalList = None
+            ref = db.reference("/Chat Minigames System")
+            all_channels = ref.get() or {}
             count = 0
             
-            for key, val in stickies.items():
-                if ("beta" in message.content and 1303235296254759008 != val["Channel ID"]) or ("beta" not in message.content and 1303235296254759008 == val["Channel ID"]):
+            for channel_id, system_data in all_channels.items():
+                if ("beta" in message.content and 1303235296254759008 != int(channel_id)) or ("beta" not in message.content and 1303235296254759008 == int(channel_id)):
                     continue
 
-                originalList = val["Events"]
-                frequency = val["Frequency"]
-                channelID = val["Channel ID"]
+                originalList = system_data.get("events", [])
+                frequency = system_data.get("frequency", 50)
 
                 if LETTER in originalList:
                     originalList.remove(LETTER)  # Remove only the first occurrence
-                    db.reference("/Global Events System").child(key).delete()
-                    data = {
-                        channelID: {
-                            "Channel ID": channelID,
-                            "Frequency": frequency,
-                            "Events": originalList,
-                        }
+                    
+                    updated_data = {
+                        "frequency": frequency,
+                        "events": originalList,
                     }
-
-                    for key, value in data.items():
-                        ref.push().set(value)
+                    db.reference(f"/Chat Minigames System/{channel_id}").set(updated_data)
 
                     count += 1
 
-                    if "beta" in message.content and 1303235296254759008 == val["Channel ID"]:
-                        await message.channel.send(f"<#{channelID}> updated with `{LETTER}` removed from the defaults.")
+                    if "beta" in message.content and 1303235296254759008 == int(channel_id):
+                        await message.channel.send(f"<#{channel_id}> updated with `{LETTER}` removed from the defaults.")
                         break
 
             await message.channel.send(f"`{count}` channels updated with `{LETTER}` removed from defaults.")
