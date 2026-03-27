@@ -680,7 +680,7 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
                                 total_refund = sum(
                                     int(i[2]) for i in val["Items"] if i not in inv
                                 )
-                                text, addedMora = await addMora(val["User ID"], total_refund, 1, interaction.guild.id, interaction.client)
+                                text, addedMora = await addMora(interaction.client.pool, val["User ID"], total_refund, 1, interaction.guild.id, interaction.client)
                                 
                                 await member.send(
                                     f"**Notice:** One or more items from your guild inventory in **{interaction.guild.name}** have been deleted from the shop. The total original cost of {MORA_EMOTE} `{text}` has been refunded to your inventory."
@@ -689,7 +689,7 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
                                 try:
                                     gangRole = interaction.guild.get_role(
                                         int(item[0])
-                                    )  # Keep same logic
+                                    )  
                                 except Exception:
                                     gangRole = None
 

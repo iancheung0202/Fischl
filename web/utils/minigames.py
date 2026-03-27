@@ -1,42 +1,60 @@
 import datetime
 import time
 import os
+import psycopg2
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 
 from firebase_admin import db
-from config.settings import BOT_TOKEN, API_BASE, MORA_EMOTE
+from config.settings import BOT_TOKEN, API_BASE, MORA_EMOTE, POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 from utils.request import requests_session
+
+def get_db_connection():
+    """Get a synchronous PostgreSQL connection for web layer"""
+    return psycopg2.connect(
+        host=POSTGRES_HOST,
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD,
+        database=POSTGRES_DB
+    )
 
 def get_total_mora(user_id):
     """Get total mora across all guilds for a user"""
-    user_ref = db.reference(f"/Mora/{user_id}")
-    user_data = user_ref.get() or {}
-    
-    total = 0
-    for guild_data in user_data.values():
-        if isinstance(guild_data, dict):
-            for channel_data in guild_data.values():
-                if isinstance(channel_data, dict):
-                    for mora in channel_data.values():
-                        if isinstance(mora, int):
-                            total += mora
-    return total
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = %s",
+            (user_id,)
+        )
+        result = cursor.fetchone()
+        total = result[0] if result else 0
+        cursor.close()
+        conn.close()
+        return total
+    except Exception as e:
+        print(f"Error getting total mora: {e}")
+        return 0
 
 def get_guild_mora(user_id, guild_id):
     """Get total mora for a user in a specific guild"""
-    ref = db.reference(f"/Mora/{user_id}/{guild_id}")
-    guild_data = ref.get() or {}
-    
-    total = 0
-    for channel_data in guild_data.values():
-        if isinstance(channel_data, dict):
-            for mora in channel_data.values():
-                if isinstance(mora, int):
-                    total += mora
-    return total
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = %s AND gid = %s",
+            (user_id, guild_id)
+        )
+        result = cursor.fetchone()
+        total = result[0] if result else 0
+        cursor.close()
+        conn.close()
+        return total
+    except Exception as e:
+        print(f"Error getting guild mora: {e}")
+        return 0
 
 def check_events_enabled(guild_id, stickies=None):
     """Check if events are enabled in any channel of a guild"""
@@ -368,30 +386,25 @@ def is_elite_active(user_id, guild_id):
 def generate_mora_graph(user_id, guild_id, display_name):
     """Generate mora earnings graph for a user in a guild"""
     try:
-        ref = db.reference(f"/Mora/{user_id}/{guild_id}")
-        guild_data = ref.get() or {}
-
-        # Extract data and count entries
-        timestamps = []
-        mora_values = []
-        entry_count = 0
-
-        for channel_data in guild_data.values():
-            if isinstance(channel_data, dict):
-                for ts, mora in channel_data.items():
-                    try:
-                        timestamp = int(ts)
-                        if isinstance(mora, int) and mora >= 0:
-                            entry_count += 1
-                        timestamps.append(timestamp)
-                        mora_values.append(mora)
-                    except (ValueError, TypeError):
-                        # Skip invalid timestamps
-                        continue
-
-        if not timestamps:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all mora entries for user in guild
+        cursor.execute(
+            "SELECT timestamp, count FROM minigame_mora WHERE uid = %s AND gid = %s ORDER BY timestamp ASC",
+            (user_id, guild_id)
+        )
+        rows = cursor.fetchall()
+        
+        if not rows:
+            cursor.close()
+            conn.close()
             return None
-
+        
+        timestamps = [row[0] for row in rows]
+        mora_values = [row[1] for row in rows]
+        entry_count = len(rows)
+        
         # Calculate stats
         first_played = min(timestamps)
         
@@ -503,8 +516,17 @@ def generate_mora_graph(user_id, guild_id, display_name):
         plt.savefig(path, bbox_inches='tight', dpi=120, transparent=True)
         plt.close()
         
+        cursor.close()
+        conn.close()
         return (path, stats)
     
     except Exception as e:
         print(f"Error generating mora graph: {e}")
+        try:
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals():
+                conn.close()
+        except:
+            pass
         return None

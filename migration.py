@@ -1,510 +1,424 @@
-#!/usr/bin/env python3
 """
-Events Data Migration Script
-Migrates Events system data from old Firebase paths to new Chat Minigames structure.
+One-time migration of mora earnings from Firebase to PostgreSQL.
 
 Usage:
-    python3 migration.py --dry-run    # Preview changes without making them
-    python3 migration.py              # Execute migration
-    
-Migration Plan:
-1. Global User Quests/{uid}/{gid} → Chat Minigames Quests/{gid}/{uid}
-2. Global Progression Rewards/{gid}/{uid}/* → Chat Minigames Cosmetics/{gid}/{uid}/*
-3. Global User Titles/{uid}/global_titles/{timestamp} → Chat Minigames Cosmetics/{gid}/{uid}/titles/{timestamp}
-4. Global Events Rewards/{randomKey} → Chat Minigames Rewards/{gid}/shop
-5. Milestones/{gid}/{randomKey} → Chat Minigames Rewards/{gid}/milestones
-6. Global Events System/{randomKey} → Chat Minigames System/{cid}
+    python migration.py              # Run full migration
+    python migration.py --dry-run    # Test without writing to database
 
-User Events Inventory is NOT migrated (kept in original location)
+This script:
+1. Reads all /Mora data from Firebase
+2. Creates minigame_mora table in PostgreSQL
+3. Batch inserts all entries
+4. Validates data integrity
 """
-
-import argparse
-import sys
-import time
-import json
+import asyncio
+import asyncpg
 import firebase_admin
-from typing import Dict, List, Any, Tuple
 from firebase_admin import credentials, db
+import sys
+import argparse
+from pathlib import Path
 
-# Initialize Firebase
-try:
-    from assets.secret import DATABASE_PATH, DATABASE_URL
-    cred = credentials.Certificate(DATABASE_PATH)
-    firebase_app = firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
-except Exception as e:
-    print(f"✗ Firebase initialization failed: {e}")
-    print("Make sure DATABASE_PATH and DATABASE_URL are set correctly in assets/secret.py")
-    sys.exit(1)
+sys.path.insert(0, str(Path(__file__).parent))
+
+from assets.secret import DATABASE_PATH, DATABASE_URL, DATABASE_USER, DATABASE_PASSWORD
+
+async def init_mora_schema(pool: asyncpg.Pool) -> None:
+    """Create the minigame_mora table if it doesn't exist."""
+    async with pool.acquire() as conn:
+        # Main table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_mora (
+                gid BIGINT NOT NULL,
+                uid BIGINT NOT NULL,
+                cid BIGINT NOT NULL,
+                timestamp BIGINT NOT NULL,
+                count INT NOT NULL,
+                PRIMARY KEY (gid, uid, cid, timestamp)
+            )
+        """)
+
+        # Index for per-guild user lookups (leaderboard, profile)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_minigame_mora_gid_uid 
+            ON minigame_mora (gid, uid)
+        """)
+
+        # Index for global rankings
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_minigame_mora_uid 
+            ON minigame_mora (uid)
+        """)
+
+        # Index for time-range queries (graph generation)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_minigame_mora_timestamp 
+            ON minigame_mora (timestamp)
+        """)
+
+        # Index for guild daily aggregates
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_minigame_mora_gid_timestamp 
+            ON minigame_mora (gid, timestamp)
+        """)
 
 
-class DataMigrator:
-    """Handles all data migrations from old paths to new Chat Minigames structure."""
+async def batch_insert_mora(
+    pool: asyncpg.Pool,
+    entries: list
+) -> int:
+    """
+    Batch insert mora entries for efficiency.
+    entries: list of tuples (uid, gid, cid, timestamp, count)
+    Returns: number of rows inserted.
+    """
+    if not entries:
+        return 0
+
+    async with pool.acquire() as conn:
+        # Use executemany for bulk inserts
+        result = await conn.executemany("""
+            INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (gid, uid, cid, timestamp)
+            DO UPDATE SET count = $5
+        """, entries)
+
+    return len(entries)
+
+
+async def get_mora_table_stats(pool: asyncpg.Pool) -> dict:
+    """
+    Get statistics about the mora table.
+    Used for validation and migration verification.
+    """
+    async with pool.acquire() as conn:
+        stats = {}
+        stats['total_rows'] = await conn.fetchval("SELECT COUNT(*) FROM minigame_mora")
+        stats['unique_users'] = await conn.fetchval("SELECT COUNT(DISTINCT uid) FROM minigame_mora")
+        stats['unique_guilds'] = await conn.fetchval("SELECT COUNT(DISTINCT gid) FROM minigame_mora")
+        stats['total_mora'] = await conn.fetchval("SELECT COALESCE(SUM(count), 0) FROM minigame_mora")
+        stats['min_timestamp'] = await conn.fetchval("SELECT MIN(timestamp) FROM minigame_mora")
+        stats['max_timestamp'] = await conn.fetchval("SELECT MAX(timestamp) FROM minigame_mora")
+
+    return stats
+
+
+async def check_duplicates(pool: asyncpg.Pool) -> list:
+    """
+    Check for duplicate (gid, uid, cid, timestamp) entries.
+    Should return empty list if table is clean.
+    """
+    async with pool.acquire() as conn:
+        duplicates = await conn.fetch("""
+            SELECT gid, uid, cid, timestamp, COUNT(*) as count
+            FROM minigame_mora
+            GROUP BY gid, uid, cid, timestamp
+            HAVING COUNT(*) > 1
+        """)
+    return duplicates
+
+
+# ============================================================================
+# Logging & Formatting
+# ============================================================================
+
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def log_section(title: str):
+    """Log a major section header."""
+    print(f"\n{Colors.BOLD}{Colors.CYAN}{'=' * 70}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{title.center(70)}{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.CYAN}{'=' * 70}{Colors.RESET}\n")
+
+def log_step(num: int, title: str):
+    """Log a numbered step."""
+    print(f"{Colors.BOLD}{Colors.BLUE}[Step {num}]{Colors.RESET} {title}")
+
+def log_success(msg: str, indent=1):
+    """Log a success message."""
+    prefix = "  " * indent
+    print(f"{prefix}{Colors.GREEN}✓{Colors.RESET} {msg}")
+
+def log_warning(msg: str, indent=1):
+    """Log a warning message."""
+    prefix = "  " * indent
+    print(f"{prefix}{Colors.YELLOW}⚠{Colors.RESET} {msg}")
+
+def log_error(msg: str, indent=1):
+    """Log an error message."""
+    prefix = "  " * indent
+    print(f"{prefix}{Colors.RED}✗{Colors.RESET} {msg}")
+
+def log_info(msg: str, indent=1):
+    """Log an info message."""
+    prefix = "  " * indent
+    print(f"{prefix}{Colors.CYAN}»{Colors.RESET} {msg}")
+
+# ============================================================================
+# Firebase Setup
+# ============================================================================
+
+def init_firebase():
+    """Initialize Firebase if not already initialized."""
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(DATABASE_PATH)
+        firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
+    return db
+
+
+# ============================================================================
+# Data Extraction & Validation
+# ============================================================================
+
+def extract_mora_from_firebase() -> list:
+    """
+    Extract all mora entries from Firebase /Mora tree.
     
-    def __init__(self, dry_run: bool = False):
-        self.dry_run = dry_run
-        self.migration_stats = {
-            "quests": 0,
-            "cosmetics": 0,
-            "titles": 0,
-            "rewards": 0,
-            "milestones": 0,
-            "system": 0,
-        }
-        self.errors = []
-        self.changes = []
+    Structure: /Mora/{uid}/{gid}/{cid}/{timestamp} = count
     
-    def log_change(self, change_type: str, source: str, destination: str, count: int = 1):
-        """Log a change for dry-run reporting."""
-        self.changes.append({
-            "type": change_type,
-            "source": source,
-            "destination": destination,
-            "count": count
-        })
+    Returns: list of tuples (uid, gid, cid, timestamp, count)
+    """
+    log_step(1, "Extracting mora data from Firebase")
+    db_ref = db.reference("/Mora")
+    mora_data = db_ref.get() or {}
     
-    def _write(self, path: str, data: Any) -> bool:
-        """Write data to Firebase, or log if dry-run."""
-        if self.dry_run:
-            self.log_change("WRITE", path, path, 1)
-            return True
+    entries = []
+    error_count = 0
+    
+    for uid_str, user_data in mora_data.items():
+        if not isinstance(user_data, dict):
+            error_count += 1
+            log_warning(f"Invalid user data structure for uid={uid_str}", indent=2)
+            continue
+            
         try:
-            db.reference(path).set(data)
-            return True
-        except Exception as e:
-            self.errors.append(f"Write error to {path}: {str(e)}")
-            return False
-    
-    # ============= 1. GLOBAL USER QUESTS =============
-    def migrate_quests(self) -> bool:
-        """Migrate Global User Quests: {uid}/{gid} → {gid}/{uid}"""
-        try:
-            old_ref = db.reference("/Global User Quests")
-            old_data = old_ref.get() or {}
-            
-            if not old_data:
-                print("✓ No quest data to migrate")
-                return True
-            
-            new_structure = {}
-            for uid, guild_data in old_data.items():
-                for gid, quest_data in guild_data.items():
-                    if gid not in new_structure:
-                        new_structure[gid] = {}
-                    new_structure[gid][uid] = quest_data
-            
-            for gid, user_data in new_structure.items():
-                self._write(f"/Chat Minigames Quests/{gid}", user_data)
-                self.log_change("QUESTS", f"/Global User Quests/*/{{users}}", f"/Chat Minigames Quests/{gid}", len(user_data))
-            
-            self.migration_stats["quests"] = len(old_data)
-            print(f"✓ Migrated {len(new_structure)} guild quest records")
-            return True
-            
-        except Exception as e:
-            self.errors.append(f"Quests migration error: {str(e)}")
-            print(f"✗ Quests migration failed: {e}")
-            return False
-    
-    # ============= 2. GLOBAL PROGRESSION REWARDS =============
-    def migrate_cosmetics(self) -> bool:
-        """Migrate Global Progression Rewards to Chat Minigames Cosmetics"""
-        try:
-            old_ref = db.reference("/Global Progression Rewards")
-            old_data = old_ref.get() or {}
-            
-            if not old_data:
-                print("✓ No cosmetics data to migrate")
-                return True
-            
-            for gid, user_data in old_data.items():
-                if isinstance(user_data, dict):
-                    for uid, cosmetics in user_data.items():
-                        if isinstance(cosmetics, dict) and "selected" in cosmetics:
-                            selected = cosmetics.get("selected", {})
-                            if isinstance(selected, dict) and "global_title" in selected:
-                                # Extract timestamp from {gid}_{timestamp} format
-                                global_title_value = selected["global_title"]
-                                if "_" in global_title_value:
-                                    parts = global_title_value.split("_", 1)
-                                    timestamp = parts[1] if len(parts) > 1 else global_title_value
-                                else:
-                                    timestamp = global_title_value
-                                
-                                # Replace global_title with title
-                                selected.pop("global_title")
-                                selected["title"] = timestamp
-                                cosmetics["selected"] = selected
+            uid = int(uid_str)
+        except (ValueError, TypeError):
+            error_count += 1
+            log_warning(f"Invalid UID format: {uid_str}", indent=2)
+            continue
+        
+        for gid_str, guild_data in user_data.items():
+            if not isinstance(guild_data, dict):
+                error_count += 1
+                continue
                 
-                self._write(f"/Chat Minigames Cosmetics/{gid}", user_data)
-                self.log_change("COSMETICS", f"/Global Progression Rewards/{gid}", f"/Chat Minigames Cosmetics/{gid}")
+            try:
+                gid = int(gid_str)
+            except (ValueError, TypeError):
+                error_count += 1
+                continue
             
-            self.migration_stats["cosmetics"] = len(old_data)
-            print(f"✓ Migrated {len(old_data)} guild cosmetics records")
-            return True
-            
-        except Exception as e:
-            self.errors.append(f"Cosmetics migration error: {str(e)}")
-            print(f"✗ Cosmetics migration failed: {e}")
-            return False
-    
-    # ============= 3. GLOBAL USER TITLES =============
-    def migrate_titles(self) -> bool:
-        """Migrate Global User Titles into Chat Minigames Cosmetics/titles"""
-        try:
-            old_ref = db.reference("/Global User Titles")
-            old_data = old_ref.get() or {}
-            
-            if not old_data:
-                print("✓ No titles data to migrate")
-                return True
-            
-            title_count = 0
-            cosmetics_updates = {}
-            
-            for uid, user_titles_data in old_data.items():
-                global_titles = user_titles_data.get("global_titles", {})
+            for cid_str, channel_data in guild_data.items():
+                if not isinstance(channel_data, dict):
+                    error_count += 1
+                    continue
+                    
+                try:
+                    cid = int(cid_str)
+                except (ValueError, TypeError):
+                    error_count += 1
+                    continue
                 
-                for key, title_data in global_titles.items():
+                for ts_str, count in channel_data.items():
                     try:
-                        title_count += 1
-                        gid = title_data.get("guild_id")
+                        timestamp = int(ts_str)
+                        # Validate count is an integer
+                        if not isinstance(count, int):
+                            error_count += 1
+                            continue
                         
-                        if not gid:
-                            gid_str = key.split("_")[0]
-                            gid = gid_str
-                        
-                        parts = key.split("_")
-                        if len(parts) >= 2:
-                            timestamp = "_".join(parts[1:])
-                        else:
-                            timestamp = str(int(time.time() * 1000))
-                        
-                        cosmetics_key = f"{gid}/{uid}"
-                        if cosmetics_key not in cosmetics_updates:
-                            cosmetics_updates[cosmetics_key] = {}
-                        
-                        if "titles" not in cosmetics_updates[cosmetics_key]:
-                            cosmetics_updates[cosmetics_key]["titles"] = {}
-                        
-                        cosmetics_updates[cosmetics_key]["titles"][timestamp] = {"name": title_data.get("name", "")}
-                        
-                    except Exception as e:
-                        self.errors.append(f"Title migration error for {uid} key {key}: {str(e)}")
+                        entries.append((uid, gid, cid, timestamp, count))
+                    except (ValueError, TypeError):
+                        error_count += 1
                         continue
-            
-            for cosmetics_key, title_updates in cosmetics_updates.items():
-                gid, uid = cosmetics_key.split("/")
-                cosmetics_path = f"/Chat Minigames Cosmetics/{gid}/{uid}"
-                cosmetics_ref = db.reference(cosmetics_path)
-                
-                if not self.dry_run:
-                    cosmetics_data = cosmetics_ref.get() or {}
-                    if "titles" not in cosmetics_data:
-                        cosmetics_data["titles"] = {}
-                    cosmetics_data["titles"].update(title_updates["titles"])
-                    cosmetics_ref.set(cosmetics_data)
-                else:
-                    self.log_change("TITLES", f"/Global User Titles/{uid}/global_titles", f"/Chat Minigames Cosmetics/{gid}/{uid}/titles", len(title_updates.get("titles", {})))
-            
-            self.migration_stats["titles"] = title_count
-            print(f"✓ Migrated {title_count} titles into cosmetics")
-            return True
-            
-        except Exception as e:
-            self.errors.append(f"Titles migration error: {str(e)}")
-            print(f"✗ Titles migration failed: {e}")
-            return False
     
-    # ============= 4. GLOBAL EVENTS REWARDS =============
-    def migrate_rewards(self) -> bool:
-        """Migrate Global Events Rewards to Chat Minigames Rewards/shop"""
-        try:
-            old_ref = db.reference("/Global Events Rewards")
-            old_data = old_ref.get() or {}
-            
-            if not old_data:
-                print("✓ No rewards data to migrate")
-                return True
-            
-            rewards_by_guild = {}
-            
-            for key, reward_entry in old_data.items():
-                try:
-                    gid = reward_entry.get("Server ID")
-                    rewards_list = reward_entry.get("Rewards", [])
-                    
-                    if not gid:
-                        self.errors.append(f"Reward entry {key} missing Server ID, skipping")
-                        continue
-                    
-                    if gid not in rewards_by_guild:
-                        rewards_by_guild[gid] = []
-                    
-                    rewards_by_guild[gid].extend(rewards_list)
-                except Exception as e:
-                    self.errors.append(f"Reward entry error {key}: {str(e)}")
-                    continue
-            
-            for gid, rewards_list in rewards_by_guild.items():
-                existing = db.reference(f"/Chat Minigames Rewards/{gid}").get() or {} if not self.dry_run else {}
-                existing["shop"] = rewards_list
-                self._write(f"/Chat Minigames Rewards/{gid}", existing)
-                self.log_change("REWARDS", f"/Global Events Rewards/*/Rewards", f"/Chat Minigames Rewards/{gid}/shop", len(rewards_list))
-            
-            self.migration_stats["rewards"] = len(rewards_by_guild)
-            print(f"✓ Migrated rewards for {len(rewards_by_guild)} guilds")
-            return True
-            
-        except Exception as e:
-            self.errors.append(f"Rewards migration error: {str(e)}")
-            print(f"✗ Rewards migration failed: {e}")
-            return False
+    log_success(f"Extracted {len(entries):,} valid entries", indent=2)
+    if error_count > 0:
+        log_warning(f"Skipped {error_count} invalid entries", indent=2)
     
-    # ============= 5. MILESTONES =============
-    def migrate_milestones(self) -> bool:
-        """Migrate Milestones to Chat Minigames Rewards/milestones as list format
-        
-        New format: Each milestone is [description, reward, threshold]
-        """
-        try:
-            old_ref = db.reference("/Milestones")
-            old_data = old_ref.get() or {}
-            
-            if not old_data:
-                print("✓ No milestones data to migrate")
-                return True
-            
-            milestones_count = 0
-            
-            for gid, milestones_entries in old_data.items():
-                try:
-                    milestones_list = []
-                    
-                    if isinstance(milestones_entries, dict):
-                        for key, milestone_data in milestones_entries.items():
-                            # Convert dict format to list format: [description, reward, threshold]
-                            description = milestone_data.get("description", "")
-                            reward = milestone_data.get("reward", "")
-                            threshold = milestone_data.get("threshold", 0)
-                            
-                            milestones_list.append([description, reward, threshold])
-                            milestones_count += 1
-                    
-                    rewards_path = f"/Chat Minigames Rewards/{gid}"
-                    if not self.dry_run:
-                        rewards_ref = db.reference(rewards_path)
-                        rewards_data = rewards_ref.get() or {}
-                        rewards_data["milestones"] = milestones_list
-                        rewards_ref.set(rewards_data)
-                    else:
-                        self.log_change("MILESTONES", f"/Milestones/{gid}", f"/Chat Minigames Rewards/{gid}/milestones", len(milestones_list))
-                    
-                except Exception as e:
-                    self.errors.append(f"Milestone error for guild {gid}: {str(e)}")
-                    continue
-            
-            self.migration_stats["milestones"] = milestones_count
-            print(f"✓ Migrated {milestones_count} milestone records")
-            return True
-            
-        except Exception as e:
-            self.errors.append(f"Milestones migration error: {str(e)}")
-            print(f"✗ Milestones migration failed: {e}")
-            return False
-    
-    # ============= 6. GLOBAL EVENTS SYSTEM =============
-    def migrate_system(self) -> bool:
-        """Migrate Global Events System to Chat Minigames System"""
-        try:
-            old_ref = db.reference("/Global Events System")
-            old_data = old_ref.get() or {}
-            
-            if not old_data:
-                print("✓ No system data to migrate")
-                return True
-            
-            system_by_channel = {}
-            
-            for key, system_entry in old_data.items():
-                try:
-                    cid = system_entry.get("Channel ID")
-                    frequency = system_entry.get("Frequency")
-                    events = system_entry.get("Events", [])
-                    
-                    if not cid:
-                        self.errors.append(f"System entry {key} missing Channel ID, skipping")
-                        continue
-                    
-                    system_by_channel[cid] = {
-                        "events": events,
-                        "frequency": frequency
-                    }
-                except Exception as e:
-                    self.errors.append(f"System entry error {key}: {str(e)}")
-                    continue
-            
-            for cid, system_data in system_by_channel.items():
-                self._write(f"/Chat Minigames System/{cid}", system_data)
-                self.log_change("SYSTEM", f"/Global Events System/*, Channel ID={cid}", f"/Chat Minigames System/{cid}")
-            
-            self.migration_stats["system"] = len(system_by_channel)
-            print(f"✓ Migrated {len(system_by_channel)} channel system configs")
-            return True
-            
-        except Exception as e:
-            self.errors.append(f"System migration error: {str(e)}")
-            print(f"✗ System migration failed: {e}")
-            return False
-    
-    # ============= VALIDATION =============
-    def validate_migrations(self) -> Tuple[bool, Dict[str, Any]]:
-        """Validate all migrations by comparing old vs new data."""
-        validation_report = {
-            "quests_valid": False,
-            "cosmetics_valid": False,
-            "titles_valid": False,
-            "rewards_valid": False,
-            "milestones_valid": False,
-            "system_valid": False,
-            "details": []
-        }
-        
-        try:
-            old_quests = db.reference("/Global User Quests").get() or {}
-            new_quests = db.reference("/Chat Minigames Quests").get() or {}
-            old_quest_count = sum(len(guild_data) for guild_data in old_quests.values()) if old_quests else 0
-            new_quest_count = sum(len(user_data) for user_data in new_quests.values()) if new_quests else 0
-            validation_report["quests_valid"] = old_quest_count == new_quest_count
-            validation_report["details"].append(f"Quests: {old_quest_count} old == {new_quest_count} new")
-            
-            old_cosmetics = db.reference("/Global Progression Rewards").get() or {}
-            new_cosmetics = db.reference("/Chat Minigames Cosmetics").get() or {}
-            validation_report["cosmetics_valid"] = len(old_cosmetics) == len(new_cosmetics)
-            validation_report["details"].append(f"Cosmetics: {len(old_cosmetics)} old == {len(new_cosmetics)} new")
-            
-            old_titles = db.reference("/Global User Titles").get() or {}
-            old_title_count = sum(len(user_data.get("global_titles", {})) for user_data in old_titles.values()) if old_titles else 0
-            new_cosmetics_with_titles = new_cosmetics
-            new_title_count = 0
-            for guild_data in new_cosmetics_with_titles.values():
-                if isinstance(guild_data, dict):
-                    for user_data in guild_data.values():
-                        if isinstance(user_data, dict):
-                            new_title_count += len(user_data.get("titles", {}))
-            validation_report["titles_valid"] = old_title_count == new_title_count
-            validation_report["details"].append(f"Titles: {old_title_count} old == {new_title_count} new")
-            
-            old_rewards = db.reference("/Global Events Rewards").get() or {}
-            new_rewards = db.reference("/Chat Minigames Rewards").get() or {}
-            validation_report["rewards_valid"] = (len(old_rewards) > 0 and len(new_rewards) > 0) or (len(old_rewards) == 0 and len(new_rewards) == 0)
-            validation_report["details"].append(f"Rewards: {len(old_rewards)} old entries → {len(new_rewards)} new guild entries")
-            
-            old_milestones = db.reference("/Milestones").get() or {}
-            new_milestones_data = db.reference("/Chat Minigames Rewards").get() or {}
-            old_milestone_count = sum(len(guild_data) if isinstance(guild_data, dict) else 0 for guild_data in old_milestones.values()) if old_milestones else 0
-            new_milestone_count = sum(len(guild_data.get("milestones", [])) for guild_data in new_milestones_data.values()) if new_milestones_data else 0
-            validation_report["milestones_valid"] = old_milestone_count == new_milestone_count
-            validation_report["details"].append(f"Milestones: {old_milestone_count} old == {new_milestone_count} new")
-            
-            old_system = db.reference("/Global Events System").get() or {}
-            new_system = db.reference("/Chat Minigames System").get() or {}
-            validation_report["system_valid"] = len(old_system) == len(new_system)
-            validation_report["details"].append(f"System: {len(old_system)} old == {len(new_system)} new")
-            
-        except Exception as e:
-            validation_report["details"].append(f"Validation error: {str(e)}")
-        
-        all_valid = all([
-            validation_report["quests_valid"],
-            validation_report["cosmetics_valid"],
-            validation_report["titles_valid"],
-            validation_report["rewards_valid"],
-            validation_report["milestones_valid"],
-            validation_report["system_valid"],
-        ])
-        
-        return all_valid, validation_report
-    
-    # ============= MAIN MIGRATION FLOW =============
-    def execute_migration(self) -> Tuple[bool, Dict[str, Any]]:
-        """Execute all migrations in sequence."""
-        mode = "DRY RUN" if self.dry_run else "LIVE"
-        print("\n" + "="*60)
-        print(f"STARTING EVENTS DATA MIGRATION ({mode})")
-        print("="*60 + "\n")
-        
-        all_success = True
-        
-        steps = [
-            ("Migrating Quests", self.migrate_quests),
-            ("Migrating Cosmetics", self.migrate_cosmetics),
-            ("Migrating Titles", self.migrate_titles),
-            ("Migrating Rewards", self.migrate_rewards),
-            ("Migrating Milestones", self.migrate_milestones),
-            ("Migrating System", self.migrate_system),
-        ]
-        
-        for step_name, migration_func in steps:
-            print(f"\n{step_name}...")
-            success = migration_func()
-            all_success = all_success and success
-        
-        print("\n" + "-"*60)
-        print("VALIDATING MIGRATIONS")
-        print("-"*60)
-        
-        validation_success, validation_report = self.validate_migrations()
-        
-        for detail in validation_report["details"]:
-            print(f"  {detail}")
-        
-        print("\n" + "="*60)
-        print("MIGRATION COMPLETE")
-        print("="*60)
-        print(f"Overall Status: {'✓ SUCCESS' if validation_success else '✗ FAILED'}")
-        print(f"Mode: {mode}")
-        print(f"\nMigration Stats:")
-        for key, value in self.migration_stats.items():
-            print(f"  {key}: {value}")
-        
-        if self.errors:
-            print(f"\nErrors ({len(self.errors)}):")
-            for error in self.errors:
-                print(f"  - {error}")
-        
-        if self.dry_run and self.changes:
-            print(f"\nPlanned Changes ({len(self.changes)}):")
-            for change in self.changes[:10]:
-                print(f"  {change['type']}: {change['source']} → {change['destination']} ({change['count']} items)")
-            if len(self.changes) > 10:
-                print(f"  ... and {len(self.changes) - 10} more")
-        
-        return validation_success, {
-            "success": validation_success,
-            "stats": self.migration_stats,
-            "validation": validation_report,
-            "errors": self.errors,
-            "mode": mode
-        }
+    return entries
 
 
-def main():
+# ============================================================================
+# PostgreSQL Migration
+# ============================================================================
+
+async def migrate_mora_to_postgres(entries: list, dry_run: bool = False) -> None:
+    """
+    Migrate extracted entries to PostgreSQL.
+    
+    Creates table, initializes schema, and batch inserts all entries.
+    
+    Args:
+        entries: List of (uid, gid, cid, timestamp, count) tuples from Firebase
+        dry_run: If True, simulate migration without writing to database
+    """
+    log_step(2, "Connecting to PostgreSQL" + (" (DRY RUN - No writes)" if dry_run else ""))
+    
+    # Create connection pool
+    pool = await asyncpg.create_pool(
+        database="db",
+        user=DATABASE_USER,
+        password=DATABASE_PASSWORD,
+        host="localhost",
+        min_size=2,
+        max_size=10,
+    )
+    
+    try:
+        log_success("Connected to PostgreSQL", indent=2)
+        
+        # Initialize schema
+        if not dry_run:
+            log_step(3, "Creating minigame_mora table and indexes")
+            await init_mora_schema(pool)
+            log_success("Schema initialized", indent=2)
+        else:
+            log_step(3, "Schema initialization (DRY RUN - skipped)")
+        
+        # Batch insert entries
+        log_step(4, f"Inserting {len(entries):,} mora entries" + (" (DRY RUN - simulating)" if dry_run else ""))
+        batch_size = 1000
+        total_inserted = 0
+        
+        for i in range(0, len(entries), batch_size):
+            batch = entries[i:i+batch_size]
+            if not dry_run:
+                inserted = await batch_insert_mora(pool, batch)
+                total_inserted += inserted
+            else:
+                total_inserted += len(batch)
+            
+            progress = min(i + batch_size, len(entries))
+            pct = (progress / len(entries)) * 100
+            log_info(f"Progress: {progress:,}/{len(entries):,} ({pct:.1f}%)", indent=2)
+        
+        log_success(f"Inserted {total_inserted:,} entries" + (" (simulated)" if dry_run else ""), indent=2)
+        
+        # Validate data integrity
+        log_step(5, "Validating data integrity" + (" (DRY RUN - simulating)" if dry_run else ""))
+        
+        if not dry_run:
+            stats = await get_mora_table_stats(pool)
+            
+            log_info(f"Total rows: {stats['total_rows']:,}", indent=2)
+            log_info(f"Unique users: {stats['unique_users']:,}", indent=2)
+            log_info(f"Unique guilds: {stats['unique_guilds']:,}", indent=2)
+            log_info(f"Total mora: {stats['total_mora']:,}", indent=2)
+            if stats['min_timestamp']:
+                log_info(f"Date range: {stats['min_timestamp']} to {stats['max_timestamp']}", indent=2)
+            
+            # Check for duplicates
+            duplicates = await check_duplicates(pool)
+            if duplicates:
+                log_warning(f"Found {len(duplicates)} duplicate (gid, uid, cid, timestamp) entries", indent=2)
+                for dup in duplicates[:5]:
+                    log_info(f"uid={dup['uid']}, gid={dup['gid']}, cid={dup['cid']}, ts={dup['timestamp']}, count={dup['count']}", indent=3)
+            else:
+                log_success(f"No duplicates found", indent=2)
+            
+            # Final validation
+            log_step(6, "Final validation")
+            if stats['total_rows'] == len(entries):
+                log_success(f"Row count matches: {len(entries):,} entries", indent=2)
+            else:
+                log_warning(f"Row count mismatch", indent=2)
+                log_info(f"Expected: {len(entries):,}", indent=3)
+                log_info(f"Actual: {stats['total_rows']:,}", indent=3)
+        else:
+            # Dry run stats calculation
+            log_info(f"Total rows: {len(entries):,} (simulated)", indent=2)
+            unique_users = len(set(e[0] for e in entries))
+            unique_guilds = len(set(e[1] for e in entries))
+            total_mora = sum(e[4] for e in entries)
+            log_info(f"Unique users: {unique_users:,} (simulated)", indent=2)
+            log_info(f"Unique guilds: {unique_guilds:,} (simulated)", indent=2)
+            log_info(f"Total mora: {total_mora:,} (simulated)", indent=2)
+        
+    finally:
+        await pool.close()
+
+
+# ============================================================================
+# Main Execution
+# ============================================================================
+
+async def main():
+    """Main migration flow."""
+    # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Migrate Events data from old Firebase paths to Chat Minigames structure"
+        description="Migrate mora data from Firebase to PostgreSQL"
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview changes without making them"
+        help="Test migration without writing to database"
     )
-    
     args = parser.parse_args()
     
-    migrator = DataMigrator(dry_run=args.dry_run)
-    success, report = migrator.execute_migration()
+    # Display header
+    print("\n" + "=" * 70)
+    print(f"{Colors.BOLD}{Colors.CYAN}MORA DATA MIGRATION: Firebase → PostgreSQL{Colors.RESET}")
+    if args.dry_run:
+        print(f"{Colors.YELLOW}[DRY RUN MODE - No database changes]{Colors.RESET}")
+    print("=" * 70)
     
-    sys.exit(0 if success else 1)
+    print(f"\n{Colors.YELLOW}⚠️  WARNING: Ensure the Discord bot is STOPPED before running this!{Colors.RESET}")
+    print("    Concurrent writes will cause data corruption.\n")
+    
+    if not args.dry_run:
+        input("Press ENTER to continue, or Ctrl+C to cancel...")
+    else:
+        print(f"{Colors.CYAN}→ Running in dry-run mode (no database writes){Colors.RESET}\n")
+    
+    log_section("EXTRACTION PHASE")
+    
+    try:
+        # Initialize Firebase
+        init_firebase()
+        
+        # Extract from Firebase
+        entries = extract_mora_from_firebase()
+        
+        if not entries:
+            log_error("No mora entries found in Firebase. Aborting.", indent=1)
+            return
+        
+        # Migrate to PostgreSQL
+        log_section("MIGRATION PHASE")
+        await migrate_mora_to_postgres(entries, dry_run=args.dry_run)
+        
+        print("\n" + "=" * 70)
+        log_success("MIGRATION COMPLETE", indent=0)
+        print("=" * 70)
+        
+        print(f"\n{Colors.CYAN}Next steps:{Colors.RESET}")
+        print("  1. Review the stats above")
+        if not args.dry_run:
+            print("  2. Backup Firebase /Mora tree (optional)")
+            print("  3. Deploy updated bot code")
+            print("  4. Monitor logs for errors")
+            print("  5. Archive/delete Firebase /Mora if migration successful")
+        else:
+            print("  2. Without --dry-run to perform actual migration")
+        
+    except Exception as e:
+        log_error(f"MIGRATION FAILED: {e}", indent=1)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

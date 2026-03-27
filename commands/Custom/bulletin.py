@@ -4,6 +4,7 @@ import time
 from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
+from commands.Events.helperFunctions import addMora
 
 class CustomCommands(commands.Cog):
     def __init__(self, bot):
@@ -65,9 +66,14 @@ class CustomCommands(commands.Cog):
                 embeds=[embed1, embed2],
             )
 
-            ts = str(int(time.time()))
-            path = f"/Mora/{text_user.id}/{interaction.guild.id}/{10}/{ts}"
-            db.reference(path).set(100000)
+            timestamp = int(time.time())
+            async with interaction.client.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (gid, uid, cid, timestamp)
+                    DO UPDATE SET count = $5
+                """, text_user.id, interaction.guild.id, 10, timestamp, 100000)
 
             await interaction.followup.send(
                 f"<:yes:1036811164891480194> Added exactly <:MORA:1364030973611610205> `100,000` to <@{text_user.id}>'s inventory. \n-# This is not boosted and doesn't count towards quest progression.",

@@ -1,12 +1,12 @@
 import discord
+import time
 
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
-import pandas as pd
 
-from commands.Events.helperFunctions import get_total_mora, get_guild_mora
 from commands.Events.domain import get_rank_title
+from commands.Events.helperFunctions import get_global_leaderboard, get_guild_leaderboard
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -94,6 +94,7 @@ class Leaderboard(commands.Cog):
     async def lb(
         self, interaction: discord.Interaction, type: app_commands.Choice[str]
     ) -> None:
+        start_time = time.perf_counter()
         await interaction.response.defer(thinking=True)
         dict_lb = []
 
@@ -144,56 +145,28 @@ class Leaderboard(commands.Cog):
                         continue
 
             else:
-                all_data = db.reference("/Mora").get() or {}
-                guild_str = str(interaction.guild.id)
-
                 if type.value == "global":
-                    for uid_str, guilds in all_data.items():
-                        uid = int(uid_str)
-                        total = get_total_mora(guilds)
-                        if total > 0:
-                            dict_lb.append({"User ID": uid, "Mora": total})
+                    leaderboard = await get_global_leaderboard(interaction.client.pool, limit=50)
+                    for uid, mora in leaderboard:
+                        dict_lb.append({"User ID": uid, "Mora": mora})
 
                 elif type.value == "server":
-                    potential_members = []
-                    for uid_str, guilds in all_data.items():
-                        uid = int(uid_str)
-                        total = get_guild_mora(guilds, guild_str)
-                        if total > 0:
-                            potential_members.append({"User ID": uid, "Mora": total})
-                    
-                    potential_members.sort(key=lambda x: x["Mora"], reverse=True)
-                    
-                    for member_data in potential_members[:50]:
-                        uid = member_data["User ID"]
-                        try:
-                            if await interaction.guild.fetch_member(uid):
-                                dict_lb.append(member_data)
-                        except discord.NotFound:
-                            continue
-                        except discord.HTTPException:
-                            continue
+                    leaderboard = await get_guild_leaderboard(interaction.client.pool, interaction.guild.id, limit=50)
+                    for uid, mora in leaderboard:
+                        dict_lb.append({"User ID": uid, "Mora": mora})
 
             if type.value == "server_items":
-                df = pd.DataFrame(dict_lb, columns=["User ID", "Count"])
-                df = df.astype({"User ID": int, "Count": int})
-                df = df.sort_values("Count", ascending=False).head(50)
+                dict_lb.sort(key=lambda x: x["Count"], reverse=True)
             elif type.value == "kingdom":
-                df = pd.DataFrame(dict_lb, columns=["User ID", "Level"])
-                df = df.astype({"User ID": int, "Level": int})
-                df = df.sort_values("Level", ascending=False).head(50)
-            else:
-                df = pd.DataFrame(dict_lb, columns=["User ID", "Mora"])
-                df = df.astype({"User ID": int, "Mora": int})
-                df = df.sort_values("Mora", ascending=False)
+                dict_lb.sort(key=lambda x: x["Level"], reverse=True)
 
         except Exception as e:
             print(f"[lb error] {e}")
-            df = pd.DataFrame(columns=["User ID", "Count" if type.value=="server_items" else "Level" if type.value=="kingdom" else "Mora"])
+            dict_lb = []
 
         pages = []
         page_lines = []
-        entries = df.to_dict("records")
+        entries = dict_lb
         max_entries = 50 if type.value == "global" else len(entries)
         for idx, row in enumerate(entries[:max_entries], start=1):
             val = row["Count"] if type.value == "server_items" else row["Level"] if type.value == "kingdom" else row["Mora"]
@@ -261,6 +234,8 @@ class Leaderboard(commands.Cog):
             pg.set_footer(text=f"Page {i} of {len(pages)}")
 
         await interaction.followup.send(embed=pages[0], view=LeaderboardPageView(pages))
+        end_time = time.perf_counter()
+        print(f"Total /lb execution time: {end_time - start_time} seconds")
         
 
 async def setup(bot: commands.Bot) -> None:

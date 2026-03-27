@@ -2,6 +2,7 @@ import discord
 import time
 import datetime
 import os
+import asyncpg
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -13,7 +14,7 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track
-from commands.Events.helperFunctions import get_total_mora, get_guild_mora, addMora
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
@@ -21,43 +22,23 @@ from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDING
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
-async def generate_mora_graph(user_id: int, guild_id: int, display_name: str) -> str:
-    ref = db.reference(f"/Mora/{user_id}/{guild_id}")
-    guild_data = ref.get() or {}
-
-    timestamps = []
-    mora_values = []
-    entry_count = 0
-
-    for channel_data in guild_data.values():
-        for ts, mora in channel_data.items():
-            if isinstance(mora, int) and mora >= 0:
-                entry_count += 1
-            timestamps.append(int(ts))
-            mora_values.append(mora)
-
-    if not timestamps:
+async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
+    history = await get_user_mora_history(pool, user_id, guild_id)
+    if not history:
         return None
+    
+    timestamps, mora_values = zip(*history) if history else ([], [])
+    timestamps = list(timestamps)
+    mora_values = list(mora_values)
+    
+    stats_data = await get_mora_stats(pool, user_id, guild_id)
 
-    first_played = min(timestamps)
-
-    daily_earnings = {}
-    for ts, mora in zip(timestamps, mora_values):
-        date = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).date()
-        daily_earnings[date] = daily_earnings.get(date, 0) + mora
-
-    largest_daily = max(daily_earnings.values(), default=0)
-    largest_daily_date = None
-    for date, amount in daily_earnings.items():
-        if amount == largest_daily:
-            largest_daily_date = date
-            break
-
-    total_days = (datetime.datetime.now(datetime.timezone.utc).date() - datetime.datetime.fromtimestamp(first_played, datetime.timezone.utc).date()).days + 1
-    total_mora = sum(mora_values)
-    average_daily = total_mora / total_days if total_days > 0 else 0
-
-    days_active = len(daily_earnings)
+    largest_daily = stats_data['largest_daily']
+    largest_daily_date = stats_data['largest_daily_date']
+    entry_count = stats_data['entry_count']
+    first_played = stats_data['first_played']
+    average_daily = stats_data['average_daily']
+    days_active = stats_data['days_active']
     
     ref_counts = db.reference(f"/Mora Chest Counts/{guild_id}/{user_id}")
     chest_counts = ref_counts.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
@@ -82,8 +63,8 @@ async def generate_mora_graph(user_id: int, guild_id: int, display_name: str) ->
     stats = {
         "`📦` Daily Mora Chests": chest_info,
         "`📅` First Played": f"<t:{first_played}:D>",
-        "`💰` Largest Day Earning": f"<t:{int(time.mktime(largest_daily_date.timetuple()))}:D>\n({MORA_EMOTE} `{largest_daily:,}`)",
-        "`📈` Average Daily Mora": f"{MORA_EMOTE} `{average_daily:,.0f}`",
+        "`💰` Largest Day Earning": f"<t:{largest_daily_date}:D>\n({MORA_EMOTE} `{largest_daily:,}`)",
+        "`📈` Average Daily Mora": f"{MORA_EMOTE} `{average_daily:,}`",
         "`✌️` Minigame Wins": f"`{entry_count - total_chests}` total wins",
         "`😎` Active Days": f"`{days_active}` different day(s)",
     }
@@ -222,7 +203,7 @@ class ToggleView(discord.ui.View):
             await interaction.response.send_message("You can't use this button!", ephemeral=True)
             return
         
-        result = await generate_mora_graph(self.user_id, interaction.guild.id, (await interaction.guild.fetch_member(self.user_id)).display_name)
+        result = await generate_mora_graph(interaction.client.pool, self.user_id, interaction.guild.id, (await interaction.guild.fetch_member(self.user_id)).display_name)
         if not result:
             await interaction.response.send_message("No mora data available!", ephemeral=True)
             return
@@ -553,37 +534,21 @@ class Mora(commands.Cog):
     @app_commands.command(name="mora", description="Check a user's mora inventory")
     @app_commands.describe(user="Specify any user other than yourself if needed")
     async def mora(self, interaction: discord.Interaction, user: discord.Member = None):
+        start_time = time.perf_counter()
         await interaction.response.defer(thinking=True)
         user = user or interaction.user
 
-        user_ref = db.reference(f"/Mora/{user.id}")
-        user_data = user_ref.get() or {}
-
-        all_users = db.reference("/Mora").get() or {}
-        global_ranking = []
-        for uid_str, guilds in all_users.items():
-            total = get_total_mora(guilds)
-            global_ranking.append((int(uid_str), total))
-        global_ranking.sort(key=lambda x: x[1], reverse=True)
-        global_total = dict(global_ranking).get(user.id, 0)
-        global_rank = next((i+1 for i,(uid,_) in enumerate(global_ranking) if uid == user.id), "N/A")
-
-        guild_id = str(interaction.guild.id)
-        guild_data = []
-        for uid_str, guilds in all_users.items():
-            amt = get_guild_mora(guilds, guild_id)
-            if amt > 0:
-                guild_data.append({"user_id": int(uid_str), "mora": amt})
+        # Use PostgreSQL for efficient global and guild rankings
         
-        if guild_data:
-            guild_df = pd.DataFrame(guild_data)
-            guild_df = guild_df.sort_values("mora", ascending=False).reset_index(drop=True)
-            user_row = guild_df[guild_df["user_id"] == user.id]
-            guild_total = user_row["mora"].iloc[0] if len(user_row) > 0 else 0
-            guild_rank = user_row.index[0] + 1 if len(user_row) > 0 else "N/A"
-        else:
-            guild_total = 0
-            guild_rank = "N/A"
+        # Get global ranking
+        global_ranking = await get_global_leaderboard(interaction.client.pool, limit=10000)
+        global_total = next((mora for uid, mora in global_ranking if uid == user.id), 0)
+        global_rank = next((i+1 for i, (uid, _) in enumerate(global_ranking) if uid == user.id), "N/A")
+
+        # Get guild ranking - fetch top 50 for this guild then find user's position
+        guild_leaderboard = await get_guild_leaderboard(interaction.client.pool, interaction.guild.id, limit=10000)
+        guild_total = next((mora for uid, mora in guild_leaderboard if uid == user.id), 0)
+        guild_rank = next((i+1 for i, (uid, _) in enumerate(guild_leaderboard) if uid == user.id), "N/A")
 
         def word(n):
             if n == "N/A":
@@ -666,20 +631,6 @@ class Mora(commands.Cog):
                         break
                     except Exception as e:
                         print(e)
-
-        # beta_amount = next(
-        #     (
-        #         val["Mora"]
-        #         for val in db.reference("/Global Events Mora").get().values()
-        #         if val["User ID"] == user.id
-        #     ),
-        #     0,
-        # )
-        # legacy = None
-        # if beta_amount != 0:
-        #     legacy = (
-        #         f"\n-# <a:legacy:1345876714240213073> *Legacy Player: `{beta_amount}`*"
-        #     )
             
         ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{user.id}/selected")
         selected = ref_selected.get() or {}
@@ -688,7 +639,6 @@ class Mora(commands.Cog):
         
         embed = discord.Embed(
             title=f"{user.display_name}'s Inventory",
-            # description=f"{legacy if legacy is not None else ''}",
             description="",
             color=custom_color or discord.Color.gold()
         )
@@ -807,6 +757,8 @@ class Mora(commands.Cog):
         view.message = message
         if followup:
             await interaction.followup.send("💡 Tip: Customize your inventory however you like (custom background, profile frame, titles) with </customize:1339721187953082544>!", ephemeral=True)
+        end_time = time.perf_counter()
+        print(f"Total /mora execution time: {end_time - start_time} seconds")
 
     @app_commands.command(name="gift", description="Gift mora to another user")
     @app_commands.describe(
@@ -838,18 +790,17 @@ class Mora(commands.Cog):
         tax_amount = int(amount * tax_rate / 100)
         total_cost = amount + tax_amount
 
-        ref = db.reference(f"/Mora/{interaction.user.id}")
-        user_data = ref.get() or {}
-        donor_mora = get_guild_mora(user_data, str(interaction.guild.id))
+        # Get donor's current mora balance
+        donor_mora = await get_guild_mora(interaction.client.pool, interaction.user.id, interaction.guild.id)
                     
         if donor_mora < total_cost:
             return await interaction.followup.send(
                 f"You need {MORA_EMOTE} `{total_cost}` ({amount} + {tax_rate}% tax) to make this gift! \n-# You currently only have {MORA_EMOTE} `{donor_mora}`."
             )
 
-        await addMora(interaction.user.id, -total_cost, interaction.channel.id, interaction.guild.id, interaction.client) # Donor
-        await addMora(user.id, amount, interaction.channel.id, interaction.guild.id, interaction.client) # Recipient
-        await addMora(interaction.client.user.id, tax_amount, interaction.channel.id, interaction.guild.id, interaction.client) # Tax
+        await addMora(interaction.client.pool, interaction.user.id, -total_cost, interaction.channel.id, interaction.guild.id, interaction.client) # Donor
+        await addMora(interaction.client.pool, user.id, amount, interaction.channel.id, interaction.guild.id, interaction.client) # Recipient
+        await addMora(interaction.client.pool, interaction.client.user.id, tax_amount, interaction.channel.id, interaction.guild.id, interaction.client) # Tax
 
         await interaction.followup.send(
             embed=discord.Embed(

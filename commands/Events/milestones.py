@@ -6,7 +6,7 @@ from discord.ext import commands
 from firebase_admin import db
 from discord.ui import Button, View, Select
 
-from commands.Events.helperFunctions import get_guild_mora
+from commands.Events.helperFunctions import get_guild_mora, get_users_by_mora_threshold
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -125,54 +125,51 @@ class MilestoneModal(discord.ui.Modal, title="Add a Milestone"):
         ref.set(milestones)
         
         count = 0
-        mora_ref = db.reference("/Mora")
-        all_users = mora_ref.get() or {}
+        qualified_users = await get_users_by_mora_threshold(interaction.client.pool, interaction.guild.id, threshold)
 
-        for user_id, user_data in all_users.items():
-            guild_mora = get_guild_mora(user_data, str(interaction.guild.id))
-            if guild_mora >= threshold:
-                inventory_ref = db.reference("/User Events Inventory")
-                inventories = inventory_ref.get() or {}
-                has_reward = False
+        for user_id, mora_amount in qualified_users:
+            inventory_ref = db.reference("/User Events Inventory")
+            inventories = inventory_ref.get() or {}
+            has_reward = False
+            for inv_key, inv_data in inventories.items():
+                if inv_data["User ID"] == user_id:
+                    for item in inv_data.get("Items", []):
+                        if item[0] == reward and item[3] == interaction.guild.id:
+                            has_reward = True
+                            break
+                    if has_reward:
+                        break
+            
+            if not has_reward:
+                count += 1
+                item_data = [
+                    reward, 
+                    description,
+                    0,  # cost is 0 because it's a milestone
+                    interaction.guild.id,
+                    int(time.time())
+                ]
+                
+                found = False
                 for inv_key, inv_data in inventories.items():
                     if inv_data["User ID"] == user_id:
-                        for item in inv_data.get("Items", []):
-                            if item[0] == reward and item[3] == interaction.guild.id:
-                                has_reward = True
-                                break
-                        if has_reward:
-                            break
+                        items = inv_data.get("Items", [])
+                        items.append(item_data)
+                        inventory_ref.child(inv_key).update({"Items": items})
+                        found = True
+                        break
+                if not found:
+                    data = {"User ID": user_id, "Items": [item_data]}
+                    inventory_ref.push().set(data)
                 
-                if not has_reward:
-                    count += 1
-                    item_data = [
-                        reward, 
-                        description,
-                        0,  # cost is 0 because it's a milestone
-                        interaction.guild.id,
-                        int(time.time())
-                    ]
-                    
-                    found = False
-                    for inv_key, inv_data in inventories.items():
-                        if inv_data["User ID"] == user_id:
-                            items = inv_data.get("Items", [])
-                            items.append(item_data)
-                            inventory_ref.child(inv_key).update({"Items": items})
-                            found = True
-                            break
-                    if not found:
-                        data = {"User ID": user_id, "Items": [item_data]}
-                        inventory_ref.push().set(data)
-                    
-                    if reward.isdigit():
-                        member = await interaction.guild.fetch_member(user_id)
-                        role = interaction.guild.get_role(int(reward))
-                        if member and role:
-                            try:
-                                await member.add_roles(role)
-                            except:
-                                pass
+                if reward.isdigit():
+                    member = await interaction.guild.fetch_member(user_id)
+                    role = interaction.guild.get_role(int(reward))
+                    if member and role:
+                        try:
+                            await member.add_roles(role)
+                        except:
+                            pass
         
         milestones_ref = db.reference(f"/Milestones/{interaction.guild.id}")
         updated_milestones = milestones_ref.get() or {}

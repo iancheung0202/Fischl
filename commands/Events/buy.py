@@ -6,6 +6,7 @@ import asyncio
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
+from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -242,14 +243,7 @@ class ConfirmPurchaseView(discord.ui.View):
         guild_key = str(interaction.guild.id)
         channel_key = str(interaction.channel.id)
 
-        base_ref = db.reference(f"/Mora/{user_key}/{guild_key}")
-        channels = base_ref.get() or {}  # {channel_id: {timestamp: amount}}
-
-        entries = [
-            amt for chan in channels.values()
-            for amt in chan.values()
-        ]
-        total_available = sum(entries)
+        total_available = await get_guild_mora(interaction.client.pool, interaction.user.id, interaction.guild.id)
         
         role_mention = (
             f"<@&{roleName}>"
@@ -332,8 +326,7 @@ class ConfirmPurchaseView(discord.ui.View):
                 ref.push().set(value)
                 
             timestamp = str(int(time.time()))
-            subtract_ref = db.reference(f"/Mora/{user_key}/{guild_key}/{channel_key}/{timestamp}")
-            subtract_ref.set(-itemCost)
+            await subtractGuildMora(interaction.client.pool, interaction.user.id, itemCost, interaction.channel.id, interaction.guild.id)
             
             xp_earned = f"\n> <:PinkConfused:1204614149628498010> You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"
                 
@@ -343,7 +336,6 @@ class ConfirmPurchaseView(discord.ui.View):
                 color=discord.Color.green(),
             )
 
-            from commands.Events.helperFunctions import TierRewardsView
             from commands.Events.event import add_xp
             from commands.Events.trackData import check_tier_rewards
             from commands.Events.quests import update_quest

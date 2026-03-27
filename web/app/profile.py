@@ -12,16 +12,17 @@ import html
 import io
 import random
 import asyncio
+import psycopg2
 
 from PIL import Image, ImageDraw, ImageFont, ImageSequence
 from firebase_admin import db
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, session, redirect, abort, jsonify
 
-from config.settings import CLIENT_ID, CLIENT_SECRET, API_BASE, BOT_TOKEN, PROFILE_REDIRECT_URI, MORA_EMOTE, PAYPAL_CLIENT_ID, ELITE_TRACK_PRICE
+from config.settings import CLIENT_ID, CLIENT_SECRET, API_BASE, BOT_TOKEN, PROFILE_REDIRECT_URI, MORA_EMOTE, PAYPAL_CLIENT_ID, ELITE_TRACK_PRICE, POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 from utils.firebase import save_user_to_firebase
 from utils.request import requests_session
-from utils.minigames import get_total_mora, get_guild_mora, check_events_enabled, get_current_season, get_current_track, activate_elite_subscription, is_elite_active, generate_mora_graph
+from utils.minigames import get_total_mora, get_guild_mora, check_events_enabled, get_current_season, get_current_track, activate_elite_subscription, is_elite_active, generate_mora_graph, get_db_connection
 from utils.theme import wrap_page
 from utils.loading import create_loading_skeleton
 from utils.daily_games import DAILY_GAMES, HANGMAN_WORDS, UNSCRAMBLE_WORDS, TYPING_PHRASES
@@ -29,10 +30,21 @@ from utils.daily_games import DAILY_GAMES, HANGMAN_WORDS, UNSCRAMBLE_WORDS, TYPI
 profile = Blueprint('profile', __name__)
 
 async def addMora(userID: int, addedMora: int, channelID: int, guildID: int, client=None):
-    """Add Mora to user's account with timestamp"""
-    ts = str(int(time.time()))
-    path = f"/Mora/{userID}/{guildID}/{channelID}/{ts}"
-    db.reference(path).set(addedMora)
+    """Add Mora to user's account with timestamp using PostgreSQL"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        ts = int(time.time())
+        cursor.execute(
+            "INSERT INTO minigame_mora (uid, gid, cid, timestamp, count) VALUES (%s, %s, %s, %s, %s)",
+            (userID, guildID, channelID, ts, addedMora)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error adding mora: {e}")
+        raise
 
 async def grant_summon(guild_id, user_id):
     """Grant a minigame summon to the user"""
@@ -1138,24 +1150,24 @@ def profile_inventory(guild_id):
     # Get guild mora balance for profile card
     guild_mora = get_guild_mora(user_id, guild_id)
     
-    # Calculate guild rank like in mora.py
-    all_users = db.reference("/Mora").get() or {}
-    guild_data = []
-    for uid_str, guilds in all_users.items():
-        uid = int(uid_str)
-        guild_str = str(guild_id)
-        if guild_str in guilds:
-            user_mora = sum(
-                mora for channel_data in guilds[guild_str].values()
-                for mora in channel_data.values()
-                if isinstance(mora, int) and mora >= 0
-            )
-            guild_data.append((uid, user_mora))
-    
-    if guild_data:
-        guild_data.sort(key=lambda x: x[1], reverse=True)
+    # Calculate guild rank using PostgreSQL
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT uid, SUM(count) as total
+            FROM minigame_mora
+            WHERE gid = %s
+            GROUP BY uid
+            ORDER BY total DESC
+        """, (guild_id,))
+        guild_data = [(row[0], row[1]) for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        
         guild_rank = next((i+1 for i,(uid,_) in enumerate(guild_data) if uid == int(user_id)), "N/A")
-    else:
+    except Exception as e:
+        print(f"Error getting guild rank: {e}")
         guild_rank = "N/A"
     
     # Get selected cosmetics for profile card

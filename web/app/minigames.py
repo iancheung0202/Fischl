@@ -3,11 +3,13 @@ from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, session, redirect, jsonify
 import time
 import html
+import psycopg2
 
-from config.settings import API_BASE, BOT_TOKEN, MORA_EMOTE
+from config.settings import API_BASE, BOT_TOKEN, MORA_EMOTE, POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 from utils.request import requests_session, verify_guild_access
 from utils.theme import wrap_page
 from utils.loading import create_loading_skeleton, create_async_script, create_loading_container, create_empty_content
+from utils.minigames import get_db_connection
 
 def process_pending_shop_edits(guild_id):
     """Process any pending scheduled shop edits"""
@@ -2005,13 +2007,22 @@ def api_delete_shop_item(guild_id):
                         inv_data["Items"] = new_items
                         inventory_ref.child(inv_key).set(inv_data)
                         
-                        # Add compensation to user's mora
+                        # Add compensation to user's mora via PostgreSQL
                         compensation = cost * items_removed
-                        mora_ref = db.reference(f"/Mora/{user_id}")
-                        user_mora = mora_ref.get() or {}
-                        guild_mora = user_mora.get(str(guild_id), 0)
-                        user_mora[str(guild_id)] = guild_mora + compensation
-                        mora_ref.set(user_mora)
+                        try:
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            ts = int(time.time())
+                            # Insert mora compensation as channel 0 (system)
+                            cursor.execute(
+                                "INSERT INTO minigame_mora (uid, gid, cid, timestamp, count) VALUES (%s, %s, %s, %s, %s)",
+                                (user_id, guild_id, 0, ts, compensation)
+                            )
+                            conn.commit()
+                            cursor.close()
+                            conn.close()
+                        except Exception as db_error:
+                            print(f"Error adding mora compensation: {db_error}")
                         
                         compensated_users += 1
                 
@@ -2378,7 +2389,7 @@ def api_milestones_info(guild_id):
         for idx, milestone_entry in enumerate(milestones_data):
             if isinstance(milestone_entry, list) and len(milestone_entry) >= 3:
                 milestone_info = {
-                    "id": str(idx),  # Use index as ID
+                    "id": str(idx),  
                     "description": milestone_entry[0],
                     "reward": milestone_entry[1],
                     "threshold": milestone_entry[2]
@@ -2529,7 +2540,6 @@ def api_add_milestone(guild_id):
         # Save to database
         ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
         milestones = ref.get() or []
-        # New list format: [description, reward, threshold]
         milestone_data = [description, reward, threshold]
         milestones.append(milestone_data)
         ref.set(milestones)
@@ -2538,57 +2548,64 @@ def api_add_milestone(guild_id):
         try:
             import time
             
-            # Helper function to get guild-specific mora
-            def get_guild_mora(user_data, guild_id):
-                if isinstance(user_data, dict):
-                    return user_data.get(str(guild_id), 0)
-                return 0
-            
             count = 0
-            mora_ref = db.reference("/Mora")
-            all_users = mora_ref.get() or {}
+            # Get qualified users from PostgreSQL
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT uid, SUM(count) as total
+                    FROM minigame_mora
+                    WHERE gid = %s
+                    GROUP BY uid
+                    HAVING SUM(count) >= %s
+                """, (guild_id, threshold))
+                qualified_users = [(row[0], row[1]) for row in cursor.fetchall()]
+                cursor.close()
+                conn.close()
+            except Exception as db_error:
+                print(f"Error querying PostgreSQL: {db_error}")
+                qualified_users = []
 
-            for user_id, user_data in all_users.items():
-                guild_mora = get_guild_mora(user_data, str(guild_id))
-                if guild_mora >= threshold:
-                    # Check if the user already has this reward in this guild
-                    inventory_ref = db.reference("/User Events Inventory")
-                    inventories = inventory_ref.get() or {}
-                    has_reward = False
+            for user_id, mora_total in qualified_users:
+                # Check if the user already has this reward in this guild
+                inventory_ref = db.reference("/User Events Inventory")
+                inventories = inventory_ref.get() or {}
+                has_reward = False
+                
+                for inv_key, inv_data in inventories.items():
+                    if inv_data.get("User ID") == user_id:
+                        for item in inv_data.get("Items", []):
+                            if len(item) >= 4 and item[0] == reward and str(item[3]) == str(guild_id):
+                                has_reward = True
+                                break
+                        if has_reward:
+                            break
+                
+                if not has_reward:
+                    count += 1
+                    # Prepare item data
+                    item_data = [
+                        reward, 
+                        description,
+                        0,  # Cost (free for milestones)
+                        int(guild_id),
+                        int(time.time())
+                    ]
                     
+                    # Update inventory
+                    found = False
                     for inv_key, inv_data in inventories.items():
                         if inv_data.get("User ID") == user_id:
-                            for item in inv_data.get("Items", []):
-                                if len(item) >= 4 and item[0] == reward and str(item[3]) == str(guild_id):
-                                    has_reward = True
-                                    break
-                            if has_reward:
-                                break
-                    
-                    if not has_reward:
-                        count += 1
-                        # Prepare item data
-                        item_data = [
-                            reward, 
-                            description,
-                            0,  # Cost (free for milestones)
-                            int(guild_id),
-                            int(time.time())
-                        ]
-                        
-                        # Update inventory
-                        found = False
-                        for inv_key, inv_data in inventories.items():
-                            if inv_data.get("User ID") == user_id:
-                                items = inv_data.get("Items", [])
-                                items.append(item_data)
-                                inventory_ref.child(inv_key).update({"Items": items})
-                                found = True
-                                break
-                                
-                        if not found:
-                            inventory_data = {"User ID": user_id, "Items": [item_data]}
-                            inventory_ref.push().set(inventory_data)
+                            items = inv_data.get("Items", [])
+                            items.append(item_data)
+                            inventory_ref.child(inv_key).update({"Items": items})
+                            found = True
+                            break
+                            
+                    if not found:
+                        inventory_data = {"User ID": user_id, "Items": [item_data]}
+                        inventory_ref.push().set(inventory_data)
 
             message = f"Milestone added successfully! Automatically awarded to {count} existing users who qualified."
         except Exception as e:

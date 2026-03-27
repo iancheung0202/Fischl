@@ -20,7 +20,7 @@ from difflib import SequenceMatcher
 from bs4 import BeautifulSoup
 
 from commands.Events.trackData import get_current_track, check_tier_rewards
-from commands.Events.helperFunctions import addMora, get_guild_mora, get_minigame_list
+from commands.Events.helperFunctions import addMora, get_minigame_list, get_guild_mora
 from commands.Events.quests import update_quest
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
@@ -278,7 +278,7 @@ class BossBattleView(discord.ui.View):
             # Last Hit Bonus
             if uid == self.last_hitter: amount += 1500
             
-            text, addedMora = await addMora(uid, amount, self.channel.id, self.channel.guild.id, self.client)
+            text, addedMora = await addMora(self.client.pool, uid, amount, self.channel.id, self.channel.guild.id, self.client)
             
             # Quest Update
             quest_data = {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}
@@ -401,7 +401,7 @@ class PickUpButton(discord.ui.Button):
         
         reward = int(interaction.message.embeds[0].description.split("`")[3])
         text, addedMora = await addMora(
-            interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client
+            interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client
         )
         await interaction.response.edit_message(
             content="",
@@ -471,7 +471,7 @@ class PickUpIceCreamButton(discord.ui.Button):
                 "melt"
             ])
             
-            text, addedMora = await addMora(interaction.user.id, -reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, -reward, interaction.channel.id, interaction.guild.id, interaction.client)
             if reason == "melt":
                 embed = discord.Embed(
                     title=f"A wild 🍦 has appeared.",
@@ -486,7 +486,7 @@ class PickUpIceCreamButton(discord.ui.Button):
                 )
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "earn_mora": addedMora}, interaction.client)
         else:
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             embed = discord.Embed(
                 title=f"A wild 🍦 has appeared.",
                 description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} enjoyed the `🍦` while earning {MORA_EMOTE} `{text}`.",
@@ -593,7 +593,7 @@ async def quicktype(channel, client):
                     continue
                     
                 winner_id = answer.author.id
-                text, addedMora = await addMora(answer.author.id, reward, answer.channel.id, answer.guild.id, client)
+                text, addedMora = await addMora(client.pool, answer.author.id, reward, answer.channel.id, answer.guild.id, client)
                 success_embed = discord.Embed(
                     title=f"Quicktype Racer",
                     description=f"{userAndTitle(answer.author.id, answer.guild.id)} won {MORA_EMOTE} `{text}`.",
@@ -691,7 +691,7 @@ async def reverseQuicktype(channel, client):
                     continue
                     
                 winner_id = answer.author.id
-                text, addedMora = await addMora(answer.author.id, reward, answer.channel.id, answer.guild.id, client)
+                text, addedMora = await addMora(client.pool, answer.author.id, reward, answer.channel.id, answer.guild.id, client)
                 success_embed = discord.Embed(
                     title="Reverse Number Quicktype",
                     description=f"{userAndTitle(answer.author.id, answer.guild.id)} won {MORA_EMOTE} `{text}`.",
@@ -808,7 +808,7 @@ async def unscrambleWords(channel, client):
                     continue
                     
                 winner_id = answer.author.id
-                text, addedMora = await addMora(answer.author.id, reward, answer.channel.id, answer.guild.id, client)
+                text, addedMora = await addMora(client.pool, answer.author.id, reward, answer.channel.id, answer.guild.id, client)
                 success_embed = discord.Embed(
                     title="Unscramble the Scrambled",
                     description=(
@@ -913,10 +913,11 @@ class RollDiceButton(discord.ui.Button):
 
 
 class RollDiceView(discord.ui.View):
-    def __init__(self, target, reward, timeout=45):
+    def __init__(self, target, reward, client, timeout=45):
         super().__init__(timeout=timeout)
         self.target = target
         self.reward = reward
+        self.client = client
         self.user_rolls = {} 
         self.participant_ids = set()
         self.message = None
@@ -950,11 +951,12 @@ class RollDiceView(discord.ui.View):
             reward_multiplier = 2 if total == self.target else 1
             final_reward = self.reward * reward_multiplier
             text, addedMora = await addMora(
+                self.client.pool,
                 winner_id,
                 final_reward,
                 self.message.channel.id,
                 self.message.guild.id,
-                self.message._state._get_client()
+                self.client
             )
             reward_lines.append(
                 f"-# <@{winner_id}>: {MORA_EMOTE} `{text}` "
@@ -966,7 +968,7 @@ class RollDiceView(discord.ui.View):
                 self.message.guild.id,
                 self.message.channel.id,
                 {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora},
-                self.message._state._get_client()
+                self.client
             )
 
         for participant_id in self.participant_ids:
@@ -976,7 +978,7 @@ class RollDiceView(discord.ui.View):
                     self.message.guild.id,
                     self.message.channel.id,
                     {"participate_minigames": 1},
-                    self.message._state._get_client()
+                    self.client
                 )
 
         result_embed = discord.Embed(
@@ -1005,7 +1007,7 @@ async def rollADice(channel, client):
     )
     embed.set_footer(text="Game ends after no one rolls for 45 seconds")
 
-    view = RollDiceView(target, reward)
+    view = RollDiceView(target, reward, client)
     message = await channel.send(embed=embed, view=view)
     view.message = message
 
@@ -1036,7 +1038,7 @@ class QuizButton(discord.ui.Button):
             
             view.stop()
             
-            text, addedMora = await addMora(interaction.user.id, view.reward, view.channel.id, view.channel.guild.id, view.client)
+            text, addedMora = await addMora(view.client.pool, interaction.user.id, view.reward, view.channel.id, view.channel.guild.id, view.client)
             success_embed = view.win_embed_factory(interaction.user, text)
             await view.game_msg.edit(embed=success_embed, view=view)
 
@@ -1156,7 +1158,7 @@ class EventBlackjackGameView(View):
         embed = self._build_embed(title, description, color)
         await interaction.response.edit_message(embed=embed, view=self)
         if mora_reward > 0:
-            _, added = await addMora(self.user_id, mora_reward, self.channel.id, self.channel.guild.id, self.client)
+            _, added = await addMora(self.client.pool, self.user_id, mora_reward, self.channel.id, self.channel.guild.id, self.client)
             await update_quest(self.user_id, self.channel.guild.id, self.channel.id,
                                {"win_minigames": 1, "earn_mora": added}, self.client)
 
@@ -1302,7 +1304,7 @@ class EventBlackjackLobbyView(View):
             game_view.game_over = True
             self.active_players.discard(user_id)
             bj_reward = int(self.reward * 1.5)
-            text, added = await addMora(user_id, bj_reward, self.channel.id, self.channel.guild.id, self.client)
+            text, added = await addMora(self.client.pool, user_id, bj_reward, self.channel.id, self.channel.guild.id, self.client)
             embed = game_view._build_embed("🎰 Natural Blackjack!", f"You got blackjack! You win {MORA_EMOTE} `{text}`! (1.5× bonus)", discord.Color.gold())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             await update_quest(user_id, self.channel.guild.id, self.channel.id, {"win_minigames": 1, "earn_mora": added}, self.client)
@@ -1598,7 +1600,7 @@ async def eggWalk(channel, client):
                     summary_lines = []
                     for user, count in userCounts.items():
                         total_reward = count * reward
-                        text, addedMora = await addMora(user.id, total_reward, answer.channel.id, answer.guild.id, client)
+                        text, addedMora = await addMora(client.pool, user.id, total_reward, answer.channel.id, answer.guild.id, client)
                         userMoras[user.id] = addedMora
                         summary_lines.append(
                             f"-# - {userAndTitle(user.id, answer.guild.id)}: {count} numbers → {MORA_EMOTE} `{text}`"
@@ -1694,7 +1696,7 @@ class GuessNumberButton(discord.ui.Button):
             self.style = discord.ButtonStyle.success
             view.winner_id = interaction.user.id
             reward = int(interaction.message.embeds[0].description.split("`")[1])
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             view.addedMora = addedMora
             view.winner_text = text
             
@@ -1782,7 +1784,7 @@ async def countingCurrency(channel, client):
                     except Exception:
                         continue
                     winner_id = answer.author.id
-                    text, addedMora = await addMora(winner_id, reward, answer.channel.id, answer.guild.id, client)
+                    text, addedMora = await addMora(client.pool, winner_id, reward, answer.channel.id, answer.guild.id, client)
                     await answer.reply(
                         embed=discord.Embed(
                             title="Currency Counting",
@@ -1875,7 +1877,7 @@ class HangmanButton(discord.ui.Button):
 
         if "_" not in display_word:
              view.winner_id = interaction.user.id
-             text, addedMora = await addMora(interaction.user.id, 3000, interaction.channel.id, interaction.guild.id, interaction.client)
+             text, addedMora = await addMora(interaction.client.pool, interaction.user.id, 3000, interaction.channel.id, interaction.guild.id, interaction.client)
              view.addedMora = addedMora
              view.winner_text = text
              
@@ -1976,7 +1978,7 @@ async def hangmanGame(channel, client):
         count = sum(word.count(letter) for letter in letters)
         reward = count * 1500
         if reward > 0:
-            await addMora(user_id, reward, channel.id, game_msg.guild.id, client)
+            await addMora(client.pool, user_id, reward, channel.id, game_msg.guild.id, client)
 
     await game_msg.edit(embed=final_embed, view=view)
 
@@ -2016,7 +2018,7 @@ class MatchPFPButton(discord.ui.Button):
         if self.target_name == game_state.correct_name:
             reward = int(interaction.message.embeds[0].description.split("`")[1])
             
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             embed = discord.Embed(
                 title=f"Who's this?",
                 description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} guessed **{self.label}** correctly and earned {MORA_EMOTE} `{text}`.",
@@ -2118,7 +2120,7 @@ class WhoSaidItButton(discord.ui.Button):
         if self.target_author == game_state.correct_author:
             reward = int(interaction.message.embeds[0].description.split("`")[1])
             
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             embed = discord.Embed(
                 title="Who Said That?",
                 description=f"{userAndTitle(interaction.user.id, interaction.guild.id)} guessed **{self.label}** correctly and earned {MORA_EMOTE} `{text}`.\n\n[Message Jump URL]({game_state.jump_url})",
@@ -2229,7 +2231,7 @@ class KnowMembersButton(discord.ui.Button):
                 for member, child in zip(game_state.participants, self.view.children)
             )
             
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
@@ -2344,7 +2346,7 @@ class memoryBtn(discord.ui.Button):
             
         if str(self.emoji) == game_state.correct_emote:
             game_state.participants.append(interaction.user.id)
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
@@ -2449,7 +2451,7 @@ class answerLieBtn(discord.ui.Button):
                 else:
                     child.style = discord.ButtonStyle.secondary
 
-            text, addedMora = await addMora(interaction.user.id, game_state.reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, game_state.reward, interaction.channel.id, interaction.guild.id, interaction.client)
             
             embed.color = discord.Color.green()
             embed.description += f"\n\n🏆 {userAndTitle(interaction.user.id, interaction.guild.id)} chose {self.emoji} correctly and earned {MORA_EMOTE} `{text}`!"
@@ -2654,8 +2656,8 @@ class SplitButton(discord.ui.Button):
 
         if a_choice == "Split" and b_choice == "Split":
             split_reward = int(reward / 2)
-            textA, addedMoraA = await addMora(game_state.player_a.id, split_reward, interaction.channel.id, interaction.guild.id, interaction.client)
-            textB, addedMoraB = await addMora(game_state.player_b.id, split_reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            textA, addedMoraA = await addMora(interaction.client.pool, game_state.player_a.id, split_reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            textB, addedMoraB = await addMora(interaction.client.pool, game_state.player_b.id, split_reward, interaction.channel.id, interaction.guild.id, interaction.client)
             if addedMoraA == addedMoraB:
                 result_embed = discord.Embed(
                     title="Split Success! 🎉",
@@ -2675,7 +2677,7 @@ class SplitButton(discord.ui.Button):
             await update_quest(game_state.player_b.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "win_1v1_minigames": 1, "earn_mora": addedMoraB}, interaction.client)
         elif "Steal" in [a_choice, b_choice]:
             stealer = game_state.player_a if a_choice == "Steal" else game_state.player_b
-            text, addedMora = await addMora(stealer.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, stealer.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             result_embed = discord.Embed(
                 title="It's a Steal! 💰",
                 description=f"{userAndTitle(stealer.id, interaction.guild.id)} stole all the money and won {MORA_EMOTE} `{text}`!",
@@ -2736,7 +2738,7 @@ class StealButton(discord.ui.Button):
 
         elif "Steal" in [a_choice, b_choice]:
             stealer = game_state.player_a if a_choice == "Steal" else game_state.player_b
-            text, addedMora = await addMora(stealer.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, stealer.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             result_embed = discord.Embed(
                 title="It's a Steal! 💰",
                 description=f"{userAndTitle(stealer.id, interaction.guild.id)} stole all the money and won {MORA_EMOTE} `{text}`!",
@@ -2872,7 +2874,7 @@ async def resolve_rps_game(interaction: discord.Interaction, game_state: RPSGame
         message = "It's a tie! "
         count = 0
         for player in game_state.players:
-            text, addedMora = await addMora(player.id, split_reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, player.id, split_reward, interaction.channel.id, interaction.guild.id, interaction.client)
             await update_quest(player.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "earn_mora": addedMora}, interaction.client)
             message += f"{player.mention} earned {MORA_EMOTE} `{text}`{'!' if count == 1 else 'and '}"
             count += 1
@@ -2884,7 +2886,7 @@ async def resolve_rps_game(interaction: discord.Interaction, game_state: RPSGame
         await interaction.message.reply(embed=result_embed)
     else:
         winner = results.get((a_choice, b_choice))
-        text, addedMora = await addMora(winner.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+        text, addedMora = await addMora(interaction.client.pool, winner.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
         result_embed = discord.Embed(
             title=f"",
             description=f"### {userAndTitle(winner.id, interaction.guild.id)} wins {MORA_EMOTE} `{text}`!\n-# {game_state.players[0].mention} chose {a_emoji}\n-# {game_state.players[1].mention} chose {b_emoji}",
@@ -2970,7 +2972,7 @@ class ClaimButton(discord.ui.Button):
 
         view.participant_ids.add(interaction.user.id)
         view.winner_id = view.current_user.id
-        text, addedMora = await addMora(view.current_user.id, view.reward, interaction.channel.id, interaction.guild.id, interaction.client)
+        text, addedMora = await addMora(interaction.client.pool, view.current_user.id, view.reward, interaction.channel.id, interaction.guild.id, interaction.client)
         await interaction.message.delete()
         embed = discord.Embed(
             title="Double or Keep",
@@ -3045,7 +3047,7 @@ class UserSelect(discord.ui.Select):
             )
         else:
             view.winner_id = selected_user.id
-            text, addedMora = await addMora(selected_user.id, view.reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, selected_user.id, view.reward, interaction.channel.id, interaction.guild.id, interaction.client)
             await interaction.message.delete()
             embed = discord.Embed(
                 title="Double or Keep",
@@ -3153,8 +3155,7 @@ class BidModal(discord.ui.Modal):
             if not 1000 <= bid <= 15000:
                 raise ValueError
                 
-            user_data = db.reference(f"/Mora/{interaction.user.id}").get() or {}
-            user_mora = get_guild_mora(user_data, str(interaction.guild.id))
+            user_mora = await get_guild_mora(interaction.client.pool, interaction.user.id, interaction.guild.id)
 
             if bid > user_mora:
                 embed = discord.Embed(
@@ -3295,7 +3296,7 @@ async def moraAuctionHouse(channel, client):
     # User wins the box value, but paid the bid. Net profit = box_value - winner_bid.
     profit = box_value - winner_bid
     
-    text, addedMora = await addMora(winner_id, profit, channel.id, channel.guild.id, client)
+    text, addedMora = await addMora(client.pool, winner_id, profit, channel.id, channel.guild.id, client)
     
     result_embed = discord.Embed(
         title="Auction Results! 🎉",
@@ -3380,7 +3381,7 @@ async def moraHeist(channel, client):
             top_uid = sorted_users[0][0]
 
         for uid, data in view.user_data.items():
-            text, addedMora = await addMora(uid, data["mora_earned"], channel.id, channel.guild.id, client)
+            text, addedMora = await addMora(client.pool, uid, data["mora_earned"], channel.id, channel.guild.id, client)
             summary.append(f"-# <@{uid}>: {MORA_EMOTE} `{text}`")
             
             quest_data = {"participate_minigames": 1, "earn_mora": addedMora}
@@ -3473,7 +3474,7 @@ class SimpleMathButton(discord.ui.Button):
                     child.style = discord.ButtonStyle.success
             
             reward = view.reward
-            text, addedMora = await addMora(interaction.user.id, reward, interaction.channel.id, interaction.guild.id, view.client)
+            text, addedMora = await addMora(view.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, view.client)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, view.client)
 
             embed = interaction.message.embeds[0]
@@ -3617,7 +3618,7 @@ class TicTacTokButton(discord.ui.Button):
                         child.style = discord.ButtonStyle.success
             
             reward = view.reward
-            text, addedMora = await addMora(view.winner_id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, view.winner_id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
             await update_quest(view.winner_id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
 
             winner_text = f"🎉 <@{view.winner_id}> won the Tik Tac Tok match and earned {MORA_EMOTE} `{text}`!"
@@ -3841,7 +3842,7 @@ class MoraChestView(discord.ui.View):
             max_streak = data.get("max_streak", 0)
 
             new_max_streak = max(max_streak, view.streak)
-            text, addedMora = await addMora(view.user_id, total, interaction.channel.id, view.guild_id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, view.user_id, total, interaction.channel.id, view.guild_id, interaction.client)
 
             embed = discord.Embed(
                 title=f"<a:moneydance:1227425759077859359> {view.tier} Chest Claimed! <a:moneydance:1227425759077859359>",
@@ -4452,9 +4453,14 @@ class TheEventItself(commands.Cog):
                 )
                 mora = int(message.content.split(" ")[2])
 
-                ts = str(int(time.time()))
-                path = f"/Mora/{uid}/{message.guild.id}/{10}/{ts}"
-                db.reference(path).set(mora)
+                timestamp = int(time.time())
+                async with self.client.pool.acquire() as conn:
+                    await conn.execute("""
+                        INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (gid, uid, cid, timestamp)
+                        DO UPDATE SET count = $5
+                    """, uid, message.guild.id, 10, timestamp, mora)
 
                 await message.reply(
                     f"Added exactly {MORA_EMOTE} `{mora:,}` to <@{uid}>'s inventory. \n-# This is not boosted and doesn't count towards quest progression."
@@ -4681,11 +4687,9 @@ class Summon(commands.Cog):
         if not minigame_func:
             return await interaction.followup.send("<:no:1036810470860013639> Invalid minigame selection!")
 
-        # Check for Theater Perk: Encore Chance
         encore_chance = stats.get("realm_encore_chance", 0)
         import random
         saved = False
-        # Cap at 50% max to be safe
         eff_chance = min(50, encore_chance)
         
         if random.random() * 100 < eff_chance:

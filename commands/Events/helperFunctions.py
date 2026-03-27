@@ -1,73 +1,168 @@
 import discord
 import asyncio
 import time
+import datetime
+import asyncpg
 
+from typing import Optional
 from firebase_admin import db
 
-def get_minigame_list(channel_id):
-    ref = db.reference(f"/Chat Minigames System/{channel_id}")
-    data = ref.get() or {}
-    return data.get("events", [])
 
-def get_total_mora(data: dict) -> int:
-    total = 0
-    for guild in data.values():
-        for channel in guild.values():
-            for amt in channel.values():
-                total += amt
-    return total
+MORA_EMOTE = "<:MORA:1364030973611610205>"
 
-def get_guild_mora(data: dict, guild_id: str) -> int:
-    total = 0
-    guild = data.get(guild_id, {})
-    for channel in guild.values():
-        for amt in channel.values():
-            total += amt
-    return total
+async def get_total_mora(pool: asyncpg.Pool, uid: int) -> int:
+    async with pool.acquire() as conn:
+        result = await conn.fetchval(
+            "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = $1",
+            uid
+        )
+    return result or 0
 
-async def subtractGuildMora(userID: int, subtractMora: int, guildID: int, channelID: int) -> int | bool:
-    user_key = str(userID)
-    guild_key = str(guildID)
-    channel_key = str(channelID)
+async def get_guild_mora(pool: asyncpg.Pool, uid: int, gid: int) -> int:
+    async with pool.acquire() as conn:
+        result = await conn.fetchval(
+            "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = $1 AND gid = $2",
+            uid, gid
+        )
+    return result or 0
 
-    base_ref = db.reference(f"/Mora/{user_key}/{guild_key}")
-    channels = base_ref.get() or {}
+async def get_global_leaderboard(pool: asyncpg.Pool, limit: int = 50) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, SUM(count) as total
+            FROM minigame_mora
+            GROUP BY uid
+            ORDER BY total DESC
+            LIMIT $1
+        """, limit)
+    return [(row['uid'], row['total']) for row in rows]
 
-    entries = [
-        amt for chan in channels.values()
-        for amt in chan.values()
-    ]
-    total_available = sum(entries)
+async def get_guild_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = 50) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, SUM(count) as total
+            FROM minigame_mora
+            WHERE gid = $1
+            GROUP BY uid
+            ORDER BY total DESC
+            LIMIT $2
+        """, gid, limit)
+    return [(row['uid'], row['total']) for row in rows]
 
-    if subtractMora > total_available:
-        return False
+async def get_users_by_mora_threshold(pool: asyncpg.Pool, gid: int, threshold: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, SUM(count) as total
+            FROM minigame_mora
+            WHERE gid = $1
+            GROUP BY uid
+            HAVING SUM(count) >= $2
+            ORDER BY total DESC
+        """, gid, threshold)
+    return [(row['uid'], row['total']) for row in rows]
 
-    timestamp = str(int(time.time()))
-    subtract_ref = db.reference(f"/Mora/{user_key}/{guild_key}/{channel_key}/{timestamp}")
-    subtract_ref.set(-subtractMora)
+async def get_user_mora_history(
+    pool: asyncpg.Pool,
+    uid: int,
+    gid: int,
+    limit: Optional[int] = None
+) -> list:
+    query = """
+        SELECT timestamp, count
+        FROM minigame_mora
+        WHERE uid = $1 AND gid = $2
+        ORDER BY timestamp ASC
+    """
+    params = [uid, gid]
 
-    updated = base_ref.get() or {}
-    new_total = sum(
-        amt for chan in updated.values()
-        for amt in chan.values()
-    )
-    return new_total
+    if limit:
+        query += " LIMIT $3"
+        params.append(limit)
 
-async def addMora(userID: int, addedMora: int, channelID: int, guildID: int, client=None):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+    return [(row['timestamp'], row['count']) for row in rows]
+
+
+async def get_mora_stats(pool: asyncpg.Pool, uid: int, gid: int) -> dict:
+    async with pool.acquire() as conn:
+        # Get total mora
+        total = await conn.fetchval(
+            "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = $1 AND gid = $2",
+            uid, gid
+        ) or 0
+
+        # Earliest timestamp
+        first_ts = await conn.fetchval(
+            "SELECT MIN(timestamp) FROM minigame_mora WHERE uid = $1 AND gid = $2",
+            uid, gid
+        )
+        
+        # Daily breakdown
+        daily_stats = await conn.fetch("""
+            SELECT 
+                DATE(TO_TIMESTAMP(timestamp)) as date,
+                SUM(count) as daily_total,
+                COUNT(*) as entries
+            FROM minigame_mora
+            WHERE uid = $1 AND gid = $2
+            GROUP BY DATE(TO_TIMESTAMP(timestamp))
+            ORDER BY daily_total DESC
+        """, uid, gid)
+        
+        # Number of entries (mora earnings)
+        entry_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM minigame_mora WHERE uid = $1 AND gid = $2 AND count > 0",
+            uid, gid
+        )
+        
+        # Largest single earning
+        largest_single = await conn.fetchval(
+            "SELECT MAX(count) FROM minigame_mora WHERE uid = $1 AND gid = $2 AND count > 0",
+            uid, gid
+        )
+    
+    largest_daily = daily_stats[0]['daily_total'] if daily_stats else 0
+    largest_daily_date = int(time.mktime(daily_stats[0]['date'].timetuple())) if daily_stats else None
+    
+    first_played = first_ts or int(time.time())
+    total_days = (datetime.datetime.now(datetime.timezone.utc).date() - 
+                  datetime.datetime.fromtimestamp(first_played, datetime.timezone.utc).date()).days + 1
+    days_active = len(daily_stats)
+    average_daily = total / total_days if total_days > 0 else 0
+    
+    return {
+        'first_played': first_played,
+        'days_active': days_active,
+        'total_days': total_days,
+        'average_daily': int(average_daily),
+        'largest_daily': largest_daily,
+        'largest_daily_date': largest_daily_date,
+        'entry_count': entry_count or 0,
+        'largest_single': largest_single or 0,
+        'daily_breakdown': daily_stats
+    }
+
+async def addMora(pool: asyncpg.Pool, userID: int, addedMora: int, channelID: int, guildID: int, client=None):
     baseMora = addedMora 
+    boost = 0
+    
     if addedMora > 0:
         stats_ref = db.reference(f"/User Events Stats/{guildID}/{userID}")
         stats = stats_ref.get() or {}
         boost = stats.get("mora_boost", 0)
         addedMora = int(addedMora * (1 + boost / 100))
-    else:
-        boost = 0
 
-    ts = str(int(time.time()))
-    path = f"/Mora/{userID}/{guildID}/{channelID}/{ts}"
-    db.reference(path).set(addedMora)
+    timestamp = int(time.time())
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (gid, uid, cid, timestamp)
+            DO UPDATE SET count = $5
+        """, userID, guildID, channelID, timestamp, addedMora)
 
-    asyncio.create_task(delayed_check_milestones(userID, guildID, channelID, client))
+    asyncio.create_task(delayed_check_milestones(pool, userID, guildID, channelID, client))
 
     if addedMora > 10000 and client:
         from commands.Events.quests import update_quest
@@ -77,18 +172,44 @@ async def addMora(userID: int, addedMora: int, channelID: int, guildID: int, cli
         return f"{baseMora} + {addedMora - baseMora} ({boost}% boost)", addedMora
     return abs(addedMora), addedMora
 
-async def delayed_check_milestones(userID, guildID, channelID, client):
-    await asyncio.sleep(1)  # Allow time for Firebase write
-    await check_milestones(userID, guildID, channelID, client)
+
+async def subtractGuildMora(pool: asyncpg.Pool, userID: int, subtractMora: int, channelID: int, guildID: int) -> int | bool:
+    total_available = await get_guild_mora(pool, userID, guildID)
+
+    if subtractMora > total_available:
+        return False
+
+    timestamp = int(time.time())
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (gid, uid, cid, timestamp)
+            DO UPDATE SET count = $5
+        """, userID, guildID, channelID, timestamp, -subtractMora)
+
+    return total_available - subtractMora
+
+def get_minigame_list(channel_id):
+    """Get list of minigames enabled in a channel."""
+    ref = db.reference(f"/Chat Minigames System/{channel_id}")
+    data = ref.get() or {}
+    return data.get("events", [])
+
+async def delayed_check_milestones(pool: asyncpg.Pool, userID, guildID, channelID, client):
+    """Delay milestone check to allow database consistency."""
+    await asyncio.sleep(1)
+    await check_milestones(pool, userID, guildID, channelID, client)
+
     
-async def check_milestones(user_id, guild_id, channel_id, client):
+async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, client):
+    """Check and award milestones for a user when mora threshold is reached."""
     try:
         channel_id = int(channel_id)
     except (TypeError, ValueError):
         channel_id = None
-    ref = db.reference(f"/Mora/{user_id}")
-    user_data = ref.get() or {}
-    total_mora = get_guild_mora(user_data, str(guild_id))
+    
+    total_mora = await get_guild_mora(pool, user_id, guild_id)
 
     milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
     milestones = milestones_ref.get() or []

@@ -1,6 +1,6 @@
 import discord
 from firebase_admin import db
-from commands.Events.helperFunctions import get_guild_mora, addMora
+from commands.Events.helperFunctions import subtractGuildMora
 
 BUILDINGS = {
     "schloss": {"name": "Schloss", "emoji": "🏰", "desc": "The royal castle.", "color": discord.ButtonStyle.blurple},
@@ -27,23 +27,22 @@ def get_rank_title(level):
     return rank
 
 async def upgrade_building(user_id, guild_id, building_key, interaction):
+    pool = interaction.client.pool
     ref_path = f"/Kingdom/{guild_id}/{user_id}/buildings/{building_key}"
     current_level = db.reference(ref_path).get() or 0
     cost = calculate_cost(current_level)
     
-    user_mora_ref = db.reference(f"/Mora/{user_id}")
-    balance = get_guild_mora(user_mora_ref.get() or {}, str(guild_id))
-    
-    if balance < cost:
-        return False, f"Need {MORA_EMOTE} `{cost:,}` to upgrade!"
-        
     schloss_path = f"/Kingdom/{guild_id}/{user_id}/buildings/schloss"
     schloss_level = db.reference(schloss_path).get() or 0
     
     if building_key != "schloss" and current_level >= schloss_level:
         return False, f"**{BUILDINGS[building_key]['name']}** cannot exceed Schloss Level ({schloss_level})! Upgrade your Schloss first."
-
-    await addMora(user_id, -cost, interaction.channel.id, interaction.guild.id, interaction.client)
+    
+    result = await subtractGuildMora(pool, user_id, cost, interaction.channel.id, guild_id)
+    
+    if result is False:
+        return False, f"Insufficient mora! You need at least {MORA_EMOTE} `{cost:,}` to upgrade!"
+    
     db.reference(ref_path).set(current_level + 1)
     
     stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
@@ -66,7 +65,7 @@ async def upgrade_building(user_id, guild_id, building_key, interaction):
         new_val = min(50, (current_level + 1))
         stats_ref.update({"realm_encore_chance": new_val})
         
-    return True, f"Upgraded **{BUILDINGS[building_key]['name']}** to Level {current_level + 1}!"
+    return True, f"Upgraded **{BUILDINGS[building_key]['name']}** to Level {current_level + 1}!\nYou now have {MORA_EMOTE} `{result:,}` remaining."
 
 def get_kingdom_embed(user, guild_id, custom_color=None):
     data = db.reference(f"/Kingdom/{guild_id}/{user.id}/buildings").get() or {}

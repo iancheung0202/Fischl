@@ -5,7 +5,7 @@ import random
 from discord.ui import Button, View
 from firebase_admin import db
 
-from commands.Events.helperFunctions import addMora
+from commands.Events.helperFunctions import addMora, TierRewardsView
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -76,7 +76,7 @@ class DropPackView(View):
             embed.set_footer(text=f"{len(self.drops) - self.current_index} drops remaining...")
             await interaction.response.edit_message(embed=embed)
         else:
-            text, addedMora = await addMora(self.user_id, self.total_mora, interaction.channel.id, self.guild_id, interaction.client)
+            text, addedMora = await addMora(interaction.client.pool, self.user_id, self.total_mora, interaction.channel.id, self.guild_id, interaction.client)
             embed.title = "🎉 Mora Drop Pack Summary"
             embed.description += f"\n\n**Total Mora:** {MORA_EMOTE} `{text}`"
             
@@ -93,7 +93,6 @@ class DropPackView(View):
             from commands.Events.quests import update_quest
             from commands.Events.trackData import check_tier_rewards
             from commands.Events.event import add_xp
-            from commands.Events.helperFunctions import TierRewardsView
 
             await update_quest(self.user_id, self.guild_id, interaction.channel.id, {"earn_mora": addedMora}, interaction.client)
             

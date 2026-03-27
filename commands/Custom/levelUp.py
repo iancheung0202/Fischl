@@ -3,7 +3,7 @@ import asyncio
 
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
-from commands.Events.event import addMora
+from commands.Events.helperFunctions import addMora
 
 def rgb_to_hex(r, g, b):
     hex_code = "#{:02X}{:02X}{:02X}".format(r, g, b)
@@ -583,7 +583,7 @@ class LevelUpTrigger(commands.Cog):
 
             filename = await createLevelImage(member, level, levelRole)
             chn = message.guild.get_channel(1229165255318569011)
-            await addMora(member.id, level * 300, 2, message.guild.id)
+            await addMora(self.client.pool, member.id, level * 300, 2, message.guild.id)
             if message.content.strip()[-1] == "!":
                 msg = f"{message.content}\n<:reply:1036792837821435976> *You've earned <:MORA:1364030973611610205> `{level * 300}` for levelling up.*"
             else:
@@ -649,7 +649,7 @@ class LevelUpTrigger(commands.Cog):
             }
 
             # await message.delete()
-            await addMora(member.id, level * 300, 2, message.guild.id)
+            await addMora(self.client.pool, member.id, level * 300, 2, message.guild.id)
             try:
                 roleName = roles[int(level)]
                 await chn.send(
@@ -682,14 +682,13 @@ class LevelUpTrigger(commands.Cog):
 
             filename = await createLevelImageJinhsi(member, level, levelRole)
             chn = message.guild.get_channel(1197491635710332996)
-            await addMora(member.id, level * 300, 2, message.guild.id)
+            await addMora(self.client.pool, member.id, level * 300, 2, message.guild.id)
             await chn.send(message.content, file=discord.File(filename))
 
         ### TEVYAT TIMES LEVELLING UP CARD ###
         if (
             message.channel.id == 1253526260844335124
-        ):  #  and message.author.id == 989173789482975262
-            # member = message.author
+        ):  
             id = int(message.content.replace("<@", "").replace(">", ""))
             member = await message.guild.fetch_member(id)
             level = int(
