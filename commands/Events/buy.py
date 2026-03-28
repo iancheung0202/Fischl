@@ -349,7 +349,8 @@ class ConfirmPurchaseView(discord.ui.View):
                 old_xp=old_xp,
                 new_xp=new_xp,
                 channel=interaction.channel,
-                client=interaction.client
+                client=interaction.client,
+                pool=interaction.client.pool
             )
             await interaction.edit_original_response(embed=embed, view=TierRewardsView(free_embed, elite_embed) if xp_earned != "" else None)
             

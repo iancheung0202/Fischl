@@ -39,14 +39,14 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list) -> 
             role = interaction.guild.get_role(int(reward))
             display_name = f"{role.name}" if role else "Unknown Role"
             page.add_field(
-                name=f"{MORA_EMOTE} {threshold} • {display_name}",
+                name=f"{MORA_EMOTE} {threshold:,} • {display_name}",
                 value=f"> **Role:** {role.mention if role else 'Unknown'}\n> **Description:** {description}",
                 inline=False
             )
         else:
             display_name = f"{reward}"
             page.add_field(
-                name=f"{MORA_EMOTE} {threshold} • {display_name}",
+                name=f"{MORA_EMOTE} {threshold:,} • {display_name}",
                 value=f"> **Description:** {description}",
                 inline=False
             )

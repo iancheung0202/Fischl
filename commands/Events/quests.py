@@ -176,9 +176,8 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                         completed[q_type] = True
                         xp_reward = QUEST_XP_REWARDS[duration]
                         
-                        ref_stats = db.reference(f"/User Events Stats/{guildID}/{userID}")
-                        stats = ref_stats.get() or {}
-                        realm_boost = stats.get("realm_xp_boost", 0)
+                        from commands.Events.helperFunctions import get_realm_xp_boost
+                        realm_boost = await get_realm_xp_boost(client.pool, guildID, userID)
                         if realm_boost > 0:
                             xp_reward = int(xp_reward * (1 + realm_boost / 100))
                             
@@ -222,7 +221,8 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                 old_xp=old_xp,
                 new_xp=new_xp,
                 channel=channel,
-                client=client
+                client=client,
+                pool=client.pool
             )
             desc = "\n".join(messages) + f"\n\n**Total XP earned:** `{total_xp}` XP"
             await channel.send(

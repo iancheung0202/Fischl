@@ -104,7 +104,8 @@ class DropPackView(View):
                     old_xp=old_xp,
                     new_xp=new_xp,
                     channel=interaction.channel,
-                    client=interaction.client
+                    client=interaction.client,
+                    pool=interaction.client.pool
                 )
                 await interaction.followup.send(view=TierRewardsView(free_embed, elite_embed))
                 

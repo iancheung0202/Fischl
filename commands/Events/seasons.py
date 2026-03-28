@@ -230,39 +230,35 @@ class SeasonCog(commands.Cog):
 
     
     async def reset_season_data(self):
-        progression_ref = db.reference("/Progression")
-        stats_ref = db.reference("/User Events Stats")
-        rewards_ref = db.reference("/Global Progression Rewards")
-        
-        for guild_id, guild_data in (progression_ref.get() or {}).items():
-            for user_id, user_data in guild_data.items():
-                progression_ref.child(guild_id).child(user_id).update({
-                    "xp": 0,
-                    "prestige": user_data.get("prestige", 0),  # Keep existing prestige
-                    "bonus_tier": 0
-                })
-        
-        for guild_id, guild_data in (stats_ref.get() or {}).items():
-            for user_id, user_stats in guild_data.items():
-                updates = {}
-                if "mora_boost" in user_stats:
-                    updates["mora_boost"] = 0
-                if "chest_upgrades" in user_stats:
-                    updates["chest_upgrades"] = 4
-                if "gift_tax" in user_stats:
-                    stats_ref.child(guild_id).child(user_id).child("gift_tax").delete()
-                if updates:
-                    stats_ref.child(guild_id).child(user_id).update(updates)
-        
+        rewards_ref = db.reference("/Chat Minigames Cosmetics")
+
         for guild_id, guild_data in (rewards_ref.get() or {}).items():
             for user_id, user_data in guild_data.items():
                 rewards_ref.child(guild_id).child(user_id).child("embed_color").delete()
-                rewards_ref.child(guild_id).child(user_id).child("selected").update({
-                    "embed_color_hex": None,
-                    "elite_claimed": []
-                })
+                rewards_ref.child(guild_id).child(user_id).child("selected").update({"embed_color_hex": None})
+                rewards_ref.child(guild_id).child(user_id).update({"elite_claimed": []})
+
+        pool = self.bot.pool
+        
+        if not pool:
+            print("ERROR: Database pool not available for season reset!")
+            return
+        
+        async with pool.acquire() as conn:
+            try:
+                # Reset XP and bonus_tier. Keep prestige
+                await conn.execute(
+                    "UPDATE minigame_progression SET xp = 0, bonus_tier = 0, updated_at = CURRENT_TIMESTAMP"
+                )
                 
-        print("Season user data resets successfully!")
+                # Reset mora_boost, chest_upgrades, and gift_tax to default values. Keep summon
+                await conn.execute(
+                    "UPDATE minigame_progression SET mora_boost = 0, chest_upgrades = 4, gift_tax = NULL, updated_at = CURRENT_TIMESTAMP"
+                )
+                
+                print("Season user data reset successfully!")
+            except Exception as e:
+                print(f"ERROR resetting season data: {e}")
 
 async def setup(bot):
     await bot.add_cog(SeasonCog(bot))

@@ -1,6 +1,6 @@
 import discord
 from firebase_admin import db
-from commands.Events.helperFunctions import subtractGuildMora
+from commands.Events.helperFunctions import subtractGuildMora, get_building_level, increment_building_level
 
 BUILDINGS = {
     "schloss": {"name": "Schloss", "emoji": "🏰", "desc": "The royal castle.", "color": discord.ButtonStyle.blurple},
@@ -28,12 +28,10 @@ def get_rank_title(level):
 
 async def upgrade_building(user_id, guild_id, building_key, interaction):
     pool = interaction.client.pool
-    ref_path = f"/Kingdom/{guild_id}/{user_id}/buildings/{building_key}"
-    current_level = db.reference(ref_path).get() or 0
+    current_level = await get_building_level(pool, guild_id, user_id, building_key)
     cost = calculate_cost(current_level)
     
-    schloss_path = f"/Kingdom/{guild_id}/{user_id}/buildings/schloss"
-    schloss_level = db.reference(schloss_path).get() or 0
+    schloss_level = await get_building_level(pool, guild_id, user_id, "schloss")
     
     if building_key != "schloss" and current_level >= schloss_level:
         return False, f"**{BUILDINGS[building_key]['name']}** cannot exceed Schloss Level ({schloss_level})! Upgrade your Schloss first."
@@ -43,32 +41,22 @@ async def upgrade_building(user_id, guild_id, building_key, interaction):
     if result is False:
         return False, f"Insufficient mora! You need at least {MORA_EMOTE} `{cost:,}` to upgrade!"
     
-    db.reference(ref_path).set(current_level + 1)
+    await increment_building_level(pool, guild_id, user_id, building_key)
     
-    stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
-    
-    if building_key == "garten":
-        # Update Daily Chest Bonus Chance
-        # Max 50% per level (1 per level)
-        new_val = min(50, (current_level + 1))
-        stats_ref.update({"realm_chest_bonus_chance": new_val})
-        
-    if building_key == "bibliothek":
-        # Update XP Boost
-        # Max 50% per level (1 per level)
-        new_val = min(50, (current_level + 1))
-        stats_ref.update({"realm_xp_boost": new_val})
-
-    if building_key == "theater":
-        # Update Encore Chance (Summon Refund)
-        # Max 50% per level (1 per level)
-        new_val = min(50, (current_level + 1))
-        stats_ref.update({"realm_encore_chance": new_val})
+    # Note: realm_* fields (realm_chest_bonus_chance, realm_xp_boost, realm_encore_chance)
+    # are now calculated from building levels, not stored separately
         
     return True, f"Upgraded **{BUILDINGS[building_key]['name']}** to Level {current_level + 1}!\nYou now have {MORA_EMOTE} `{result:,}` remaining."
 
-def get_kingdom_embed(user, guild_id, custom_color=None):
-    data = db.reference(f"/Kingdom/{guild_id}/{user.id}/buildings").get() or {}
+async def get_kingdom_embed(user, guild_id, custom_color=None, pool=None):
+    from commands.Events.helperFunctions import get_kingdom_buildings
+    
+    if pool is None:
+        # Fallback if pool not provided (shouldn't happen in normal flow)
+        data = {}
+    else:
+        kb_data = await get_kingdom_buildings(pool, guild_id, user.id)
+        data = kb_data
     
     total_level = 0
     fields = []

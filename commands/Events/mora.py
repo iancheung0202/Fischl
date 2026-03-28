@@ -14,7 +14,7 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
@@ -40,11 +40,11 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     average_daily = stats_data['average_daily']
     days_active = stats_data['days_active']
     
-    ref_counts = db.reference(f"/Mora Chest Counts/{guild_id}/{user_id}")
+    ref_counts = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/counts")
     chest_counts = ref_counts.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
     total_chests = sum(chest_counts.values())
 
-    ref_streak = db.reference(f"/Mora Chest Streaks/{guild_id}/{user_id}")
+    ref_streak = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/streaks")
     streak_data = ref_streak.get() or {}
     last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
     current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
@@ -173,9 +173,7 @@ class ToggleView(discord.ui.View):
 
         is_elite = is_elite_active(self.user_id, self.guild_id)
         self.purchase_button = ThanksEliteTrack() if is_elite else PurchaseEliteTrack()
-        self.add_item(self.purchase_button)
-
-        self.update_buttons() # Ensure initial state is correct 
+        self.add_item(self.purchase_button) 
         
     async def on_timeout(self) -> None:
         for child in self.children:
@@ -194,7 +192,7 @@ class ToggleView(discord.ui.View):
             return
         
         self.state = "home"
-        self.update_buttons()
+        await self.update_buttons(interaction.client.pool)
         await interaction.response.edit_message(embed=self.original_embed, view=self)
 
     @discord.ui.button(label="Stats", style=discord.ButtonStyle.grey, custom_id="graph")
@@ -231,7 +229,7 @@ class ToggleView(discord.ui.View):
         )
 
         self.state = "graph"
-        self.update_buttons()
+        await self.update_buttons(interaction.client.pool)
         await interaction.response.edit_message(embed=graph_embed, view=self)
 
     @discord.ui.button(label="Track", style=discord.ButtonStyle.grey, custom_id="track")
@@ -243,12 +241,12 @@ class ToggleView(discord.ui.View):
         track_embed = await self.create_track_embed(interaction)
         
         self.state = "track"
-        self.update_buttons()
+        await self.update_buttons(interaction.client.pool)
         await interaction.response.edit_message(embed=track_embed, view=self)
 
     async def create_track_embed(self, interaction: discord.Interaction) -> discord.Embed:
-        ref = db.reference(f"/Progression/{interaction.guild.id}/{self.user_id}")
-        data = ref.get() or {"xp": 0, "prestige": 0}
+        from commands.Events.helperFunctions import get_progression_data
+        data = await get_progression_data(interaction.client.pool, interaction.guild.id, self.user_id)
         user_xp = data["xp"]
         prestige = data.get("prestige", 0)
 
@@ -353,8 +351,8 @@ class ToggleView(discord.ui.View):
             ),
             color=self.custom_color or discord.Color.purple()
         )
-        stats_ref = db.reference(f"/User Events Stats/{interaction.guild.id}/{self.user_id}")
-        stats = stats_ref.get() or {}
+        from commands.Events.helperFunctions import get_user_stats
+        stats = await get_user_stats(interaction.client.pool, interaction.guild.id, self.user_id)
         embed.add_field(name=f"{MORA_EMOTE} Mora Boost", value=f"`+{stats.get('mora_boost', 0)}%`", inline=True)
         embed.add_field(name=":arrow_up_small: Daily Chest Upgrades", value=f"`{stats.get('chest_upgrades', 4)}`", inline=True)
         gift_tax = stats.get('gift_tax', 'Not unlocked')
@@ -420,7 +418,7 @@ class ToggleView(discord.ui.View):
 
         
         self.state = "quests"
-        self.update_buttons()
+        await self.update_buttons(interaction.client.pool)
         await interaction.response.edit_message(embed=quests_embed, view=self)
 
     @discord.ui.button(label="Kingdom", style=discord.ButtonStyle.grey, custom_id="domain", emoji="🏰")
@@ -430,10 +428,10 @@ class ToggleView(discord.ui.View):
             return
 
         self.state = "domain"
-        self.update_buttons()
+        await self.update_buttons(interaction.client.pool)
         
         target_user = await interaction.guild.fetch_member(self.user_id)
-        embed = get_kingdom_embed(target_user, interaction.guild.id, self.custom_color)
+        embed = await get_kingdom_embed(target_user, interaction.guild.id, self.custom_color, interaction.client.pool)
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def upgrade_select_callback(self, interaction: discord.Interaction):
@@ -445,14 +443,14 @@ class ToggleView(discord.ui.View):
         success, msg = await upgrade_building(interaction.user.id, interaction.guild.id, building_key, interaction)
         
         if success:
-            embed = get_kingdom_embed(interaction.user, interaction.guild.id, self.custom_color)
-            self.update_buttons()
+            embed = await get_kingdom_embed(interaction.user, interaction.guild.id, self.custom_color, interaction.client.pool)
+            await self.update_buttons(interaction.client.pool)
             await interaction.response.edit_message(embed=embed, view=self)
             await interaction.followup.send(f"<:yes:1036811164891480194> {msg}", ephemeral=True)
         else:
             await interaction.response.send_message(f"<:no:1036810470860013639> {msg}", ephemeral=True)
 
-    def update_buttons(self):
+    async def update_buttons(self, pool=None):
         for child in self.children:
             if child.custom_id in ["home", "graph", "track", "quests", "domain"]:
                 child.disabled = False
@@ -499,23 +497,26 @@ class ToggleView(discord.ui.View):
                  )
                  self.add_item(self.upgrade_select)
             else:
-                ref = db.reference(f"/Kingdom/{self.guild_id}/{self.user_id}/buildings")
-                data = ref.get() or {}
+                # Fetch building data from PostgreSQL and create dynamic options
+                from commands.Events.helperFunctions import get_kingdom_buildings
+                
+                kb_data = {}
+                if pool:
+                    kb_data = await get_kingdom_buildings(pool, self.guild_id, self.command_user_id)
                 
                 options = []
                 for key, info in BUILDINGS.items():
-                    lvl = data.get(key, 0)
+                    lvl = kb_data.get(key, 0)
                     cost = calculate_cost(lvl)
                     
-                    label = f"{info['name']}"
+                    label = f"{info['emoji']} {info['name']}"
                     desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {cost:,}"
-                    emoji = info['emoji']
                     
                     options.append(discord.SelectOption(
                         label=label,
                         description=desc,
                         value=f"upgrade_{key}",
-                        emoji=emoji
+                        emoji=info['emoji']
                     ))
                 
                 self.upgrade_select = Select(
@@ -739,8 +740,9 @@ class Mora(commands.Cog):
 
         chn = interaction.client.get_channel(1026968305208131645)
         
-        kingdom_ref = db.reference(f"/Kingdom/{interaction.guild.id}/{user.id}/buildings")
-        k_data = kingdom_ref.get() or {}
+        from commands.Events.helperFunctions import get_kingdom_buildings
+        kb_data = await get_kingdom_buildings(interaction.client.pool, interaction.guild.id, user.id)
+        k_data = kb_data
         k_level = sum(k_data.values())
         if k_level > 0:
             rank_title = get_rank_title(k_level)
@@ -768,10 +770,10 @@ class Mora(commands.Cog):
     async def gift(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         await interaction.response.defer()
 
-        stats_ref = db.reference(f"/User Events Stats/{interaction.guild.id}/{interaction.user.id}")
-        stats = stats_ref.get() or {}
+        from commands.Events.helperFunctions import get_user_stats
+        stats = await get_user_stats(interaction.client.pool, interaction.guild.id, interaction.user.id)
 
-        if "gift_tax" not in stats:
+        if "gift_tax" not in stats or stats["gift_tax"] is None:
             return await interaction.followup.send("⏳ You haven't unlocked Mora gifting for this season yet. Unlock it at Tier `5` in the free track!")
 
         if amount <= 0:

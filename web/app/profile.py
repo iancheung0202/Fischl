@@ -47,13 +47,27 @@ async def addMora(userID: int, addedMora: int, channelID: int, guildID: int, cli
         raise
 
 async def grant_summon(guild_id, user_id):
-    """Grant a minigame summon to the user"""
-    stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
-    stats = stats_ref.get() or {}
-    current_summons = stats.get("minigame_summons", 0)
-    new_summons = current_summons + 1
-    stats_ref.update({"minigame_summons": new_summons})
-    return new_summons
+    """Grant a minigame summon to the user using PostgreSQL"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Update minigame_summons field
+        cursor.execute(
+            "UPDATE minigame_progression SET minigame_summons = minigame_summons + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = %s AND uid = %s RETURNING minigame_summons",
+            (guild_id, user_id)
+        )
+        result = cursor.fetchone()
+        new_summons = result[0] if result else 0
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return new_summons
+    except Exception as e:
+        print(f"Error granting summon: {e}")
+        return 0
 
 def get_daily_games_status(user_id, guild_id):
     """Get user's daily games status for a specific guild"""
@@ -1410,11 +1424,28 @@ def profile_track(guild_id):
     
     user_id = session['user_id']
     
-    # Get user progression
-    ref = db.reference(f"/Progression/{guild_id}/{user_id}")
-    data = ref.get() or {"xp": 0, "prestige": 0}
-    user_xp = data["xp"]
-    prestige = data.get("prestige", 0)
+    # Get user progression using PostgreSQL
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT xp, prestige FROM minigame_progression WHERE gid = %s AND uid = %s",
+            (guild_id, user_id)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if result:
+            user_xp = result[0]
+            prestige = result[1]
+        else:
+            user_xp = 0
+            prestige = 0
+    except Exception as e:
+        print(f"Error fetching progression: {e}")
+        user_xp = 0
+        prestige = 0
 
     TRACK_DATA = get_current_track()
     
@@ -1478,9 +1509,30 @@ def profile_track(guild_id):
         </tr>
         """
 
-    # Get bonus stats
-    stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
-    stats = stats_ref.get() or {}
+    # Get bonus stats using PostgreSQL
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT mora_boost, chest_upgrades, gift_tax, minigame_summons FROM minigame_progression WHERE gid = %s AND uid = %s",
+            (guild_id, user_id)
+        )
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if result:
+            stats = {
+                "mora_boost": result[0],
+                "chest_upgrades": result[1],
+                "gift_tax": result[2],
+                "minigame_summons": result[3]
+            }
+        else:
+            stats = {}
+    except Exception as e:
+        print(f"Error fetching stats: {e}")
+        stats = {}
     
     season = get_current_season()
     is_elite = is_elite_active(user_id, guild_id)

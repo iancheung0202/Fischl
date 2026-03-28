@@ -10,6 +10,153 @@ from firebase_admin import db
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
+# Progression helper functions
+
+async def ensure_progression_user(pool: asyncpg.Pool, gid: int, uid: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_progression 
+            (gid, uid, kingdom_schloss, kingdom_theater, kingdom_bibliothek, kingdom_garten,
+             xp, prestige, bonus_tier, mora_boost, chest_upgrades, gift_tax, minigame_summons)
+            VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0, 4, NULL, 0)
+            ON CONFLICT (gid, uid) DO NOTHING
+        """, gid, uid)
+
+async def get_progression_data(pool: asyncpg.Pool, gid: int, uid: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT xp, prestige, bonus_tier FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    if not row:
+        return {"xp": 0, "prestige": 0, "bonus_tier": 0}
+    return dict(row)
+
+async def get_user_xp(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT xp FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return val or 0
+
+async def get_kingdom_buildings(pool: asyncpg.Pool, gid: int, uid: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT kingdom_schloss, kingdom_theater, kingdom_bibliothek, kingdom_garten FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    if not row:
+        return {"schloss": 0, "theater": 0, "bibliothek": 0, "garten": 0}
+    return {
+        "schloss": row['kingdom_schloss'],
+        "theater": row['kingdom_theater'],
+        "bibliothek": row['kingdom_bibliothek'],
+        "garten": row['kingdom_garten']
+    }
+
+async def get_building_level(pool: asyncpg.Pool, gid: int, uid: int, building_key: str) -> int:
+    col_mapping = {
+        "schloss": "kingdom_schloss",
+        "theater": "kingdom_theater",
+        "bibliothek": "kingdom_bibliothek",
+        "garten": "kingdom_garten"
+    }
+    col_name = col_mapping.get(building_key)
+    if not col_name:
+        return 0
+    
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            f"SELECT {col_name} FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return val or 0
+
+async def increment_building_level(pool: asyncpg.Pool, gid: int, uid: int, building_key: str) -> int:
+    col_mapping = {
+        "schloss": "kingdom_schloss",
+        "theater": "kingdom_theater",
+        "bibliothek": "kingdom_bibliothek",
+        "garten": "kingdom_garten"
+    }
+    col_name = col_mapping.get(building_key)
+    if not col_name:
+        return 0
+    
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        new_val = await conn.fetchval(
+            f"UPDATE minigame_progression SET {col_name} = {col_name} + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2 RETURNING {col_name}",
+            gid, uid
+        )
+    return new_val or 0
+
+async def get_user_stats(pool: asyncpg.Pool, gid: int, uid: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT mora_boost, chest_upgrades, gift_tax, minigame_summons FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    if not row:
+        return {"mora_boost": 0, "chest_upgrades": 4, "gift_tax": None, "minigame_summons": 0}
+    return dict(row)
+
+async def get_mora_boost(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT mora_boost FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return val or 0
+
+async def update_mora_boost(pool: asyncpg.Pool, gid: int, uid: int, value: int) -> None:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_progression SET mora_boost = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+            gid, uid, value
+        )
+
+async def get_chest_upgrades(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT chest_upgrades FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return val if val is not None else 4
+
+async def get_realm_chest_bonus_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    """Calculate chest bonus chance from kingdom_garten level. Max 50%."""
+    garten_level = await get_building_level(pool, gid, uid, "garten")
+    return min(50, garten_level)
+
+async def get_realm_xp_boost(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    """Calculate XP boost from kingdom_bibliothek level. Max 50%."""
+    bib_level = await get_building_level(pool, gid, uid, "bibliothek")
+    return min(50, bib_level)
+
+async def get_realm_encore_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    """Calculate summon refund chance from kingdom_theater level. Max 50%."""
+    theater_level = await get_building_level(pool, gid, uid, "theater")
+    return min(50, theater_level)
+
+async def get_guild_kingdom_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = 50) -> list:
+    """Get all users' total kingdom levels for a guild, sorted descending."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, 
+                   (kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) as total_level
+            FROM minigame_progression
+            WHERE gid = $1 
+              AND (kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) > 0
+            ORDER BY total_level DESC
+            LIMIT $2
+        """, gid, limit)
+    return [(row['uid'], row['total_level']) for row in rows]
+
+# Mora helper functions
+
 async def get_total_mora(pool: asyncpg.Pool, uid: int) -> int:
     async with pool.acquire() as conn:
         result = await conn.fetchval(
@@ -148,9 +295,7 @@ async def addMora(pool: asyncpg.Pool, userID: int, addedMora: int, channelID: in
     boost = 0
     
     if addedMora > 0:
-        stats_ref = db.reference(f"/User Events Stats/{guildID}/{userID}")
-        stats = stats_ref.get() or {}
-        boost = stats.get("mora_boost", 0)
+        boost = await get_mora_boost(pool, guildID, userID)
         addedMora = int(addedMora * (1 + boost / 100))
 
     timestamp = int(time.time())

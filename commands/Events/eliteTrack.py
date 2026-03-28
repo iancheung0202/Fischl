@@ -37,9 +37,8 @@ class EliteTrack(commands.Cog):
                             continue
                         
                         try:
-                            progression_ref = db.reference(f"/Progression/{guild_id}/{user_id}")
-                            progression_data = progression_ref.get() or {"xp": 0}
-                            current_xp = progression_data.get("xp", 0)
+                            from commands.Events.helperFunctions import get_user_xp
+                            current_xp = await get_user_xp(self.bot.pool, guild_id, user_id)
                             
                             channel = guild.system_channel
                             if not channel:
@@ -54,7 +53,8 @@ class EliteTrack(commands.Cog):
                                     user_id, 
                                     channel, 
                                     current_xp,
-                                    client=self.bot
+                                    client=self.bot,
+                                    pool=self.bot.pool
                                 )
                                 
                                 if rewards_granted:
@@ -121,16 +121,16 @@ class EliteTrack(commands.Cog):
             user = await self.bot.fetch_user(user_id)
             server = await self.bot.fetch_guild(server_id)
             
-            progression_ref = db.reference(f"/Progression/{server_id}/{user_id}")
-            progression_data = progression_ref.get() or {"xp": 0}
-            current_xp = progression_data.get("xp", 0)
+            from commands.Events.helperFunctions import get_user_xp
+            current_xp = await get_user_xp(self.bot.pool, server_id, user_id)
 
             rewards_granted = await grant_elite_rewards_up_to_tier(
                 server_id, 
                 user_id, 
                 message.channel, 
                 current_xp,
-                client=self.bot
+                client=self.bot,
+                pool=self.bot.pool
             )
 
             rewards_message = "***You've also automatically received these elite rewards from previous tiers:***\n" + "\n".join(rewards_granted) if rewards_granted else "⭐ *No elite rewards from previous tiers are automatically claimed.*"

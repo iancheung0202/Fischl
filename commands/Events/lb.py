@@ -100,17 +100,9 @@ class Leaderboard(commands.Cog):
 
         try:
             if type.value == "kingdom":
-                ref = db.reference(f"/Kingdom/{interaction.guild.id}")
-                data = ref.get() or {}
-                
-                ranking = []
-                for uid_str, user_data in data.items():
-                    buildings = user_data.get("buildings", {})
-                    total_level = sum(buildings.values())
-                    if total_level > 0:
-                        ranking.append({"User ID": int(uid_str), "Level": total_level})
-                    
-                ranking.sort(key=lambda x: x["Level"], reverse=True)
+                from commands.Events.helperFunctions import get_guild_kingdom_leaderboard
+                ranking = await get_guild_kingdom_leaderboard(interaction.client.pool, interaction.guild.id, limit=100)
+                ranking = [{"User ID": uid, "Level": level} for uid, level in ranking]
                 
                 # Fetch members
                 for member_data in ranking[:50]:
@@ -200,7 +192,7 @@ class Leaderboard(commands.Cog):
                     if type.value=="global"
                     else "A ranking of users within this server based on their current total mora."
                     if type.value=="server"
-                    else "A ranking of noble domains within this server based on total Realm Level."
+                    else "A ranking of noble domains within this server based on total Kingdom Level."
                     if type.value=="kingdom"
                     else "A ranking of users within this server based on their total owned roles/titles."
                 )

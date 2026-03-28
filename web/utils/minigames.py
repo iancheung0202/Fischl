@@ -108,6 +108,18 @@ SEASONS = [
         "start_ts": 1767229201,   # January 1, 2026
         "end_ts": 1775001600,     # April 1, 2026
     },
+    {
+        "id": 3.14,
+        "name": "Error 404: Season Not Found",
+        "start_ts": 1775001601,   # April 1, 2026
+        "end_ts": 1775088000,     # April 2, 2026
+    },
+    {
+        "id": 4,
+        "name": "Cryo Crystal Blessing",
+        "start_ts": 1775088001,   # April 2, 2026
+        "end_ts": 1782864000,     # July 1, 2026
+    }
 ]
 
 def get_current_season():
@@ -240,6 +252,44 @@ def get_current_track():
                 {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -5%'},
                 {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
                 {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Animated Badge Title | <:guizhong:1455084957335683366> Glow of the Guizhong',        'elite': 'Animated Badge Title | <a:dragon1:1422382712043339836> Dragonic Master'},
+                {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
+            ],
+            3.14: [
+                {'tier': 1,  'xp_req': 1, 'cumulative_xp': 1,    'free': '+69 Chest Upgrade Limit',                                              'elite': 'pls'},
+                {'tier': 2,  'xp_req': 1, 'cumulative_xp': 2,    'free': 'Mora Gain Boost +67%',                                            'elite': 'dont'},
+                {'tier': 3,  'xp_req': 1, 'cumulative_xp': 3,    'free': 'Animated Title: 67 <a:clown:1487325727497130024> <-- me',       'elite': 'buy'},
+            ],
+            4: [
+                {'tier': 1,  'xp_req': 1000, 'cumulative_xp': 1000,    'free': 'Drop Pack',                                                      'elite': 'Custom Embed Color'},
+                {'tier': 2,  'xp_req': 1000, 'cumulative_xp': 2000,    'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
+                {'tier': 3,  'xp_req': 1000, 'cumulative_xp': 3000,    'free': '+3 Minigames Summon',                                            'elite': '+10 Minigames Summon'},
+                {'tier': 4,  'xp_req': 1000, 'cumulative_xp': 4000,    'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
+                {'tier': 5,  'xp_req': 1000, 'cumulative_xp': 5000,    'free': 'Unlocks Mora Gifting',                                            'elite': 'Mora Gift Tax -5%'},
+                {'tier': 6,  'xp_req': 1000, 'cumulative_xp': 6000,    'free': 'Server Title | Cry||o|| about it',                                'elite': '+10 Minigames Summon'},
+                {'tier': 7,  'xp_req': 1000, 'cumulative_xp': 7000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
+                {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gift Tax -5%'},
+                {'tier': 9,  'xp_req': 1000, 'cumulative_xp': 9000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
+                {'tier': 10, 'xp_req': 1000, 'cumulative_xp': 10000,   'free': 'Drop Pack',                                                      'elite': 'Animated Frame | assets/Profile Frame/Jade Stone.gif'},
+                {'tier': 11, 'xp_req': 1000, 'cumulative_xp': 11000,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Mora Gain Boost +5%'},
+                {'tier': 12, 'xp_req': 1000, 'cumulative_xp': 12000,   'free': '+1 Chest Upgrade Limit',                                         'elite': '+10 Minigames Summon'},
+                {'tier': 13, 'xp_req': 1000, 'cumulative_xp': 13000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
+                {'tier': 14, 'xp_req': 1000, 'cumulative_xp': 14000,   'free': 'Static Frame | assets/Profile Frame/Snowglobe.png',             'elite': 'Animated Title | <a:dragon_gif:1422382705307291770> <-- me'},
+                {'tier': 15, 'xp_req': 1000, 'cumulative_xp': 15000,   'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
+                {'tier': 16, 'xp_req': 2500, 'cumulative_xp': 17500,   'free': 'Mora Gift Tax -5%',                                              'elite': '+10 Minigames Summon'},
+                {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
+                {'tier': 18, 'xp_req': 2500, 'cumulative_xp': 22500,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
+                {'tier': 19, 'xp_req': 2500, 'cumulative_xp': 25000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gain Boost +5%'},
+                {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | The Doctor',                            'elite': 'Animated Frame | assets/Profile Frame/Dragon Mouth.gif'},
+                {'tier': 21, 'xp_req': 2500, 'cumulative_xp': 30000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
+                {'tier': 22, 'xp_req': 2500, 'cumulative_xp': 32500,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gain Boost +5%'},
+                {'tier': 23, 'xp_req': 2500, 'cumulative_xp': 35000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
+                {'tier': 24, 'xp_req': 2500, 'cumulative_xp': 37500,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Mora Gain Boost +5%'},
+                {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
+                {'tier': 26, 'xp_req': 5000, 'cumulative_xp': 45000,   'free': 'Static Frame | assets/Profile Frame/Mountains.png',        'elite': 'Animated Frame | assets/Profile Frame/Holodragon.gif'},
+                {'tier': 27, 'xp_req': 5000, 'cumulative_xp': 50000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
+                {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -5%'},
+                {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
+                {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | I\'m very cold',        'elite': 'Animated Title | <a:dragon1:1422382712043339836> Cyro Conqueror'},
                 {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
             ]
         }
@@ -432,12 +482,12 @@ def generate_mora_graph(user_id, guild_id, display_name):
         days_active = len(daily_earnings)
         
         # Get chest counts
-        ref_counts = db.reference(f"/Mora Chest Counts/{guild_id}/{user_id}")
+        ref_counts = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/counts")
         chest_counts = ref_counts.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
         total_chests = sum(chest_counts.values())
 
         # Get streak data
-        ref_streak = db.reference(f"/Mora Chest Streaks/{guild_id}/{user_id}")
+        ref_streak = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/streaks")
         streak_data = ref_streak.get() or {}
         last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
         current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0

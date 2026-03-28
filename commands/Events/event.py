@@ -88,30 +88,42 @@ async def handle_message_deletion(message):
         pass  # already deleted/was removed
     
 async def add_xp(user_id, guild_id, xp_amount, client):
-    ref = db.reference(f"/Progression/{guild_id}/{user_id}")
-    data = ref.get() or {"xp": 0, "prestige": 0, "bonus_tier": 0}
+    from commands.Events.helperFunctions import get_user_xp, get_progression_data, ensure_progression_user
+    
+    pool = client.pool
+    await ensure_progression_user(pool, guild_id, user_id)
+    
+    data = await get_progression_data(pool, guild_id, user_id)
     
     old_xp = data.get("xp", 0)
-    data["xp"] = old_xp + xp_amount
-    current_xp = data["xp"]
+    new_xp = old_xp + xp_amount
     
     current_tier = 0
     TRACK_DATA = get_current_track()
     for tier in TRACK_DATA:
-        if current_xp >= tier["cumulative_xp"]:
+        if new_xp >= tier["cumulative_xp"]:
             current_tier = tier["tier"]
         else:
             break
     
+    # Update bonus_tier if needed
     if current_tier == 31:
-        bonus_xp = current_xp - TRACK_DATA[-1]["cumulative_xp"]
+        bonus_xp = new_xp - TRACK_DATA[-1]["cumulative_xp"]
         bonus_tiers = bonus_xp // 1500
         
-        if bonus_tiers > data.get("bonus_tier", 0):
-            data["bonus_tier"] = bonus_tiers
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE minigame_progression SET xp = $3, bonus_tier = $4, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                guild_id, user_id, new_xp, bonus_tiers
+            )
+    else:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE minigame_progression SET xp = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                guild_id, user_id, new_xp
+            )
     
-    ref.set(data)
-    return (current_tier, old_xp, current_xp)
+    return (current_tier, old_xp, new_xp)
 
             
 def userAndTitle(userID, guildID):
@@ -3827,19 +3839,22 @@ class MoraChestView(discord.ui.View):
             streak_total = min((view.streak * 100), 10000)
             total = tier_map[view.tier] + streak_total
             
-            stats_ref = db.reference(f"/User Events Stats/{view.guild_id}/{view.user_id}")
-            stats = stats_ref.get() or {}
-            bonus_chance = stats.get("realm_chest_bonus_chance", 0)
+            from commands.Events.helperFunctions import get_realm_chest_bonus_chance
+            bonus_chance = await get_realm_chest_bonus_chance(interaction.client.pool, view.guild_id, view.user_id)
             is_bonus = False
             
             if bonus_chance > 0 and random.random() * 100 < bonus_chance:
                 is_bonus = True
                 current_summons = stats.get("minigame_summons", 0)
-                stats_ref.update({"minigame_summons": current_summons + 1})
+                async with interaction.client.pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE minigame_progression SET minigame_summons = minigame_summons + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                        view.guild_id, view.user_id
+                    )
 
-            ref = db.reference(f"/Mora Chest Streaks/{view.guild_id}/{view.user_id}")
-            data = ref.get() or {}
-            max_streak = data.get("max_streak", 0)
+            streak_ref = db.reference(f"/Chat Minigames Chests/{view.guild_id}/{view.user_id}/streaks")
+            streak_data = streak_ref.get() or {}
+            max_streak = streak_data.get("max_streak", 0)
 
             new_max_streak = max(max_streak, view.streak)
             text, addedMora = await addMora(interaction.client.pool, view.user_id, total, interaction.channel.id, view.guild_id, interaction.client)
@@ -3863,8 +3878,8 @@ class MoraChestView(discord.ui.View):
                 inline=True
             )
             
-            ref_counts = db.reference(f"/Mora Chest Counts/{view.guild_id}/{view.user_id}")
-            chest_counts = ref_counts.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
+            counts_ref = db.reference(f"/Chat Minigames Chests/{view.guild_id}/{view.user_id}/counts")
+            chest_counts = counts_ref.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
             chest_counts[view.tier] = chest_counts.get(view.tier, 0) + 1
             total_chests = sum(chest_counts.values())
 
@@ -3886,17 +3901,19 @@ class MoraChestView(discord.ui.View):
             }
             embed.set_thumbnail(url=chest_icon[view.tier])
             await interaction.response.edit_message(content=interaction.user.mention, embed=embed, view=PersistentChestInfoView())
-            ref.set({
+            streak_ref.set({
                 "streak": view.streak,
                 "max_streak": new_max_streak,
                 "last_claimed": datetime.datetime.now(datetime.timezone.utc).date().isoformat()
             })
-            ref_counts.set(chest_counts)
+            counts_ref.set(chest_counts)
             view.cog.pending_chests.discard((view.user_id, view.guild_id))
             view.completed = True
             view.update_buttons()
             print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
+            
+            return 
 
             await interaction.followup.send(
                 embed=discord.Embed(
@@ -3914,7 +3931,6 @@ class MoraChestView(discord.ui.View):
                 ),
                 ephemeral=True
             )
-            return 
 
             await interaction.followup.send(
                 embed=discord.Embed(
@@ -4365,11 +4381,11 @@ class DailyChestSystem:
             await self.trigger_chest(message, cog)
 
     def load_from_db(self, guild_id, user_id):
-        ref = db.reference(f"/Daily Chest Progress/{guild_id}/{user_id}")
+        ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/progress")
         return ref.get()
         
     def save_to_db(self, guild_id, user_id, state):
-        ref = db.reference(f"/Daily Chest Progress/{guild_id}/{user_id}")
+        ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/progress")
         ref.set(state)
         
     async def reset_daily_states(self):
@@ -4384,20 +4400,16 @@ class DailyChestSystem:
         guild_id = message.guild.id
         key = (user_id, guild_id)
         
-        ref = db.reference(f"/Mora Chest Streaks/{guild_id}/{user_id}")
-        data = ref.get() or {}
-        last_claimed = datetime.datetime.fromisoformat(data["last_claimed"]).date() if "last_claimed" in data else None
-        current_streak = data.get("streak", 0)
+        ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/streaks")
+        streak_data = ref.get() or {}
+        last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
+        current_streak = streak_data.get("streak", 0)
 
         today = datetime.datetime.now(datetime.timezone.utc).date()
         new_streak = current_streak + 1 if last_claimed and (today - last_claimed).days == 1 else 1
         
-        stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
-        stats = stats_ref.get() or {}
-        clicks_remaining = stats.get("chest_upgrades", 4)
-        
-        realm_upgrades = stats.get("realm_chest_upgrades", 0)
-        clicks_remaining += realm_upgrades
+        from commands.Events.helperFunctions import get_chest_upgrades
+        clicks_remaining = await get_chest_upgrades(cog.client.pool, guild_id, user_id)
 
         view = MoraChestView(cog, user_id, guild_id, "Common", new_streak, clicks_remaining)
         embed = discord.Embed(
@@ -4484,7 +4496,8 @@ class TheEventItself(commands.Cog):
                     old_xp=old_xp,
                     new_xp=new_xp,
                     channel=message.channel,
-                    client=self.client
+                    client=self.client,
+                    pool=self.client.pool
                 )
                 await message.channel.send(f"Added `{xp_amount}` XP to {user.mention}. Reached tier `{tier}`!")
             except Exception as e:
@@ -4676,8 +4689,8 @@ class Summon(commands.Cog):
     async def summon(self, interaction: discord.Interaction, minigame: str):
         await interaction.response.defer()
         
-        stats_ref = db.reference(f"/User Events Stats/{interaction.guild.id}/{interaction.user.id}")
-        stats = stats_ref.get() or {}
+        from commands.Events.helperFunctions import get_user_stats, get_realm_encore_chance
+        stats = await get_user_stats(interaction.client.pool, interaction.guild.id, interaction.user.id)
         summons = stats.get("minigame_summons", 0)
 
         if summons < 1:
@@ -4687,7 +4700,7 @@ class Summon(commands.Cog):
         if not minigame_func:
             return await interaction.followup.send("<:no:1036810470860013639> Invalid minigame selection!")
 
-        encore_chance = stats.get("realm_encore_chance", 0)
+        encore_chance = await get_realm_encore_chance(interaction.client.pool, interaction.guild.id, interaction.user.id)
         import random
         saved = False
         eff_chance = min(50, encore_chance)
@@ -4695,7 +4708,11 @@ class Summon(commands.Cog):
         if random.random() * 100 < eff_chance:
             saved = True
         else:
-            stats_ref.update({"minigame_summons": summons - 1})
+            async with interaction.client.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE minigame_progression SET minigame_summons = minigame_summons - 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                    interaction.guild.id, interaction.user.id
+                )
 
         footer_text = f"You have {summons if saved else summons - 1} summon{'s' if (summons if saved else summons - 1) != 1 else ''} remaining"
         if saved:

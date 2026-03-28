@@ -1,5 +1,6 @@
 import discord
 import time
+import asyncpg
 
 from firebase_admin import db
 
@@ -30,7 +31,7 @@ REWARD_TYPES = {
     "Animated Title": "title"
 }
 
-async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False, client=None):
+async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False, client=None, pool=None):
     if is_elite:
         elite_claimed_ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/elite_claimed")
         elite_claimed = elite_claimed_ref.get() or []
@@ -43,8 +44,14 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
     reward_type = REWARD_TYPES.get(reward_str.split("|")[0].strip(), "other")
     title = None
     description = None
-    stats_ref = db.reference(f"/User Events Stats/{guild_id}/{user_id}")
-    stats = stats_ref.get() or {}
+    
+    if pool is None:
+        # Fallback if pool not provided
+        from commands.Events.helperFunctions import get_user_stats
+        stats = {"mora_boost": 0, "chest_upgrades": 4, "gift_tax": None, "minigame_summons": 0}
+    else:
+        from commands.Events.helperFunctions import get_user_stats
+        stats = await get_user_stats(pool, guild_id, user_id)
     
     if reward_type == "drop_pack":
         is_bonus = tier == "Bonus"
@@ -100,54 +107,71 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         description = f"**Tier `{tier}`:** You can have a custom color on your inventory! Use </customize:1339721187953082544> to edit your favorite color!"
             
     elif reward_type == "prestige":
-        ref = db.reference(f"/Progression/{guild_id}/{user_id}")
-        data = ref.get() or {"xp": 0, "prestige": 0}
-        prestige = data.get("prestige", 0)
-        prestige += 1
-        ref.update({"prestige": prestige})
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE minigame_progression SET prestige = prestige + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                guild_id, user_id
+            )
         title = f"{'Elite Reward: ' if is_elite else ''} Prestige +1 <:PRIMOGEM:1364031230357540894>"
         description = f"You have earned `+1` prestige for **reaching the end of the {'elite' if is_elite else 'free'} track**! Use </mora:1339721187953082543> view your prestige count!"
         
     elif reward_type == "mora_boost" or reward_type == "mora_boost_67":
         boost_amount = 5 if reward_type == "mora_boost" else 67
-        new_boost = stats.get("mora_boost", 0) + boost_amount
-        stats_ref.update({"mora_boost": new_boost})
+        from commands.Events.helperFunctions import get_mora_boost, update_mora_boost
+        current_boost = await get_mora_boost(pool, guild_id, user_id)
+        new_boost = current_boost + boost_amount
+        await update_mora_boost(pool, guild_id, user_id, new_boost)
         title = f"{'Elite Reward: ' if is_elite else ''}Mora Gain Boost +{boost_amount}% {MORA_EMOTE}"
         description = f"**Tier `{tier}`:** Your mora gain from all sources will now be **increased by `{new_boost}%`**!"
     
     elif reward_type == "chest_upgrade" or reward_type == "chest_upgrade_69":
         upgrade_amount = 1 if reward_type == "chest_upgrade" else 69
-        current_upgrades = stats.get("chest_upgrades", 4)
+        from commands.Events.helperFunctions import get_chest_upgrades
+        current_upgrades = await get_chest_upgrades(pool, guild_id, user_id)
         new_upgrades = current_upgrades + upgrade_amount
-        stats_ref.update({"chest_upgrades": new_upgrades})
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE minigame_progression SET chest_upgrades = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                guild_id, user_id, new_upgrades
+            )
         title = f"{'Elite Reward: ' if is_elite else ''}+{upgrade_amount} Chest Upgrades :arrow_up_small:"
         description = f"**Tier `{tier}`:** Your daily Mora chest now has a total of **`{new_upgrades}` upgrade chances**!"
     
     elif reward_type == "unlock_gifting":
-        if "gift_tax" not in stats:
-            stats_ref.update({"gift_tax": 30})
+        if stats.get("gift_tax") is None:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE minigame_progression SET gift_tax = 30, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                    guild_id, user_id
+                )
             title = "Mora Gifting Unlocked! :gift:"
             description = f"**Tier `{tier}`:** You can now </gift:1382148690155802657> mora to others with an initial tax rate of `30%`!"
     
     elif reward_type == "gift_tax":
         tax_reduction = 5
-        current_tax = stats.get("gift_tax", 30)
-        new_tax = max(0, current_tax - tax_reduction)  # Minimum 0% tax
-        stats_ref.update({"gift_tax": new_tax})
+        current_tax = stats.get("gift_tax", 30) if stats.get("gift_tax") is not None else 30
+        new_tax = max(0, current_tax - tax_reduction)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE minigame_progression SET gift_tax = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+                guild_id, user_id, new_tax
+            )
         title = f"{'Elite Reward: ' if is_elite else ''}Gift Tax Reduced -{tax_reduction}% :chart_with_downwards_trend:"
         description = f"**Tier `{tier}`:** Your gifting tax rate is now **`{new_tax}%`**! Use </gift:1382148690155802657> to send some love!"
     
     elif reward_type == "minigame_summon":
         summon_amount = int(reward_str.split()[0].replace('+', '')) # Extract summon amount (e.g., "+3" from "+3 Minigames Summon")
-        current_summons = stats.get("minigame_summons", 0)
-        new_summons = current_summons + summon_amount
-        stats_ref.update({"minigame_summons": new_summons})
+        async with pool.acquire() as conn:
+            new_summons = await conn.fetchval(
+                "UPDATE minigame_progression SET minigame_summons = minigame_summons + $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2 RETURNING minigame_summons",
+                guild_id, user_id, summon_amount
+            )
         title = f"{'Elite Reward: ' if is_elite else ''}+{summon_amount} Minigame Summons 🧲"
         description = f"**Tier `{tier}`:** You have a total of **{new_summons} minigame summons** available! Use </summon:1382148690155802656> to immediately start a minigame in a channel!"
 
     return (title, description)
 
-async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=None):
+async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=None, pool=None):
     unlocked_tiers = []
     TRACK_DATA = get_current_track()
     for tier in TRACK_DATA:
@@ -157,12 +181,12 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=
     embed = discord.Embed(color=0xffd700)
     elite_embed = discord.Embed(color=0xfa0add)
     for tier in unlocked_tiers:
-        title, description = await grant_reward(guild_id, user_id, tier["free"], tier["tier"], channel, client=client)
+        title, description = await grant_reward(guild_id, user_id, tier["free"], tier["tier"], channel, client=client, pool=pool)
         if title is not None and description is not None:
             embed.add_field(name=title, value=f"-# {description}", inline=False)
         
         if is_elite_active(user_id, guild_id):
-            title, description = await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client)
+            title, description = await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client, pool=pool)
             if title is not None and description is not None:
                 elite_embed.add_field(name=title, value=f"-# {description}", inline=False)
     
@@ -180,14 +204,14 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=
         bonus_tiers_earned = new_bonus_tiers - old_bonus_tiers
         
         for _ in range(bonus_tiers_earned):
-            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, client=client)
+            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, client=client, pool=pool)
             
             if is_elite_active(user_id, guild_id):
-                await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client)
+                await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client, pool=pool)
 
     return (embed, elite_embed)
 
-async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, client=None):
+async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, client=None, pool=None):
     elite_claimed_ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/elite_claimed")
     elite_claimed = elite_claimed_ref.get() or []
     
@@ -195,7 +219,7 @@ async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, cli
     TRACK_DATA = get_current_track()
     for tier in TRACK_DATA:
         if tier["cumulative_xp"] <= max_xp and tier["tier"] not in elite_claimed:
-            await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client)
+            await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client, pool=pool)
             rewards_granted.append(f"Tier {tier['tier']}: {tier['elite'].split('|')[0].strip()}")
     
     max_tier_xp = TRACK_DATA[-1]["cumulative_xp"]
@@ -203,7 +227,7 @@ async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, cli
         total_bonus_tiers = (max_xp - max_tier_xp) // 2500
         
         for _ in range(total_bonus_tiers):
-            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client)
+            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client, pool=pool)
             rewards_granted.append(f"Bonus Drop Pack")
     
     return rewards_granted
