@@ -19,7 +19,9 @@ REWARD_TYPES = {
     "Animated Frame": "animated_frame",
     "Prestige +1": "prestige",
     "Mora Gain Boost +5%": "mora_boost",
+    "Mora Gain Boost +67%": "mora_boost_67",
     "+1 Chest Upgrade Limit": "chest_upgrade",
+    "+69 Chest Upgrade Limit": "chest_upgrade_69",
     "Unlocks Mora Gifting": "unlock_gifting",
     "Mora Gift Tax -5%": "gift_tax",
     "+3 Minigames Summon": "minigame_summon",
@@ -106,15 +108,15 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         title = f"{'Elite Reward: ' if is_elite else ''} Prestige +1 <:PRIMOGEM:1364031230357540894>"
         description = f"You have earned `+1` prestige for **reaching the end of the {'elite' if is_elite else 'free'} track**! Use </mora:1339721187953082543> view your prestige count!"
         
-    elif reward_type == "mora_boost":
-        boost_amount = 5
+    elif reward_type == "mora_boost" or reward_type == "mora_boost_67":
+        boost_amount = 5 if reward_type == "mora_boost" else 67
         new_boost = stats.get("mora_boost", 0) + boost_amount
         stats_ref.update({"mora_boost": new_boost})
         title = f"{'Elite Reward: ' if is_elite else ''}Mora Gain Boost +{boost_amount}% {MORA_EMOTE}"
         description = f"**Tier `{tier}`:** Your mora gain from all sources will now be **increased by `{new_boost}%`**!"
     
-    elif reward_type == "chest_upgrade":
-        upgrade_amount = 1
+    elif reward_type == "chest_upgrade" or reward_type == "chest_upgrade_69":
+        upgrade_amount = 1 if reward_type == "chest_upgrade" else 69
         current_upgrades = stats.get("chest_upgrades", 4)
         new_upgrades = current_upgrades + upgrade_amount
         stats_ref.update({"chest_upgrades": new_upgrades})
