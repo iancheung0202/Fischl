@@ -38,16 +38,8 @@ async def process_pending_stock_edits(guild_id: int):
         if scheduled_time > current_time:
             continue
         
-        guild_ref = db.reference("/Global Events Rewards")
-        guild_rewards = guild_ref.get() or {}
-        rewards_list = None
-        guild_key = None
-        
-        for gkey, gval in guild_rewards.items():
-            if gval["Server ID"] == guild_id:
-                rewards_list = gval["Rewards"]
-                guild_key = gkey
-                break
+        guild_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        rewards_list = guild_ref.get() or []
         
         if not rewards_list:
             ref.child(key).delete()
@@ -106,14 +98,8 @@ async def purchase_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference("/Global Events Rewards")
-    daily = ref.get()
-    rewards = []
-    choices = []
-    for key, val in daily.items():
-        if val["Server ID"] == interaction.guild.id:
-            rewards = val["Rewards"]
-            break
+    ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+    rewards = ref.get() or []
 
     for reward in rewards:
         reward_name = reward[0]
@@ -218,13 +204,9 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=None)
             return
 
-        ref = db.reference("/Global Events Rewards")
-        daily = ref.get()
-        rewards = []
-        for key, val in daily.items():
-            if val["Server ID"] == interaction.guild.id:
-                rewards = val["Rewards"]
-                break
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        daily = ref.get() or []
+        rewards = daily
 
         x = 0
         for i in rewards:
@@ -355,23 +337,9 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=TierRewardsView(free_embed, elite_embed) if xp_earned != "" else None)
             
             if len(ogRewards[x]) > 4 and ogRewards[x][4] > 0:
-                ref = db.reference("/Global Events Rewards")
+                ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
                 ogRewards[x][4] -= 1
-                try:
-                    for key, val in daily.items():
-                        if val["Server ID"] == interaction.guild.id:
-                            db.reference("/Global Events Rewards").child(key).delete()
-                            break
-                except Exception:
-                    pass
-                data = {
-                    interaction.guild.id: {
-                        "Server ID": interaction.guild.id,
-                        "Rewards": ogRewards,
-                    }
-                }
-                for key, value in data.items():
-                    ref.push().set(value)
+                ref.set(ogRewards)
                 
             link = (await interaction.original_response()).jump_url
             print(f"{interaction.user.name} ({interaction.user.id}) have paid {itemCost:,} Mora and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
@@ -468,13 +436,9 @@ class Buy(commands.Cog):
     async def buy(self, interaction: discord.Interaction, item: str) -> None:
         await interaction.response.defer(thinking=True)
             
-        ref = db.reference("/Global Events Rewards")
-        daily = ref.get()
-        rewards = []
-        for key, val in daily.items():
-            if val["Server ID"] == interaction.guild.id:
-                rewards = val["Rewards"]
-                break
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        daily = ref.get() or []
+        rewards = daily
 
         x = 0
         for i in rewards:

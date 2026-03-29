@@ -52,16 +52,8 @@ class SortSelection(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Events Rewards")
-        rewards = ref.get()
-        originalList = []
-        try:
-            for key, val in rewards.items():
-                if val["Server ID"] == interaction.guild.id:
-                    originalList = val["Rewards"]
-                    break
-        except Exception:
-            pass
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        originalList = ref.get() or []
 
         if interaction.data["values"][0] == "sort by cost (low to high)":
             pages = await get_shop_embeds(
@@ -479,16 +471,8 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Events Rewards")
-        rewards = ref.get()
-        originalList = []
-        try:
-            for key, val in rewards.items():
-                if val["Server ID"] == interaction.guild.id:
-                    originalList = val["Rewards"]
-                    break
-        except Exception:
-            pass
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        originalList = ref.get() or []
 
         duplicate = False
         for item in originalList:
@@ -530,22 +514,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
                 [str(self.name), str(self.desc), str(self.cost), multiple, stock_val]
             )
 
-            try:
-                for key, val in rewards.items():
-                    if val["Server ID"] == interaction.guild.id:
-                        db.reference("/Global Events Rewards").child(key).delete()
-                        break
-            except Exception:
-                pass
-
-            data = {
-                interaction.guild.id: {
-                    "Server ID": interaction.guild.id,
-                    "Rewards": originalList,
-                }
-            }
-            for key, value in data.items():
-                ref.push().set(value)
+            ref.set(originalList)
             self.update = discord.Embed(
                 description=f"Added reward :slight_smile:", color=discord.Color.green()
             )
@@ -590,21 +559,13 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Events Rewards")
-        rewards = ref.get()
-        originalList = []
-        try:
-            for key, val in rewards.items():
-                if val["Server ID"] == interaction.guild.id:
-                    originalList = val["Rewards"]
-                    break
-        except Exception:
-            pass
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        originalList = ref.get() or []
 
         if len(originalList) == 0:
             await interaction.response.send_message(
                 embed=discord.Embed(
-                    description=f"Put on your glasses. You haven't added any rewards yet... <:no:1036810470860013639>",
+                    description=f"Put on your glasses. What are you trying to delete? You haven't previously added any rewards at all yet... <:no:1036810470860013639>",
                     color=discord.Color.red(),
                 ),
                 ephemeral=True,
@@ -627,22 +588,7 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
                 description=f"Reward not found <:no:1036810470860013639>", color=discord.Color.red()
             )
 
-        try:
-            for key, val in rewards.items():
-                if val["Server ID"] == interaction.guild.id:
-                    db.reference("/Global Events Rewards").child(key).delete()
-                    break
-        except Exception:
-            pass
-
-        data = {
-            interaction.guild.id: {
-                "Server ID": interaction.guild.id,
-                "Rewards": originalList,
-            }
-        }
-        for key, value in data.items():
-            ref.push().set(value)
+        ref.set(originalList)
 
         if str(self.remove).lower() == "yes":
             ref = db.reference("/User Events Inventory")
@@ -726,19 +672,9 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Events Rewards")
-        rewards = ref.get()
-        originalList = []
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        originalList = ref.get() or []
         found_key = None
-        
-        try:
-            for key, val in rewards.items():
-                if val["Server ID"] == interaction.guild.id:
-                    originalList = val["Rewards"]
-                    found_key = key
-                    break
-        except Exception:
-            pass
             
         item_found = False
         multiplier_map = {"k": 10**3, "m": 10**6, "b": 10**9, "t": 10**12}
@@ -776,16 +712,7 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
             )
             
         if found_key and item_found and "Updated" in self.update.description:
-            db.reference("/Global Events Rewards").child(found_key).delete()
-            data = {
-                interaction.guild.id: {
-                    "Server ID": interaction.guild.id,
-                    "Rewards": originalList,
-                }
-            }
-            for key, value in data.items():
-                ref.push().set(value)
-            
+            ref.set(originalList)
         self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
         self.on_submit_interaction = interaction
         self.stop()
@@ -802,16 +729,9 @@ async def process_pending_stock_edits(guild_id: int):
         if scheduled_time > current_time:
             continue
 
-        guild_ref = db.reference("/Global Events Rewards")
-        guild_rewards = guild_ref.get() or {}
-        rewards_list = None
+        guild_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        rewards_list = guild_ref.get() or []
         guild_key = None
-        
-        for gkey, gval in guild_rewards.items():
-            if gval["Server ID"] == guild_id:
-                rewards_list = gval["Rewards"]
-                guild_key = gkey
-                break
         
         if not rewards_list:
             ref.child(key).delete()
@@ -857,7 +777,7 @@ async def process_pending_stock_edits(guild_id: int):
                 break
         
         if item_found:
-            guild_ref.child(guild_key).update({"Rewards": rewards_list})
+            guild_ref.set(rewards_list)
             processed_count += 1
         else:
             continue
@@ -893,19 +813,9 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Events Rewards")
-        rewards = ref.get()
-        originalList = []
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        originalList = ref.get() or []
         found_key = None
-        
-        try:
-            for key, val in rewards.items():
-                if val["Server ID"] == interaction.guild.id:
-                    originalList = val["Rewards"]
-                    found_key = key
-                    break
-        except Exception:
-            pass
         
         await process_pending_stock_edits(interaction.guild.id)
             
@@ -998,16 +908,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                 )
             
             if found_key and item_found:
-                db.reference("/Global Events Rewards").child(found_key).delete()
-                
-            data = {
-                interaction.guild.id: {
-                    "Server ID": interaction.guild.id,
-                    "Rewards": originalList,
-                }
-            }
-            for key, value in data.items():
-                ref.push().set(value)
+                ref.set(originalList)
             
         self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
         self.on_submit_interaction = interaction
@@ -1040,19 +941,11 @@ class Shop(commands.Cog):
                 break
 
         if found is not None:
-            ref = db.reference("/Global Events Rewards")
-            rewards = ref.get()
-            foundGuild = "Empty"
-            try:
-                for key, val in rewards.items():
-                    if val["Server ID"] == interaction.guild.id:
-                        foundGuild = val["Rewards"]
-                        break
-            except Exception:
-                pass
+            ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+            foundGuild = ref.get() or []
 
             pages = await get_shop_embeds(
-                interaction, foundGuild, foundGuild == "Empty"
+                interaction, foundGuild, len(foundGuild) == 0
             )
 
             if interaction.user.guild_permissions.administrator:

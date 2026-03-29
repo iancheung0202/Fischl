@@ -3912,6 +3912,21 @@ class MoraChestView(discord.ui.View):
             view.update_buttons()
             print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
+
+            embed = discord.Embed(
+                title="",
+                description=(
+                    "## <:MelonBread_KeqingNote:1342924552392671254> **Database Migration**\n"
+                    "Fischl just underwent a **huge refactor** with a **complete database migration** to improve stability and performance! <:PaimonWow:1188553806456291489>\n\n"
+                    "<:dot:1357188726047899760> Everything remains the same for now (in preparation for a major update)\n"
+                    "<:dot:1357188726047899760> All your minigame stats has been **carefully moved** to the new database\n"
+                    "<:dot:1357188726047899760> Everything has been **tested** with no errors so far\n\n"
+                    "-# However, it is entirely possible that I might have missed something. **If you discover any bugs or issues**, please don't hesitate to let me know by **creating a support ticket** in our [support server](https://discord.gg/BXkc8CC4uJ)!\n"
+                    "### <:CharlotteHeart:1191594476263702528> Thank you for your understanding! Stay tuned for the new season on April 1! 🫶"
+                ),
+                color=discord.Color.blurple()
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
             
             return 
 

@@ -1185,7 +1185,7 @@ def profile_inventory(guild_id):
         guild_rank = "N/A"
     
     # Get selected cosmetics for profile card
-    ref_selected = db.reference(f"/Global Progression Rewards/{guild_id}/{user_id}/selected")
+    ref_selected = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/selected")
     selected = ref_selected.get() or {}
     
     # Generate profile card

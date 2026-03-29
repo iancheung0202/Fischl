@@ -316,13 +316,13 @@ def api_configure_info(guild_id):
                 guild_channel_ids = {str(channel['id']) for channel in guild_channels if channel.get('type') == 0}
                 
                 # Now check the minigames database
-                ref = db.reference("/Global Events System")
+                ref = db.reference("/Chat Minigames System")
                 events_data = ref.get()
                 if events_data and isinstance(events_data, dict):
-                    for key, val in events_data.items():
-                        if isinstance(val, dict) and "Channel ID" in val:
+                    for channel_id, val in events_data.items():
+                        if isinstance(val, dict):
                             # Check if this channel belongs to the current guild
-                            if str(val["Channel ID"]) in guild_channel_ids:
+                            if str(channel_id) in guild_channel_ids:
                                 return True
                 return False
             except Exception as e:

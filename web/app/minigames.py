@@ -29,16 +29,8 @@ def process_pending_shop_edits(guild_id):
             print(f"Processing edit for item {edit['item_identifier']} in guild {guild_id}")
                 
             # Get current rewards
-            guild_ref = db.reference("/Global Events Rewards")
-            guild_rewards = guild_ref.get() or {}
-            rewards_list = None
-            guild_key = None
-            
-            for gkey, gval in guild_rewards.items():
-                if isinstance(gval, dict) and gval.get("Server ID") == int(guild_id):
-                    rewards_list = gval.get("Rewards", [])
-                    guild_key = gkey
-                    break
+            guild_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+            rewards_list = guild_ref.get() or []
             
             if not rewards_list:
                 print(f"No rewards found for guild {guild_id}")
@@ -100,7 +92,7 @@ def process_pending_shop_edits(guild_id):
             
             if item_found:
                 # Update Firebase
-                guild_ref.child(guild_key).update({"Rewards": rewards_list})
+                guild_ref.set(rewards_list)
                 processed_count += 1
             else:
                 print(f"Item {edit['item_identifier']} not found in guild {guild_id}")
@@ -1303,16 +1295,15 @@ def api_minigames_info(guild_id):
         
         def fetch_minigame_settings():
             try:
-                ref = db.reference("/Global Events System")
+                ref = db.reference("/Chat Minigames System")
                 events_data = ref.get()
                 configured_channels = {}
                 if events_data and isinstance(events_data, dict):
-                    for key, val in events_data.items():
-                        if isinstance(val, dict) and "Channel ID" in val:
-                            configured_channels[str(val["Channel ID"])] = {
-                                "frequency": val.get("Frequency", 100),
-                                "events": val.get("Events", letterList.copy()),
-                                "key": key
+                    for channel_id, val in events_data.items():
+                        if isinstance(val, dict):
+                            configured_channels[str(channel_id)] = {
+                                "frequency": val.get("frequency", 100),
+                                "events": val.get("events", letterList.copy()),
                             }
                 return configured_channels
             except Exception as e:
@@ -1532,13 +1523,12 @@ def add_minigames_channel(guild_id):
 
         # Add to database (same structure as Discord bot)
         data = {
-            "Channel ID": channel_id,
-            "Frequency": frequency,
-            "Events": letterList.copy(),  # Enable all games by default
+            "frequency": frequency,
+            "events": letterList.copy(),  # Enable all games by default
         }
 
-        ref = db.reference("/Global Events System")
-        ref.push().set(data)
+        ref = db.reference(f"/Chat Minigames System/{channel_id}")
+        ref.set(data)
 
         return redirect(f"/configure/{guild_id}/minigames?message=Minigames+enabled+successfully")
 
@@ -1559,13 +1549,8 @@ def delete_minigames_channel(guild_id, channel_id):
             return jsonify(guild), status_code
 
         # Find and delete from database
-        ref = db.reference("/Global Events System")
-        events_data = ref.get()
-        
-        if events_data:
-            for key, val in events_data.items():
-                if isinstance(val, dict) and str(val.get("Channel ID")) == str(channel_id):
-                    ref.child(key).delete()
+        ref = db.reference(f"/Chat Minigames System/{channel_id}")
+        ref.delete()
                     return jsonify({"success": True, "message": "Configuration deleted successfully"})
 
         return jsonify({"success": False, "message": "Configuration not found"}), 404
@@ -1632,17 +1617,8 @@ def api_shop_info(guild_id):
                 pending_by_item[item_id].append(edit_with_key)
 
         # Get shop items from database
-        ref = db.reference("/Global Events Rewards")
-        rewards_data = ref.get() or {}
-        
-        # Parse shop items for this guild
-        shop_items = []
-        guild_key = None
-        for key, data in rewards_data.items():
-            if isinstance(data, dict) and data.get("Server ID") == int(guild_id):
-                guild_key = key
-                items = data.get("Rewards", [])
-                for item in items:
+        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        shop_items_list = ref.get() or []
                     if len(item) >= 3:
                         # Convert old format to new format if needed
                         item_data = {
@@ -1661,7 +1637,6 @@ def api_shop_info(guild_id):
                         item_data["pending_edits"] = pending_by_item.get(str(item[0]), [])
                         
                         shop_items.append(item_data)
-                break
 
         # Generate shop items HTML
         items_html = ""
@@ -1888,17 +1863,8 @@ def api_add_shop_item(guild_id):
                 return jsonify({"success": False, "message": "Invalid stock value"}), 400
 
         # Get existing rewards
-        ref = db.reference("/Global Events Rewards")
-        rewards_data = ref.get() or {}
-        
-        # Find guild's rewards or create new
-        guild_key = None
-        rewards_list = []
-        for key, guild_data in rewards_data.items():
-            if isinstance(guild_data, dict) and guild_data.get("Server ID") == int(guild_id):
-                guild_key = key
-                rewards_list = guild_data.get("Rewards", [])
-                break
+        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        rewards_list = ref.get() or []
 
         # Check for duplicates
         for item in rewards_list:
@@ -1910,15 +1876,7 @@ def api_add_shop_item(guild_id):
         rewards_list.append(new_item)
 
         # Save to database
-        guild_data = {
-            "Server ID": int(guild_id),
-            "Rewards": rewards_list
-        }
-
-        if guild_key:
-            ref.child(guild_key).set(guild_data)
-        else:
-            ref.push().set(guild_data)
+        ref.set(rewards_list)
 
         return jsonify({"success": True, "message": "Shop item added successfully"})
 
@@ -1947,17 +1905,8 @@ def api_delete_shop_item(guild_id):
             return jsonify({"success": False, "message": "Item name is required"}), 400
 
         # Get existing rewards
-        ref = db.reference("/Global Events Rewards")
-        rewards_data = ref.get() or {}
-        
-        guild_key = None
-        rewards_list = []
-        item_to_delete = None
-        
-        for key, guild_data in rewards_data.items():
-            if isinstance(guild_data, dict) and guild_data.get("Server ID") == int(guild_id):
-                guild_key = key
-                rewards_list = guild_data.get("Rewards", [])
+        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        rewards_list = ref.get() or []
                 
                 # Find and remove the item
                 for i, item in enumerate(rewards_list):
@@ -1970,12 +1919,7 @@ def api_delete_shop_item(guild_id):
             return jsonify({"success": False, "message": "Item not found"}), 404
 
         # Save updated list
-        if guild_key:
-            guild_data = {
-                "Server ID": int(guild_id),
-                "Rewards": rewards_list
-            }
-            ref.child(guild_key).set(guild_data)
+        ref.set(rewards_list)
 
         # Handle compensation if requested
         if compensate and len(item_to_delete) >= 3:
@@ -2070,16 +2014,13 @@ def api_edit_shop_item(guild_id):
                 return jsonify({"success": False, "message": "Scheduled time must be in the future"}), 400
             
             # Get current item to compare changes
-            ref = db.reference("/Global Events Rewards")
-            rewards_data = ref.get() or {}
+            ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+            rewards_list = ref.get() or []
             current_item = None
             
-            for key, guild_data in rewards_data.items():
-                if isinstance(guild_data, dict) and guild_data.get("Server ID") == int(guild_id):
-                    for item in guild_data.get("Rewards", []):
-                        if len(item) > 0 and str(item[0]) == str(old_name):
-                            current_item = item
-                            break
+            for item in rewards_list:
+                if len(item) > 0 and str(item[0]) == str(old_name):
+                    current_item = item
                     break
             
             if not current_item:
@@ -2159,17 +2100,8 @@ def api_edit_shop_item(guild_id):
                 return jsonify({"success": False, "message": "Invalid stock value"}), 400
 
         # Get existing rewards
-        ref = db.reference("/Global Events Rewards")
-        rewards_data = ref.get() or {}
-        
-        guild_key = None
-        rewards_list = []
-        item_found = False
-        
-        for key, guild_data in rewards_data.items():
-            if isinstance(guild_data, dict) and guild_data.get("Server ID") == int(guild_id):
-                guild_key = key
-                rewards_list = guild_data.get("Rewards", [])
+        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        rewards_list = ref.get() or []
                 
                 # Find and update the item
                 for i, item in enumerate(rewards_list):
@@ -2190,12 +2122,7 @@ def api_edit_shop_item(guild_id):
             return jsonify({"success": False, "message": "Item not found"}), 404
 
         # Save updated list
-        if guild_key:
-            guild_data = {
-                "Server ID": int(guild_id),
-                "Rewards": rewards_list
-            }
-            ref.child(guild_key).set(guild_data)
+        ref.set(rewards_list)
 
         return jsonify({"success": True, "message": "Shop item updated successfully"})
 
@@ -2833,16 +2760,13 @@ def api_edit_minigames_info(guild_id, channel_id):
                 raise ValueError(f"Failed to fetch channel info: {str(e)}")
         
         def fetch_current_config():
-            ref = db.reference("/Global Events System")
-            events_data = ref.get()
-            if events_data:
-                for key, val in events_data.items():
-                    if isinstance(val, dict) and str(val.get("Channel ID")) == str(channel_id):
-                        return {
-                            "frequency": val.get("Frequency", 100),
-                            "events": val.get("Events", letterList.copy()),
-                            "key": key
-                        }
+            ref = db.reference(f"/Chat Minigames System/{channel_id}")
+            val = ref.get()
+            if val and isinstance(val, dict):
+                return {
+                    "frequency": val.get("frequency", 100),
+                    "events": val.get("events", letterList.copy()),
+                }
             return None
 
         # Execute data loading calls concurrently
@@ -2981,32 +2905,17 @@ def save_minigames_config(guild_id, channel_id):
         frequency = int(request.form.get("frequency"))
         enabled_games = request.form.getlist("enabled_games[]")
 
-        # Find existing configuration in database
-        ref = db.reference("/Global Events System")
-        events_data = ref.get()
-        
-        config_key = None
-        if events_data:
-            for key, val in events_data.items():
-                if isinstance(val, dict) and str(val.get("Channel ID")) == str(channel_id):
-                    config_key = key
-                    break
-
-        if not config_key:
-            return redirect(f"/configure/{guild_id}/minigames/edit/{channel_id}?message=Configuration+not+found")
-
         # Ensure at least one game is enabled
         if not enabled_games:
             return redirect(f"/configure/{guild_id}/minigames/edit/{channel_id}?message=At+least+one+game+must+be+enabled")
 
         # Update the configuration
+        ref = db.reference(f"/Chat Minigames System/{channel_id}")
         updated_data = {
-            "Channel ID": int(channel_id),
-            "Frequency": frequency,
-            "Events": enabled_games,
+            "frequency": frequency,
+            "events": enabled_games,
         }
-
-        ref.child(config_key).set(updated_data)
+        ref.set(updated_data)
 
         return redirect(f"/configure/{guild_id}/minigames/edit/{channel_id}?message=Configuration+saved+successfully")
 
@@ -3030,7 +2939,7 @@ def api_minigames_stats(guild_id):
           return jsonify(guild), status_code
 
         # Get minigames data
-        ref = db.reference("/Global Events System")
+        ref = db.reference("/Chat Minigames System")
         events_data = ref.get()
         
         # Get guild channels to verify they belong to this guild
@@ -3052,11 +2961,11 @@ def api_minigames_stats(guild_id):
         frequency_distribution = {}
         
         if events_data:
-            for key, val in events_data.items():
-                if isinstance(val, dict) and str(val.get("Channel ID")) in guild_channel_ids:
+            for channel_id, val in events_data.items():
+                if str(channel_id) in guild_channel_ids and isinstance(val, dict):
                     total_channels += 1
-                    total_enabled_games += len(val.get("Events", []))
-                    freq = val.get("Frequency", 100)
+                    total_enabled_games += len(val.get("events", []))
+                    freq = val.get("frequency", 100)
                     freq_name = next((f["name"] for f in frequency_choices if f["value"] == str(freq)), f"Custom ({100//freq}%)")
                     frequency_distribution[freq_name] = frequency_distribution.get(freq_name, 0) + 1
 
