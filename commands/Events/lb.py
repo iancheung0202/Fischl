@@ -7,72 +7,9 @@ from firebase_admin import db
 
 from commands.Events.domain import get_rank_title
 from commands.Events.helperFunctions import get_global_leaderboard, get_guild_leaderboard
+from utils.pagination import BasePaginationView
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
-
-class LeaderboardPageView(discord.ui.View):
-    def __init__(self, pages):
-        super().__init__()
-        self.page = 0
-        self.pages = pages
-
-    @discord.ui.button(
-        style=discord.ButtonStyle.grey,
-        custom_id="super_prev_lb",
-        emoji="<:fastbackward:1351972112696479824>",
-    )
-    async def super_prev_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        self.page = 0
-        embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        style=discord.ButtonStyle.grey,
-        custom_id="prev_lb",
-        emoji="<:backarrow:1351972111010369618>",
-    )
-    async def prev_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.page > 0:
-            self.page -= 1
-        else:
-            self.page = len(self.pages) - 1
-        embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        style=discord.ButtonStyle.grey,
-        custom_id="next_lb",
-        emoji="<:rightarrow:1351972116819480616>",
-    )
-    async def next_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.page < len(self.pages) - 1:
-            self.page += 1
-        else:
-            self.page = 0
-        embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        style=discord.ButtonStyle.grey,
-        custom_id="super_next_lb",
-        emoji="<:fastforward:1351972114433048719>",
-    ) 
-    async def super_next_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        self.page = len(self.pages) - 1
-        embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
-        await interaction.response.edit_message(embed=embed)
         
 
 class Leaderboard(commands.Cog):
@@ -104,7 +41,6 @@ class Leaderboard(commands.Cog):
                 ranking = await get_guild_kingdom_leaderboard(interaction.client.pool, interaction.guild.id, limit=100)
                 ranking = [{"User ID": uid, "Level": level} for uid, level in ranking]
                 
-                # Fetch members
                 for member_data in ranking[:50]:
                     try:
                         if await interaction.guild.fetch_member(member_data["User ID"]):
@@ -113,20 +49,11 @@ class Leaderboard(commands.Cog):
                         continue
 
             elif type.value == "server_items":
-                ref_inv = db.reference("/User Events Inventory")
-                inventories = ref_inv.get() or {}
+                from commands.Events.helperFunctions import get_guild_items_leaderboard
+                ranking = await get_guild_items_leaderboard(interaction.client.pool, interaction.guild.id, limit=100)
+                ranking = [{"User ID": uid, "Count": count} for uid, count in ranking]
                 
-                potential_members = []
-                for _, val in inventories.items():
-                    uid = val["User ID"]
-                    count = sum(1 for item in val.get("Items", [])
-                                if len(item) > 3 and item[3] == interaction.guild.id)
-                    if count > 0:
-                        potential_members.append({"User ID": uid, "Count": count})
-                
-                potential_members.sort(key=lambda x: x["Count"], reverse=True)
-                
-                for member_data in potential_members[:50]:
+                for member_data in ranking[:50]:
                     uid = member_data["User ID"]
                     try:
                         if await interaction.guild.fetch_member(uid):
@@ -165,7 +92,6 @@ class Leaderboard(commands.Cog):
             mention = f"<@{row['User ID']}>"
             icon = "🏷️" if type.value=="server_items" else "🏰" if type.value=="kingdom" else MORA_EMOTE
             
-            # Add Rank Title for Kingdom
             suffix = ""
             if type.value == "kingdom":
                 rank_title = get_rank_title(val)
@@ -225,7 +151,8 @@ class Leaderboard(commands.Cog):
         for i, pg in enumerate(pages, start=1):
             pg.set_footer(text=f"Page {i} of {len(pages)}")
 
-        await interaction.followup.send(embed=pages[0], view=LeaderboardPageView(pages))
+        view = BasePaginationView(pages)
+        await interaction.followup.send(embed=pages[0], view=view)
         end_time = time.perf_counter()
         print(f"Total /lb execution time: {end_time - start_time} seconds")
         

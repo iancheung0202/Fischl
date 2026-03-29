@@ -36,7 +36,7 @@ We welcome contributions to enhance Fischl! To get started:
 3. Make your changes and commit them.
 4. Push to your fork and submit a pull request.
 
-Please ensure your code adheres to the existing style and includes appropriate tests.
+Please ensure your code adheres to the existing style.
 
 ## Support
 

@@ -6,7 +6,7 @@ import asyncio
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
-from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora
+from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -100,6 +100,7 @@ async def purchase_autocomplete(
 ):
     ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
     rewards = ref.get() or []
+    choices = []
 
     for reward in rewards:
         reward_name = reward[0]
@@ -253,61 +254,38 @@ class ConfirmPurchaseView(discord.ui.View):
             if gangRole is not None:
                 await interaction.user.add_roles(gangRole)
 
-            ref = db.reference("/User Events Inventory")
-            inventories = ref.get()
-            inv = []
-            found = False
-            foundKey = None
-            if inventories:
-                for key, val in inventories.items():
-                    if val["User ID"] == interaction.user.id:
-                        try:
-                            inv = val["Items"]
-                            for item in inv:
-                                if item[0] == roleName:
-                                    found = True
-                            foundKey = key
-                        except Exception as e:
-                            print(e)
+            # Check if user already owns this item
+            inventory = await get_user_inventory(interaction.client.pool, interaction.user.id, interaction.guild.id)
+            already_owns = any(item[0] == str(roleName) for item in inventory)
+            
+            if already_owns and cannotBuyAgain:
+                role_mention = (
+                    f"<@&{roleName}>"
+                    if isinstance(roleName, int) or roleName.isdigit()
+                    else roleName
+                )
+                embed = discord.Embed(
+                    title="Oops",
+                    description=f"You already own **{role_mention}**! This title does not allow multiple purchases. If you believe this is a mistake, contact a server admin.",
+                    color=discord.Color.red(),
+                )
+                await interaction.edit_original_response(embed=embed, view=None)
+                return
 
-                    if found and cannotBuyAgain:
-                        role_mention = (
-                            f"<@&{roleName}>"
-                            if isinstance(roleName, int) or roleName.isdigit()
-                            else roleName
-                        )
-                        embed = discord.Embed(
-                            title="Oops",
-                            description=f"You already own **{role_mention}**! This title does not allow multiple purchases. If you believe this is a mistake, contact a server admin.",
-                            color=discord.Color.red(),
-                        )
-                        await interaction.edit_original_response(embed=embed, view=None)
-                        return
-
-
-            if foundKey is not None:
-                db.reference("/User Events Inventory").child(foundKey).delete()
-
+            # Build item: [title, desc, cost]
             rewards[x].pop()
             if isinstance(rewards[x][-1], bool):
                 rewards[x].pop()
-            rewards[x].append(interaction.guild.id) 
-            rewards[x].append(
-                int(time.mktime(datetime.datetime.now().timetuple()))
-            )
-            inv.append(rewards[x])
-
-            data = {
-                interaction.user.id: {
-                    "User ID": interaction.user.id,
-                    "Items": inv,
-                }
-            }
-
-            for key, value in data.items():
-                ref.push().set(value)
+            
+            title = rewards[x][0]  # role_id or title string
+            desc = rewards[x][1]   # description
+            cost = rewards[x][2]   # cost
+            timestamp = int(time.mktime(datetime.datetime.now().timetuple()))
+            
+            # Add to inventory
+            await add_inventory_item(interaction.client.pool, interaction.user.id, interaction.guild.id, title, desc, cost, timestamp, pinned=False)
                 
-            timestamp = str(int(time.time()))
+            timestamp_str = str(int(time.time()))
             await subtractGuildMora(interaction.client.pool, interaction.user.id, itemCost, interaction.channel.id, interaction.guild.id)
             
             xp_earned = f"\n> <:PinkConfused:1204614149628498010> You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"

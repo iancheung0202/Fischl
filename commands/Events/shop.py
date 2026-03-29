@@ -8,362 +8,16 @@ from firebase_admin import db
 from discord.ui import Button, View, Select
 
 from commands.Events.helperFunctions import addMora
+from utils.pagination import BasePaginationView, BaseSortSelect
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
-    
 
-class SortSelection(discord.ui.Select):
-    def __init__(self, default="sort by cost (high to low)", initial_author=None):
-        self.initial_author = initial_author
-        options = []
-        sortOptions = [
-            "sort by cost (low to high)",
-            "sort by cost (high to low)",
-            "sort by name (a-z)",
-            "sort by name (z-a)",
-        ]
-        sortOptionsEmoji = [
-            "<:price_ascending:1346329079145562112>",
-            "<:price_descending:1346329080462577725>",
-            "<:name_ascending:1346329053455585324>",
-            "<:name_descending:1346329054634053703>",
-        ]
-        for i in sortOptions:
-            if i == default:
-                options.append(
-                    discord.SelectOption(
-                        label=i,
-                        emoji=sortOptionsEmoji[sortOptions.index(i)],
-                        default=True,
-                    )
-                )
-            else:
-                options.append(
-                    discord.SelectOption(
-                        label=i, emoji=sortOptionsEmoji[sortOptions.index(i)]
-                    )
-                )
-        super().__init__(
-            placeholder="Choose the Sorting",
-            max_values=1,
-            min_values=1,
-            options=options,
-            custom_id="sortselection",
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
-        originalList = ref.get() or []
-
-        if interaction.data["values"][0] == "sort by cost (low to high)":
-            pages = await get_shop_embeds(
-                interaction,
-                originalList,
-                len(originalList) == 0,
-                sort_by="cost",
-                reverse=False,
-            )
-        elif interaction.data["values"][0] == "sort by cost (high to low)":
-            pages = await get_shop_embeds(
-                interaction,
-                originalList,
-                len(originalList) == 0,
-                sort_by="cost",
-                reverse=True,
-            )
-        elif interaction.data["values"][0] == "sort by name (a-z)":
-            pages = await get_shop_embeds(
-                interaction,
-                originalList,
-                len(originalList) == 0,
-                sort_by="name",
-                reverse=False,
-            )
-        elif interaction.data["values"][0] == "sort by name (z-a)":
-            pages = await get_shop_embeds(
-                interaction,
-                originalList,
-                len(originalList) == 0,
-                sort_by="name",
-                reverse=True,
-            )
-        else:
-            pages = await get_shop_embeds(
-                interaction, originalList, len(originalList) == 0
-            )
-
-        if interaction.user.guild_permissions.administrator:
-            view = Panel(default=interaction.data["values"][0], pages=pages, initial_author=self.initial_author)
-        else:
-            view = SortSelectionView(default=interaction.data["values"][0], pages=pages, initial_author=self.initial_author)
-
-        view.message = await interaction.response.edit_message(embed=pages[0], view=view)
-
-class SortSelectionView(discord.ui.View):
-    def __init__(self, default="sort by price (high to low)", pages=None, initial_author=None, *, timeout=300):
-        super().__init__(timeout=timeout)
-        self.initial_author = initial_author
-        self.add_item(SortSelection(default, self.initial_author))
-        self.page = 0
-        self.pages = pages
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if self.initial_author != interaction.user:
-            await interaction.response.send_message("<:no:1036810470860013639> You are not the author of this command", ephemeral=True)
-            return False
-        return True
-
-    async def on_timeout(self) -> None:
-        for child in self.children:
-            if isinstance(child, Button) and child.style == discord.ButtonStyle.link:
-                continue
-            child.disabled = True
-            if isinstance(child, Select):
-                child.add_option(label="Disabled due to timeout", value="X", emoji="<:no:1036810470860013639>", default=True)
-        try:
-            await self.message.edit(view=self)
-        except discord.NotFound:
-            pass
-        self.stop()
-
-    @discord.ui.button(
-        emoji="<:fastbackward:1351972112696479824>", style=discord.ButtonStyle.grey, custom_id="super_prev_shop"
-    )
-    async def super_prev_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        self.page = 0
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        emoji="<:backarrow:1351972111010369618>", style=discord.ButtonStyle.grey, custom_id="prev_shop"
-    )
-    async def prev_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.page > 0:
-            self.page -= 1
-        else:
-            self.page = len(self.pages) - 1
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        emoji="<:rightarrow:1351972116819480616>", style=discord.ButtonStyle.grey, custom_id="next_shop"
-    )
-    async def next_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.page < len(self.pages) - 1:
-            self.page += 1
-        else:
-            self.page = 0
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        emoji="<:fastforward:1351972114433048719>", style=discord.ButtonStyle.grey, custom_id="super_next_shop"
-    )
-    async def super_next_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        self.page = len(self.pages) - 1
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
-
-class Panel(discord.ui.View):
-    def __init__(self, default="sort by price (high to low)", pages=None, initial_author=None):
-        super().__init__(timeout=300)
-        self.initial_author = initial_author
-        self.add_item(SortSelection(default, self.initial_author))
-        self.page = 0
-        self.pages = pages
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if self.initial_author != interaction.user:
-            await interaction.response.send_message("<:no:1036810470860013639> You are not the author of this command", ephemeral=True)
-            return False
-        return True
-
-    async def on_timeout(self) -> None:
-        for child in self.children:
-            if isinstance(child, Button) and child.style == discord.ButtonStyle.link:
-                continue
-            child.disabled = True
-            if isinstance(child, Select):
-                 child.add_option(label="Disabled due to timeout", value="X", emoji="<:no:1036810470860013639>", default=True)
-        try:
-            await self.message.edit(view=self)
-        except discord.NotFound:
-            pass
-        self.stop()
-
-    @discord.ui.button(
-        label="Add Reward",
-        style=discord.ButtonStyle.green,
-        custom_id="addreward",
-        row=0,
-    )
-    async def add_reward(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        addRewardModel = AddRewardModel(title=f"Add a Custom Reward")
-        if interaction.user.guild_permissions.administrator:
-            await interaction.response.send_modal(addRewardModel)
-            response = await addRewardModel.wait()
-            pages = addRewardModel.pages
-            if pages is not None:
-                if interaction.user.guild_permissions.administrator:
-                    view = Panel(pages=pages, initial_author=interaction.user)
-                else:
-                    view = SortSelectionView(pages=pages, initial_author=interaction.user)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await addRewardModel.on_submit_interaction.response.send_message(
-                embed=addRewardModel.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
-            )
-
-    @discord.ui.button(
-        label="Remove Reward",
-        style=discord.ButtonStyle.red,
-        custom_id="removereward",
-        row=0,
-    )
-    async def remove_reward(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        removeRewardModel = RemoveRewardModel(title=f"Remove a Custom Reward")
-        if interaction.user.guild_permissions.administrator:
-            await interaction.response.send_modal(removeRewardModel)
-            response = await removeRewardModel.wait()
-            pages = removeRewardModel.pages
-            if pages is not None:
-                if interaction.user.guild_permissions.administrator:
-                    view = Panel(pages=pages, initial_author=interaction.user)
-                else:
-                    view = SortSelectionView(pages=pages, initial_author=interaction.user)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await removeRewardModel.on_submit_interaction.response.send_message(
-                embed=removeRewardModel.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
-            )
-
-    @discord.ui.button(
-        label="<<",
-        style=discord.ButtonStyle.blurple,
-        custom_id="super_prev_shop_admin",
-        row=1,
-    )
-    async def super_prev_button_admin(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        self.page = 0
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-        
-    @discord.ui.button(
-        label="Edit Cost",
-        style=discord.ButtonStyle.grey,
-        custom_id="editcost",
-        row=0,
-    )
-    async def edit_cost(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.guild_permissions.administrator:
-            edit_cost_model = EditCostModel()
-            await interaction.response.send_modal(edit_cost_model)
-            response = await edit_cost_model.wait()
-            pages = edit_cost_model.pages
-            if pages is not None:
-                if interaction.user.guild_permissions.administrator:
-                    view = Panel(pages=pages, initial_author=interaction.user)
-                else:
-                    view = SortSelectionView(pages=pages, initial_author=interaction.user)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await edit_cost_model.on_submit_interaction.response.send_message(
-                embed=edit_cost_model.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
-            )
-        
-    @discord.ui.button(
-        label="Edit Stock",
-        style=discord.ButtonStyle.grey,
-        custom_id="editstock",
-        row=0,
-    )
-    async def edit_stock(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.guild_permissions.administrator:
-            edit_stock_model = EditStockModel()
-            await interaction.response.send_modal(edit_stock_model)
-            response = await edit_stock_model.wait()
-            pages = edit_stock_model.pages
-            if pages is not None:
-                if interaction.user.guild_permissions.administrator:
-                    view = Panel(pages=pages, initial_author=interaction.user)
-                else:
-                    view = SortSelectionView(pages=pages, initial_author=interaction.user)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await edit_stock_model.on_submit_interaction.response.send_message(
-                embed=edit_stock_model.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
-            )
-
-    @discord.ui.button(
-        label="<", style=discord.ButtonStyle.blurple, custom_id="prev_shop_admin", row=1
-    )
-    async def prev_button_admin(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.page > 0:
-            self.page -= 1
-        else:
-            self.page = len(self.pages) - 1
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        label=">", style=discord.ButtonStyle.blurple, custom_id="next_shop_admin", row=1
-    )
-    async def next_button_admin(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.page < len(self.pages) - 1:
-            self.page += 1
-        else:
-            self.page = 0
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
-    @discord.ui.button(
-        label=">>",
-        style=discord.ButtonStyle.blurple,
-        custom_id="super_next_shop_admin",
-        row=1,
-    )
-    async def super_next_button_admin(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        self.page = len(self.pages) - 1
-        embed = self.pages[self.page]
-        await interaction.response.edit_message(embed=embed)
-
+SHOP_SORT_OPTIONS = [
+    ("sort by cost (low to high)", "<:price_ascending:1346329079145562112>"),
+    ("sort by cost (high to low)", "<:price_descending:1346329080462577725>"),
+    ("sort by name (a-z)", "<:name_ascending:1346329053455585324>"),
+    ("sort by name (z-a)", "<:name_descending:1346329054634053703>"),
+]
 
 async def get_shop_embeds(
     interaction, item_list, empty_condition, sort_by="cost", reverse=True
@@ -431,6 +85,144 @@ async def get_shop_embeds(
             )
 
     return pages
+
+class SortSelection(BaseSortSelect):
+    def __init__(self, default="sort by cost (high to low)", initial_author=None):
+        super().__init__(SHOP_SORT_OPTIONS, default, initial_author, custom_id="sortselection")
+
+    async def callback(self, interaction: discord.Interaction):
+        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        originalList = ref.get() or []
+
+        if interaction.data["values"][0] == "sort by cost (low to high)":
+            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=False)
+        elif interaction.data["values"][0] == "sort by cost (high to low)":
+            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=True)
+        elif interaction.data["values"][0] == "sort by name (a-z)":
+            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="name", reverse=False)
+        elif interaction.data["values"][0] == "sort by name (z-a)":
+            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="name", reverse=True)
+        else:
+            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
+
+        view = ShopView(default=interaction.data["values"][0], pages=pages, initial_author=self.initial_author, is_admin=interaction.user.guild_permissions.administrator)
+        view.message = await interaction.response.edit_message(embed=pages[0], view=view)
+
+
+class ShopView(BasePaginationView):
+    def __init__(self, pages=None, initial_author=None, default="sort by cost (high to low)", is_admin=False, *, timeout=300):
+        self.is_admin = is_admin
+        super().__init__(pages=pages, initial_author=initial_author, timeout=timeout)
+        self.add_item(SortSelection(default, initial_author))
+
+    def _update_button_states(self) -> None:
+        super()._update_button_states()
+        
+        if not self.is_admin:
+            admin_buttons = ("addreward", "removereward", "editcost", "editstock")
+            for child in list(self.children):
+                if isinstance(child, discord.ui.Button) and child.custom_id in admin_buttons:
+                    self.remove_item(child)
+
+    @discord.ui.button(
+        label="Add Reward",
+        style=discord.ButtonStyle.green,
+        custom_id="addreward",
+        row=1,
+    )
+    async def add_reward(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        addRewardModel = AddRewardModel(title=f"Add a Custom Reward")
+        if interaction.user.guild_permissions.administrator:
+            await interaction.response.send_modal(addRewardModel)
+            response = await addRewardModel.wait()
+            pages = addRewardModel.pages
+            if pages is not None:
+                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
+                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
+            await addRewardModel.on_submit_interaction.response.send_message(
+                embed=addRewardModel.update, ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+            )
+
+    @discord.ui.button(
+        label="Remove Reward",
+        style=discord.ButtonStyle.red,
+        custom_id="removereward",
+        row=1,
+    )
+    async def remove_reward(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        removeRewardModel = RemoveRewardModel(title=f"Remove a Custom Reward")
+        if interaction.user.guild_permissions.administrator:
+            await interaction.response.send_modal(removeRewardModel)
+            response = await removeRewardModel.wait()
+            pages = removeRewardModel.pages
+            if pages is not None:
+                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
+                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
+            await removeRewardModel.on_submit_interaction.response.send_message(
+                embed=removeRewardModel.update, ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+            )
+
+    @discord.ui.button(
+        label="Edit Cost",
+        style=discord.ButtonStyle.grey,
+        custom_id="editcost",
+        row=1,
+    )
+    async def edit_cost(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if interaction.user.guild_permissions.administrator:
+            edit_cost_model = EditCostModel()
+            await interaction.response.send_modal(edit_cost_model)
+            response = await edit_cost_model.wait()
+            pages = edit_cost_model.pages
+            if pages is not None:
+                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
+                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
+            await edit_cost_model.on_submit_interaction.response.send_message(
+                embed=edit_cost_model.update, ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+            )
+        
+    @discord.ui.button(
+        label="Edit Stock",
+        style=discord.ButtonStyle.grey,
+        custom_id="editstock",
+        row=1,
+    )
+    async def edit_stock(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if interaction.user.guild_permissions.administrator:
+            edit_stock_model = EditStockModel()
+            await interaction.response.send_modal(edit_stock_model)
+            response = await edit_stock_model.wait()
+            pages = edit_stock_model.pages
+            if pages is not None:
+                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
+                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
+            await edit_stock_model.on_submit_interaction.response.send_message(
+                embed=edit_stock_model.update, ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+            )
 
 
 class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
@@ -591,63 +383,44 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
         ref.set(originalList)
 
         if str(self.remove).lower() == "yes":
-            ref = db.reference("/User Events Inventory")
-            inventories = ref.get()
-
-            if inventories:
-                for key, val in inventories.items():
+            async with interaction.client.pool.acquire() as conn:
+                affected_users = await conn.fetch("""
+                    SELECT uid, SUM(cost) as total_refund
+                    FROM minigame_inventory
+                    WHERE title = $1 AND gid = $2
+                    GROUP BY uid
+                """, str(self.name), interaction.guild.id)
+            
+            async with interaction.client.pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM minigame_inventory WHERE title = $1 AND gid = $2",
+                    str(self.name), interaction.guild.id
+                )
+            
+            for user_record in affected_users:
+                uid = user_record['uid']
+                total_refund = user_record['total_refund'] or 0
+                
+                try:
+                    member = await interaction.guild.fetch_member(uid)
+                    
+                    if total_refund > 0:
+                        text, addedMora = await addMora(interaction.client.pool, uid, total_refund, 1, interaction.guild.id, interaction.client)
+                        
+                        await member.send(
+                            f"**Notice:** One or more items from your guild inventory in **{interaction.guild.name}** have been deleted from the shop. The total original cost of {MORA_EMOTE} `{text}` has been refunded to your inventory."
+                        )
+                    
                     try:
-                        inv = [
-                            item
-                            for item in val["Items"]
-                            if not (
-                                item[3] == interaction.guild.id
-                                and item[0] == str(self.name)
-                            )
-                        ]
-
-                        if len(inv) < len(val["Items"]): 
-                            db.reference("/User Events Inventory").child(key).delete()
-                            if len(inv) != 0:
-                                data = {
-                                    interaction.user.id: {
-                                        "User ID": interaction.user.id,
-                                        "Items": inv,
-                                    }
-                                }
-                                for key, value in data.items():
-                                    ref.push().set(value)
-
-                            try:
-                                member = await interaction.guild.fetch_member(
-                                    int(val["User ID"])
-                                )
-
-                                total_refund = sum(
-                                    int(i[2]) for i in val["Items"] if i not in inv
-                                )
-                                text, addedMora = await addMora(interaction.client.pool, val["User ID"], total_refund, 1, interaction.guild.id, interaction.client)
-                                
-                                await member.send(
-                                    f"**Notice:** One or more items from your guild inventory in **{interaction.guild.name}** have been deleted from the shop. The total original cost of {MORA_EMOTE} `{text}` has been refunded to your inventory."
-                                )
-
-                                try:
-                                    gangRole = interaction.guild.get_role(
-                                        int(item[0])
-                                    )  
-                                except Exception:
-                                    gangRole = None
-
-                                if (
-                                    gangRole is not None
-                                    and gangRole in interaction.user.roles
-                                ):
-                                    await member.remove_roles(gangRole)
-                            except Exception:
-                                pass
-                    except Exception:
+                        role = interaction.guild.get_role(int(self.name))
+                        if role is not None and role in member.roles:
+                            await member.remove_roles(role)
+                    except (ValueError, TypeError):
                         pass
+                except discord.NotFound:
+                    pass
+                except Exception:
+                    pass
 
         self.pages = await get_shop_embeds(interaction, originalList, originalList == 0)
 
@@ -949,9 +722,9 @@ class Shop(commands.Cog):
             )
 
             if interaction.user.guild_permissions.administrator:
-                view = Panel(pages=pages, initial_author=interaction.user)
+                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
             else:
-                view = SortSelectionView(pages=pages, initial_author=interaction.user)
+                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=False)
 
             view.message = await interaction.followup.send(embed=pages[0], view=view)
         else:
@@ -961,7 +734,7 @@ class Shop(commands.Cog):
                 colour=0xFFFF00,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         
             
 async def setup(bot: commands.Bot) -> None:

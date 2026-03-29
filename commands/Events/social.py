@@ -6,6 +6,7 @@ from discord.ext import commands
 from discord import app_commands
 from firebase_admin import db
 from discord.ui import Button, View
+from commands.Events.quests import update_quest
 
 class Hug(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -16,12 +17,6 @@ class Hug(commands.Cog):
         gifs = [f for f in os.listdir(self.hug_gifs_path) 
                if f.endswith(('.gif', '.png', '.jpg', '.jpeg'))]
         return random.choice(gifs) if gifs else None
-
-    # def _update_hug_count(self, hugger_id: int, target_id: int):
-    #     ref = db.reference(f'/Hugs/{target_id}/{hugger_id}')
-    #     count = ref.get() or 0
-    #     ref.set(count + 1)
-    #     return count + 1
 
     async def _update_hug_count(self, hugger_id: int, target_id: int) -> int:
         async with self.bot.pool.acquire() as conn:
@@ -73,9 +68,9 @@ class Hug(commands.Cog):
                 item.disabled = True
             
             await interaction.channel.send(content=self.original_hugger.mention, embed=embed, file=file)
-                
             await interaction.response.send_message(content="Hug sent back!", ephemeral=True)
             await self.message.edit(view=self)
+            await update_quest(self.target.id, interaction.guild.id, interaction.channel.id, {"hug_user": 1}, self.cog.bot)
 
     @app_commands.command(
         name="hug",
@@ -123,54 +118,8 @@ class Hug(commands.Cog):
         await interaction.channel.send(content=user.mention, embed=embed, file=file, view=view)
         await interaction.response.send_message(content="Hug sent!", ephemeral=True)
         view.message = await interaction.original_response()
+        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"hug_user": 1}, self.bot)
 
-    
-    @app_commands.command(
-        name="migrate",
-        description="Migrate hug data from Firebase to PostgreSQL"
-    )
-    async def migrate(
-        self, 
-        interaction: discord.Interaction, 
-    ) -> None:
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            ref = db.reference('/Hugs')
-            data = ref.get()
-            
-            if not data:
-                print("DEBUG: No data found in Firebase.")
-                await interaction.followup.send("No data found in Firebase.")
-                return
-
-            print(f"DEBUG: Fetched {len(data)} records from Firebase.")
-            
-            migrated_count = 0
-            async with self.bot.pool.acquire() as conn:
-                async with conn.transaction():
-                    for target_id, huggers in data.items():
-                        for hugger_id, count in huggers.items():
-                            try:
-                                await conn.execute(
-                                    """
-                                    INSERT INTO hugs (target_id, hugger_id, count)
-                                    VALUES ($1, $2, $3)
-                                    ON CONFLICT (target_id, hugger_id)
-                                    DO UPDATE SET count = $3
-                                    """,
-                                    int(target_id), int(hugger_id), int(count)
-                                )
-                                migrated_count += 1
-                            except Exception as insert_error:
-                                print(f"DEBUG: Error inserting {target_id}, {hugger_id}: {insert_error}")
-
-            print(f"DEBUG: Migration finished. Count: {migrated_count}")
-            await interaction.followup.send(f"Successfully migrated {migrated_count} hug records from Firebase to PostgreSQL.")
-            
-        except Exception as e:
-            await interaction.followup.send(f"An error occurred during migration: {e}")
-        
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Hug(bot))

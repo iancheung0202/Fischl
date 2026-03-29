@@ -230,7 +230,6 @@ async def get_user_mora_history(
         rows = await conn.fetch(query, *params)
     return [(row['timestamp'], row['count']) for row in rows]
 
-
 async def get_mora_stats(pool: asyncpg.Pool, uid: int, gid: int) -> dict:
     async with pool.acquire() as conn:
         # Get total mora
@@ -317,7 +316,6 @@ async def addMora(pool: asyncpg.Pool, userID: int, addedMora: int, channelID: in
         return f"{baseMora} + {addedMora - baseMora} ({boost}% boost)", addedMora
     return abs(addedMora), addedMora
 
-
 async def subtractGuildMora(pool: asyncpg.Pool, userID: int, subtractMora: int, channelID: int, guildID: int) -> int | bool:
     total_available = await get_guild_mora(pool, userID, guildID)
 
@@ -334,6 +332,85 @@ async def subtractGuildMora(pool: asyncpg.Pool, userID: int, subtractMora: int, 
         """, userID, guildID, channelID, timestamp, -subtractMora)
 
     return total_available - subtractMora
+
+# Inventory helper functions
+
+async def get_user_inventory(pool: asyncpg.Pool, uid: int, gid: int, exclude_cost: int = None) -> list:
+    if exclude_cost is not None:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT title, description, cost, gid, timestamp, pinned FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND cost != $3 ORDER BY timestamp ASC",
+                uid, gid, exclude_cost
+            )
+    else:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT title, description, cost, gid, timestamp, pinned FROM minigame_inventory WHERE uid = $1 AND gid = $2 ORDER BY timestamp ASC",
+                uid, gid
+            )
+    return [(row['title'], row['description'], row['cost'], row['gid'], row['timestamp'], row['pinned']) for row in rows]
+
+async def count_user_inventory(pool: asyncpg.Pool, uid: int, gid: int, exclude_cost: int = None) -> int:
+    if exclude_cost is not None:
+        async with pool.acquire() as conn:
+            val = await conn.fetchval(
+                "SELECT COUNT(*) FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND cost != $3",
+                uid, gid, exclude_cost
+            )
+    else:
+        async with pool.acquire() as conn:
+            val = await conn.fetchval(
+                "SELECT COUNT(*) FROM minigame_inventory WHERE uid = $1 AND gid = $2",
+                uid, gid
+            )
+    return val or 0
+
+async def add_inventory_item(pool: asyncpg.Pool, uid: int, gid: int, title, description: str, cost: int, timestamp: int, pinned: bool = False) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO minigame_inventory (uid, gid, title, description, cost, timestamp, pinned) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            uid, gid, str(title), description, cost, timestamp, pinned
+        )
+
+async def get_pinned_item(pool: asyncpg.Pool, uid: int, gid: int) -> Optional[str]:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT title FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND pinned = true LIMIT 1",
+            uid, gid
+        )
+    return val
+
+async def unpin_all_items(pool: asyncpg.Pool, uid: int, gid: int) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_inventory SET pinned = false WHERE uid = $1 AND gid = $2",
+            uid, gid
+        )
+
+async def pin_item(pool: asyncpg.Pool, uid: int, gid: int, title) -> bool:
+    await unpin_all_items(pool, uid, gid)
+    
+    async with pool.acquire() as conn:
+        # Pin all items with this title
+        result = await conn.execute(
+            "UPDATE minigame_inventory SET pinned = true WHERE uid = $1 AND gid = $2 AND title = $3",
+            uid, gid, str(title)
+        )
+        return result != "UPDATE 0"
+
+async def get_guild_items_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = 50) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, COUNT(*) as item_count
+            FROM minigame_inventory
+            WHERE gid = $1
+            GROUP BY uid
+            ORDER BY item_count DESC
+            LIMIT $2
+        """, gid, limit)
+    return [(row['uid'], row['item_count']) for row in rows]
+
+# Misc helper functions
 
 def get_minigame_list(channel_id):
     """Get list of minigames enabled in a channel."""
@@ -359,15 +436,8 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
     milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
     milestones = milestones_ref.get() or []
     
-    inventory_ref = db.reference("/User Events Inventory")
-    inventories = inventory_ref.get()
-    user_items = []
-    if inventories:
-        for key, val in inventories.items():
-            if val["User ID"] == user_id:
-                user_items = [item[0] for item in val.get("Items", []) 
-                              if len(item) > 3 and item[3] == guild_id]
-                break
+    user_inventory = await get_user_inventory(pool, user_id, guild_id)
+    user_items = [item[0] for item in user_inventory]  # item[0] is title
     
     for milestone in milestones:
         if not isinstance(milestone, list) or len(milestone) < 3:
@@ -379,27 +449,8 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
         if reward in user_items or total_mora < threshold:
             continue
         
-        item_data = [
-            reward, 
-            description,
-            0,  # cost is 0 because it's a milestone
-            guild_id,
-            int(time.time())
-        ]
-        
-        found = False
-        if inventories:
-            for key, val in inventories.items():
-                if val["User ID"] == user_id:
-                    items = val.get("Items", [])
-                    items.append(item_data)
-                    inventory_ref.child(key).update({"Items": items})
-                    found = True
-                    break
-        
-        if not found:
-            data = {"User ID": user_id, "Items": [item_data]}
-            inventory_ref.push().set(data)
+        # Award the milestone by adding it to inventory (cost = 0 for milestones)
+        await add_inventory_item(pool, user_id, guild_id, reward, description, 0, int(time.time()), pinned=False)
         
         if isinstance(reward, int) or str(reward).isdigit():
             guild = client.get_guild(guild_id)

@@ -1246,82 +1246,100 @@ def profile_inventory(guild_id):
         profile_card_html = ""
     
     # Get inventory data using the same structure as mora.py
-
-    ref = db.reference("/User Events Inventory")
-    inventories = ref.get() or {}
-    
     inv_content = "No shop items purchased yet"
     MAX_INV_LENGTH = 1024
     EXTRA_LENGTH = 15
     
-    if inventories:
-        for key, val in inventories.items():
-            if val.get("User ID") == int(user_id):
-                # Process items like in Discord bot
-                guild_inventories = []
-                items = val.get("Items", [])
+    try:
+        # Query PostgreSQL for user's inventory items (excluding milestones with cost=0)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT title, cost, gid
+            FROM minigame_inventory
+            WHERE uid = %s AND gid = %s AND cost != 0
+            ORDER BY title ASC
+        """, (int(user_id), int(guild_id)))
+        
+        items = cursor.fetchall()
+        
+        if items:
+            guild_inventories = []
+            seen_items = set()
+            
+            for item in items:
+                item_name = item[0]
                 
-                for item in items:
-                    # Skip milestones (cost=0) and items not for this guild
-                    if len(item) > 3 and item[2] != 0 and item[3] == int(guild_id):
-                        item_name = item[0]  # First element is the name
-                        # Count duplicates
-                        count = sum(1 for i in items if len(i) > 3 and i[0] == item_name and i[3] == int(guild_id))
-                        
-                        # Only add once per unique item
-                        if not any(item_name in existing for existing in guild_inventories):
-                            if count == 1:
-                                guild_inventories.append(f"<b>{item_name}</b>")
-                            else:
-                                guild_inventories.append(f"<b>{item_name}</b> <code>(x{count})</code>")
-
-                if guild_inventories:
-                    # Make a list
-                    full_text = "<ul style='list-style-type: disc; padding-left: 1.2em;'>"
-                    for inv in guild_inventories:
-                        full_text += f"<li>{inv}</li>"
-                    full_text += "</ul>"
-                    if len(full_text) <= MAX_INV_LENGTH - EXTRA_LENGTH:
-                        inv_content = full_text
+                # Count duplicates for this item
+                count = sum(1 for i in items if i[0] == item_name)
+                
+                # Only add once per unique item
+                if item_name not in seen_items:
+                    seen_items.add(item_name)
+                    if count == 1:
+                        guild_inventories.append(f"<b>{item_name}</b>")
                     else:
-                        # Calculate how many items we can fit
-                        truncated_text = ""
-                        included_items = 0
-                        for item in guild_inventories:
-                            test_text = f"{truncated_text} • {item}" if truncated_text else item
-                            if len(test_text) + EXTRA_LENGTH <= MAX_INV_LENGTH:
-                                truncated_text = test_text
-                                included_items += 1
-                            else:
-                                break
-                        
-                        remaining_count = len(guild_inventories) - included_items
-                        inv_content = f"{truncated_text} (+{remaining_count} more)"
-                break
+                        guild_inventories.append(f"<b>{item_name}</b> <code>(x{count})</code>")
+            
+            if guild_inventories:
+                # Make a list
+                full_text = "<ul style='list-style-type: disc; padding-left: 1.2em;'>"
+                for inv in guild_inventories:
+                    full_text += f"<li>{inv}</li>"
+                full_text += "</ul>"
+                if len(full_text) <= MAX_INV_LENGTH - EXTRA_LENGTH:
+                    inv_content = full_text
+                else:
+                    # Calculate how many items we can fit
+                    truncated_text = ""
+                    included_items = 0
+                    for item in guild_inventories:
+                        test_text = f"{truncated_text} • {item}" if truncated_text else item
+                        if len(test_text) + EXTRA_LENGTH <= MAX_INV_LENGTH:
+                            truncated_text = test_text
+                            included_items += 1
+                        else:
+                            break
+                    
+                    remaining_count = len(guild_inventories) - included_items
+                    inv_content = f"{truncated_text} (+{remaining_count} more)"
+        
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error fetching inventory from PostgreSQL: {e}")
+        inv_content = "No shop items purchased yet"
     
     # Get milestones like in Discord bot
     milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
     milestones = milestones_ref.get() or []
     
-    # Fetch user's earned milestones
+    # Fetch user's earned milestones from PostgreSQL
     user_milestones = []
-    if inventories:
-        for key, val in inventories.items():
-            if val.get("User ID") == int(user_id):
-                for item in val.get("Items", []):
-                    # Milestones are identified by cost=0 and matching guild ID
-                    if len(item) > 3 and item[2] == 0 and item[3] == int(guild_id):
-                        # Find corresponding milestone info
-                        milestone_name = item[0]
-                        for milestone in milestones:
-                            if isinstance(milestone, list) and len(milestone) >= 2:
-                                if milestone[1] == milestone_name:  # milestone[1] is reward
-                                    user_milestones.append({
-                                        "threshold": milestone[2] if len(milestone) > 2 else 0,  # milestone[2] is threshold
-                                        "reward": milestone[1]
-                                    })
-                                    break
-                break
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT title
+            FROM minigame_inventory
+            WHERE uid = %s AND gid = %s AND cost = 0
+        """, (int(user_id), int(guild_id)))
+        
+        user_milestone_titles = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        
+        # Match user's earned milestones with milestone config
+        for milestone in milestones:
+            if isinstance(milestone, list) and len(milestone) >= 3:
+                milestone_reward = milestone[1]  # milestone[1] is reward
+                if milestone_reward in user_milestone_titles:
+                    user_milestones.append({
+                        "threshold": milestone[2],  # milestone[2] is threshold
+                        "reward": milestone_reward
+                    })
+    except Exception as e:
+        print(f"Error fetching milestones from PostgreSQL: {e}")
     
     # Format milestones
     milestones_content = "No milestones earned yet"

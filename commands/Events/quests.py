@@ -6,7 +6,7 @@ import random
 from firebase_admin import db
 from discord.ext import commands
 
-QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests", "earn_big_mora", "gift_mora_unique", "summon_minigame", "customize_profile", "purchase_items", "unlock_drop_packs"]
+QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests", "earn_big_mora", "gift_mora_unique", "summon_minigame", "customize_profile", "purchase_items", "unlock_drop_packs", "upgrade_buildings", "gift_mora_poorer", "hug_user", "win_minigames_under_5s"]
 QUEST_GOAL_PRESETS = {
     "participate_minigames": {
         "daily": [4, 5],
@@ -64,6 +64,26 @@ QUEST_GOAL_PRESETS = {
     "unlock_drop_packs": {
         "weekly": [1],
         "monthly": [2, 3]
+    },
+    "upgrade_buildings": {
+        "daily": [1],
+        "weekly": [3, 4],
+        "monthly": [8, 10]
+    },
+    "gift_mora_poorer": {
+        "daily": [1, 2],
+        "weekly": [3, 5],
+        "monthly": [10, 15]
+    },
+    "hug_user": {
+        "daily": [2, 3],
+        "weekly": [5, 7],
+        "monthly": [15, 20]
+    },
+    "win_minigames_under_5s": {
+        "daily": [1, 2],
+        "weekly": [4, 5],
+        "monthly": [12, 15]
     }
 }
 QUEST_DESCRIPTIONS = {
@@ -76,9 +96,13 @@ QUEST_DESCRIPTIONS = {
     "earn_big_mora": "Earn 10k+ Mora in one go",
     "gift_mora_unique": "Gift Mora to different users",
     "summon_minigame": "</summon:1382148690155802656> a minigame",
-    "customize_profile": "</customize:1339721187953082544> your profile",
-    "purchase_items": "Purchase </shop:1345883946105311383> items with </buy:1345883946105311382>",
-    "unlock_drop_packs": "Unlock Mora Drop packs"
+    "customize_profile": "</customize:1486970575372025978> your profile",
+    "purchase_items": "Purchase </shop:1486845290077225136> items with </buy:1487698743255105696>",
+    "unlock_drop_packs": "Unlock Mora Drop packs",
+    "upgrade_buildings": "Upgrade your Kingdom buildings 🏰",
+    "gift_mora_poorer": "Gift Mora to users with less Mora",
+    "hug_user": "Hug other users",
+    "win_minigames_under_5s": "Win minigames in under 5 seconds"
 }
 QUEST_XP_REWARDS = {
     "daily": 250,

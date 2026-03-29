@@ -8,6 +8,7 @@ from firebase_admin import db
 from PIL import Image, ImageEnhance
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.quests import update_quest
+from commands.Events.helperFunctions import get_user_inventory, pin_item, unpin_all_items
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -15,51 +16,52 @@ async def pin_title_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference("/User Events Inventory")
-    inventories = ref.get()
+    try:
+        items = await get_user_inventory(interaction.client.pool, interaction.user.id, interaction.guild.id)
+    except Exception as e:
+        print(f"Error fetching inventory: {e}")
+        items = []
+    
     items_set = set()
     items_list = []
 
-    if inventories:
-        for key, val in inventories.items():
-            if val["User ID"] == interaction.user.id:
-                try:
-                    for item in val["Items"]:
-                        role = None
-                        try:
-                            role = interaction.guild.get_role(int(item[0]))
-                        except Exception:
-                            pass
-                        if (
-                            len(item) > 3
-                            and item[3] == interaction.guild.id
-                            and item[2] != 0
-                            and (
-                                current.lower() in str(item[0]).lower()
-                                or (
-                                    isinstance(item[0], int)
-                                    or item[0].isdigit()
-                                    and role
-                                    and current.lower() in role.name.lower()
-                                )
-                            )
-                        ):
-                            if item[0] not in items_set:
-                                items_set.add(item[0])
-                                if isinstance(item[0], int) or str(item[0]).isdigit():
-                                    items_list.append(
-                                        app_commands.Choice(
-                                            name=f"Role: {role.name}", value=item[0]
-                                        )
-                                    )
-                                else:
-                                    items_list.append(
-                                        app_commands.Choice(
-                                            name=f"Title: {item[0]}", value=item[0]
-                                        )
-                                    )
-                except Exception as e:
-                    print(e)
+    for item in items:
+        # item = (title, desc, cost, gid, timestamp, pinned)
+        title = item[0]
+        cost = item[2]
+        
+        # Skip free items and filter to this guild
+        if cost == 0:
+            continue
+        
+        # Try to get role name if title is numeric (role ID)
+        role = None
+        try:
+            role = interaction.guild.get_role(int(title))
+        except Exception:
+            pass
+        
+        # Check if title matches current search
+        if (
+            current.lower() in str(title).lower()
+            or (role and current.lower() in role.name.lower())
+        ):
+            if title not in items_set:
+                items_set.add(title)
+                if isinstance(title, int) or str(title).isdigit():
+                    items_list.append(
+                        app_commands.Choice(
+                            name=f"Role: {role.name}" if role else f"Role: {title}", 
+                            value=str(title)
+                        )
+                    )
+                else:
+                    items_list.append(
+                        app_commands.Choice(
+                            name=f"Title: {title}", 
+                            value=str(title)
+                        )
+                    )
 
     items_list.insert(
         0, app_commands.Choice(name=f"Unpin my current item only", value="unpin")
@@ -343,36 +345,12 @@ class Customize(commands.Cog):
              await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"customize_profile": 1}, interaction.client)
 
     async def process_pin_item(self, interaction: discord.Interaction, pin_item: str):
-        """Handle pin/unpin operations and return success status"""
-        ref = db.reference("/User Events Inventory")
-        inventories = ref.get()
-        updated = False
-        unpinned = None
-
-        if inventories:
-            for key, val in inventories.items():
-                if val["User ID"] == interaction.user.id:
-                    inv = val["Items"].copy()
-                    
-                    for i, item in enumerate(inv):
-                        if (item[3] == interaction.guild.id and 
-                            len(item) > 5 and 
-                            item[5] == "Pinned"):
-                            inv[i] = item[:-1]  # Remove "Pinned"
-                            unpinned = item[0]
-                    
-                    # Pin new item
-                    if pin_item != "unpin":
-                        for i, item in enumerate(inv):
-                            if (item[3] == interaction.guild.id and 
-                                item[0] == str(pin_item)):
-                                inv[i] = item + ["Pinned"]
-                                updated = True
-                    
-                    ref.child(key).update({"Items": inv})
-                    break
-
+        pool = interaction.client.pool
+        
         if pin_item == "unpin":
+            from commands.Events.helperFunctions import get_pinned_item
+            unpinned = await get_pinned_item(pool, interaction.user.id, interaction.guild.id)
+            
             if unpinned is None:
                 await interaction.followup.send(
                     embed=discord.Embed(
@@ -382,8 +360,10 @@ class Customize(commands.Cog):
                     )
                 )
                 return True
+            
+            await unpin_all_items(pool, interaction.user.id, interaction.guild.id)
                 
-            role_mention = f"<@&{unpinned}>" if unpinned.isdigit() else unpinned
+            role_mention = f"<@&{unpinned}>" if str(unpinned).isdigit() else unpinned
             await interaction.followup.send(
                 embed=discord.Embed(
                     title="📌 Item Unpinned",
@@ -393,8 +373,11 @@ class Customize(commands.Cog):
             )
             return True
         else:
-            if not updated:
-                role_mention = f"<@&{pin_item}>" if pin_item.isdigit() else pin_item
+            inventory = await get_user_inventory(pool, interaction.user.id, interaction.guild.id)
+            exists = any(item[0] == str(pin_item) for item in inventory)
+            
+            if not exists:
+                role_mention = f"<@&{pin_item}>" if str(pin_item).isdigit() else pin_item
                 await interaction.followup.send(
                     embed=discord.Embed(
                         title="<:no:1036810470860013639> Invalid Item",
@@ -403,8 +386,11 @@ class Customize(commands.Cog):
                     )
                 )
                 return False
+            
+            from commands.Events.helperFunctions import pin_item as pin_item_func
+            await pin_item_func(pool, interaction.user.id, interaction.guild.id, pin_item)
                 
-            role_mention = f"<@&{pin_item}>" if pin_item.isdigit() else pin_item
+            role_mention = f"<@&{pin_item}>" if str(pin_item).isdigit() else pin_item
             await interaction.followup.send(
                 embed=discord.Embed(
                     title="📌 Item Pinned",

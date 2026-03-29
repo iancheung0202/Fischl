@@ -43,8 +43,8 @@ async def upgrade_building(user_id, guild_id, building_key, interaction):
     
     await increment_building_level(pool, guild_id, user_id, building_key)
     
-    # Note: realm_* fields (realm_chest_bonus_chance, realm_xp_boost, realm_encore_chance)
-    # are now calculated from building levels, not stored separately
+    from commands.Events.quests import update_quest
+    await update_quest(user_id, guild_id, interaction.channel.id, {"upgrade_buildings": 1}, interaction.client)
         
     return True, f"Upgraded **{BUILDINGS[building_key]['name']}** to Level {current_level + 1}!\nYou now have {MORA_EMOTE} `{result:,}` remaining."
 
@@ -52,7 +52,6 @@ async def get_kingdom_embed(user, guild_id, custom_color=None, pool=None):
     from commands.Events.helperFunctions import get_kingdom_buildings
     
     if pool is None:
-        # Fallback if pool not provided (shouldn't happen in normal flow)
         data = {}
     else:
         kb_data = await get_kingdom_buildings(pool, guild_id, user.id)

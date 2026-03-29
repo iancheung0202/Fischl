@@ -14,7 +14,7 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
@@ -497,7 +497,6 @@ class ToggleView(discord.ui.View):
                  )
                  self.add_item(self.upgrade_select)
             else:
-                # Fetch building data from PostgreSQL and create dynamic options
                 from commands.Events.helperFunctions import get_kingdom_buildings
                 
                 kb_data = {}
@@ -538,8 +537,6 @@ class Mora(commands.Cog):
         start_time = time.perf_counter()
         await interaction.response.defer(thinking=True)
         user = user or interaction.user
-
-        # Use PostgreSQL for efficient global and guild rankings
         
         # Get global ranking
         global_ranking = await get_global_leaderboard(interaction.client.pool, limit=10000)
@@ -560,78 +557,74 @@ class Mora(commands.Cog):
                 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
             )
 
-        ref = db.reference("/User Events Inventory")
-        inventories = ref.get()
+        inventory_items = await get_user_inventory(interaction.client.pool, user.id, interaction.guild.id)
         inv = "No </shop:1345883946105311383> items purchased yet"
 
         MAX_INV_LENGTH = 1024
         EXTRA_LENGTH = 15 
 
-        if inventories:
-            for key, val in inventories.items():
-                if val["User ID"] == user.id:
-                    try:
-                        item_dict = {}
-                        pinned_items = {}
+        if inventory_items:
+            try:
+                item_dict = {}
+                pinned_items = {}
 
-                        for item in val["Items"]:
-                            if len(item) > 3 and item[3] == interaction.guild.id:
-                                if item[2] == 0:
-                                    continue
-                                role_id = item[0]
-                                timestamp = item[4] if len(item) > 4 else 1741083000
-                                is_pinned = len(item) > 5 and item[5] == "Pinned"
+                for item in inventory_items:
+                    # item = (title, description, cost, gid, timestamp, pinned)
+                    if item[2] == 0:  # Skip free items (cost = 0)
+                        continue
+                    role_id = item[0]
+                    timestamp = item[4]
+                    is_pinned = item[5]  # Boolean from PostgreSQL
 
-                                target_dict = pinned_items if is_pinned else item_dict
+                    target_dict = pinned_items if is_pinned else item_dict
 
-                                if role_id in target_dict:
-                                    target_dict[role_id]["count"] += 1
-                                    target_dict[role_id]["timestamp"] = min(
-                                        target_dict[role_id]["timestamp"], timestamp
-                                    )
-                                else:
-                                    target_dict[role_id] = {
-                                        "count": 1,
-                                        "timestamp": timestamp,
-                                    }
+                    if role_id in target_dict:
+                        target_dict[role_id]["count"] += 1
+                        target_dict[role_id]["timestamp"] = min(
+                            target_dict[role_id]["timestamp"], timestamp
+                        )
+                    else:
+                        target_dict[role_id] = {
+                            "count": 1,
+                            "timestamp": timestamp,
+                        }
 
-                        def format_item(role, data, pinned=False):
-                            prefix = "📌 **Pinned:** " if pinned else "- "
-                            if isinstance(role, int) or str(role).isdigit():  # Role
-                                return (
-                                    f"{prefix}<@&{role}> **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
-                                    if data["count"] > 1
-                                    else f"{prefix}<@&{role}> - *Acquired <t:{data['timestamp']}:R>*"
-                                )
-                            else: # Item
-                                return (
-                                    f"{prefix}{role} **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
-                                    if data["count"] > 1
-                                    else f"{prefix}{role} - *Acquired <t:{data['timestamp']}:R>*"
-                                )
+                def format_item(role, data, pinned=False):
+                    prefix = "📌 **Pinned:** " if pinned else "- -# "
+                    if isinstance(role, int) or str(role).isdigit():  # Role
+                        return (
+                            f"{prefix}<@&{role}> **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
+                            if data["count"] > 1
+                            else f"{prefix}<@&{role}> - *Acquired <t:{data['timestamp']}:R>*"
+                        )
+                    else: # Item
+                        return (
+                            f"{prefix}{role} **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
+                            if data["count"] > 1
+                            else f"{prefix}{role} - *Acquired <t:{data['timestamp']}:R>*"
+                        )
 
-                        pinned_list = [format_item(role, data, True) for role, data in pinned_items.items()]
-                        items_list = [format_item(role, data) for role, data in item_dict.items()]
-                        combined_list = pinned_list + items_list
+                pinned_list = [format_item(role, data, True) for role, data in pinned_items.items()]
+                items_list = [format_item(role, data) for role, data in item_dict.items()]
+                combined_list = pinned_list + items_list
 
-                        if combined_list:
-                            inv = ""
-                            remaining_count = 0
+                if combined_list:
+                    inv = ""
+                    remaining_count = 0
 
-                            for item in combined_list:
-                                if len(inv) + len(item) + EXTRA_LENGTH > MAX_INV_LENGTH:
-                                    break
-                                inv += item + "\n"
+                    for item in combined_list:
+                        if len(inv) + len(item) + EXTRA_LENGTH > MAX_INV_LENGTH:
+                            break
+                        inv += item + "\n"
 
-                            remaining_count = len(combined_list) - inv.count("\n")
-                            if remaining_count > 0:
-                                inv += f"*({remaining_count} more...)*"
+                    remaining_count = len(combined_list) - inv.count("\n")
+                    if remaining_count > 0:
+                        inv += f"*({remaining_count} more...)*"
 
-                            inv = inv.strip()
+                    inv = inv.strip()
 
-                        break
-                    except Exception as e:
-                        print(e)
+            except Exception as e:
+                print(e)
             
         ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{user.id}/selected")
         selected = ref_selected.get() or {}
@@ -647,14 +640,14 @@ class Mora(commands.Cog):
         if guild_rank != "N/A":
             embed.add_field(
                 name=interaction.guild.name,
-                value=f"Mora: {MORA_EMOTE} `{int(guild_total):,}`\n<:rank:1364439165189488854> Rank: **{word(guild_rank)}**",
+                value=f"Mora: {MORA_EMOTE} `{int(guild_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(guild_rank)}**",
                 inline=True,
             )
 
         if global_rank != "N/A":
             embed.add_field(
                 name="Global",
-                value=f"Mora: {MORA_EMOTE} `{int(global_total):,}`\n<:rank:1364439165189488854> Rank: **{word(global_rank)}**",
+                value=f"Mora: {MORA_EMOTE} `{int(global_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(global_rank)}**",
                 inline=True,
             )
 
@@ -664,22 +657,27 @@ class Mora(commands.Cog):
         milestones = milestones_ref.get() or []
 
         user_milestones = []
-        if inventories:
-            for key, val in inventories.items():
-                if val["User ID"] == user.id:
-                    for item in val.get("Items", []):
-                        if len(item) > 3 and item[2] == 0 and item[3] == interaction.guild.id:
-                            for milestone in milestones:
-                                if isinstance(milestone, list) and len(milestone) >= 2:
-                                    if milestone[1] == item[0]:  # milestone[1] is reward
-                                        user_milestones.append({
-                                            "threshold": milestone[2] if len(milestone) > 2 else 0,  # milestone[2] is threshold
-                                            "reward": item[0],
-                                            "description": item[1]
-                                        })
-                                        break
-
-        user_milestones.sort(key=lambda x: x["threshold"], reverse=True)
+        try:
+            async with interaction.client.pool.acquire() as conn:
+                milestone_titles = await conn.fetch(
+                    "SELECT title, timestamp FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND cost = 0",
+                    user.id, interaction.guild.id
+                )
+            
+            user_milestone_titles = {row['title']: row['timestamp'] for row in milestone_titles}
+            
+            for milestone in milestones:
+                if isinstance(milestone, list) and len(milestone) >= 3:
+                    milestone_reward = milestone[1]  # milestone[1] is reward
+                    if milestone_reward in user_milestone_titles:
+                        user_milestones.append({
+                            "threshold": milestone[2], 
+                            "reward": milestone_reward,
+                            "description": milestone[0],
+                            "timestamp": user_milestone_titles[milestone_reward]
+                        })
+        except Exception as e:
+            print(f"Error fetching milestones from PostgreSQL: {e}")
 
         milestones_text = ""
         if user_milestones:
@@ -687,11 +685,11 @@ class Mora(commands.Cog):
             for ms in user_milestones:
                 is_role = isinstance(ms["reward"], int) or str(ms["reward"]).isdigit()
                 reward_display = f"<@&{ms['reward']}>" if is_role else ms["reward"]
-                milestones_text += f"- {MORA_EMOTE} **`{ms['threshold']:,}`** - {reward_display}\n"
+                milestones_text += f"- -# {reward_display} - *Earned at {MORA_EMOTE} `{ms['threshold']:,}` <t:{ms['timestamp']}:R>*\n"
         else:
             milestones_text = "No </milestones:1380247962390888578> earned yet"
     
-        embed.add_field(name="Server Milestones", value=milestones_text, inline=False)
+        embed.add_field(name="Guild Milestones", value=milestones_text, inline=False)
 
         animated_background = selected.get("animated_background")
         profile_frame = selected.get("profile_frame")
@@ -792,8 +790,8 @@ class Mora(commands.Cog):
         tax_amount = int(amount * tax_rate / 100)
         total_cost = amount + tax_amount
 
-        # Get donor's current mora balance
         donor_mora = await get_guild_mora(interaction.client.pool, interaction.user.id, interaction.guild.id)
+        recipient_mora = await get_guild_mora(interaction.client.pool, user.id, interaction.guild.id)
                     
         if donor_mora < total_cost:
             return await interaction.followup.send(
@@ -814,7 +812,12 @@ class Mora(commands.Cog):
                 color=discord.Color.green()
             )
         )
-        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"gift_mora": amount, "gift_mora_unique": user.id}, interaction.client)
+        
+        quest_dict = {"gift_mora": amount, "gift_mora_unique": user.id}
+        if recipient_mora < donor_mora:
+            quest_dict["gift_mora_poorer"] = 1
+        
+        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_dict, interaction.client)
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Mora(bot))

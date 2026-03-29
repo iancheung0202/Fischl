@@ -1550,10 +1550,11 @@ def delete_minigames_channel(guild_id, channel_id):
 
         # Find and delete from database
         ref = db.reference(f"/Chat Minigames System/{channel_id}")
-        ref.delete()
-                    return jsonify({"success": True, "message": "Configuration deleted successfully"})
-
-        return jsonify({"success": False, "message": "Configuration not found"}), 404
+        if ref.get():
+            ref.delete()
+            return jsonify({"success": True, "message": "Configuration deleted successfully"})
+        else:
+            return jsonify({"success": False, "message": "Configuration not found"}), 404
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1619,24 +1620,26 @@ def api_shop_info(guild_id):
         # Get shop items from database
         ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
         shop_items_list = ref.get() or []
-                    if len(item) >= 3:
-                        # Convert old format to new format if needed
-                        item_data = {
-                            "name": item[0],
-                            "description": item[1],
-                            "cost": item[2],
-                            "multiple": item[3] if len(item) > 3 else False,
-                            "stock": item[4] if len(item) > 4 else -1
-                        }
-                        
-                        # Add role info if it's a role ID
-                        if str(item[0]).isdigit() and str(item[0]) in guild_roles:
-                            item_data["role"] = guild_roles[str(item[0])]
-                        
-                        # Add pending edits info if any exist for this item
-                        item_data["pending_edits"] = pending_by_item.get(str(item[0]), [])
-                        
-                        shop_items.append(item_data)
+        shop_items = []
+        for item in shop_items_list:
+            if len(item) >= 3:
+                # Convert old format to new format if needed
+                item_data = {
+                    "name": item[0],
+                    "description": item[1],
+                    "cost": item[2],
+                    "multiple": item[3] if len(item) > 3 else False,
+                    "stock": item[4] if len(item) > 4 else -1
+                }
+                
+                # Add role info if it's a role ID
+                if str(item[0]).isdigit() and str(item[0]) in guild_roles:
+                    item_data["role"] = guild_roles[str(item[0])]
+                
+                # Add pending edits info if any exist for this item
+                item_data["pending_edits"] = pending_by_item.get(str(item[0]), [])
+                
+                shop_items.append(item_data)
 
         # Generate shop items HTML
         items_html = ""
@@ -1907,12 +1910,12 @@ def api_delete_shop_item(guild_id):
         # Get existing rewards
         ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
         rewards_list = ref.get() or []
-                
-                # Find and remove the item
-                for i, item in enumerate(rewards_list):
-                    if len(item) > 0 and str(item[0]) == str(item_name):
-                        item_to_delete = rewards_list.pop(i)
-                        break
+        
+        # Find and remove the item
+        item_to_delete = None
+        for i, item in enumerate(rewards_list):
+            if len(item) > 0 and str(item[0]) == str(item_name):
+                item_to_delete = rewards_list.pop(i)
                 break
 
         if not item_to_delete:
@@ -1925,50 +1928,41 @@ def api_delete_shop_item(guild_id):
         if compensate and len(item_to_delete) >= 3:
             try:
                 cost = int(item_to_delete[2])
-                inventory_ref = db.reference("/User Events Inventory")
-                inventories = inventory_ref.get() or {}
-                
                 compensated_users = 0
-                for inv_key, inv_data in inventories.items():
-                    if not isinstance(inv_data, dict):
-                        continue
-                        
-                    items = inv_data.get("Items", [])
-                    user_id = inv_data.get("User ID")
-                    
-                    # Find and remove items, count how many
-                    items_removed = 0
-                    new_items = []
-                    for item in items:
-                        if (len(item) >= 4 and str(item[0]) == str(item_name) 
-                            and str(item[3]) == str(guild_id)):
-                            items_removed += 1
-                        else:
-                            new_items.append(item)
-                    
-                    if items_removed > 0:
-                        # Update inventory
-                        inv_data["Items"] = new_items
-                        inventory_ref.child(inv_key).set(inv_data)
-                        
-                        # Add compensation to user's mora via PostgreSQL
-                        compensation = cost * items_removed
-                        try:
-                            conn = get_db_connection()
-                            cursor = conn.cursor()
-                            ts = int(time.time())
-                            # Insert mora compensation as channel 0 (system)
-                            cursor.execute(
-                                "INSERT INTO minigame_mora (uid, gid, cid, timestamp, count) VALUES (%s, %s, %s, %s, %s)",
-                                (user_id, guild_id, 0, ts, compensation)
-                            )
-                            conn.commit()
-                            cursor.close()
-                            conn.close()
-                        except Exception as db_error:
-                            print(f"Error adding mora compensation: {db_error}")
-                        
-                        compensated_users += 1
+                
+                # Get items to be removed (for calculating compensation)
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                # Query to get affected users and their item count
+                cursor.execute("""
+                    SELECT uid, COUNT(*) as items_removed
+                    FROM minigame_inventory
+                    WHERE title = %s AND gid = %s
+                    GROUP BY uid
+                """, (str(item_name), int(guild_id)))
+                
+                affected_users = cursor.fetchall()
+                
+                # Delete all items matching this reward
+                cursor.execute(
+                    "DELETE FROM minigame_inventory WHERE title = %s AND gid = %s",
+                    (str(item_name), int(guild_id))
+                )
+                
+                # Add compensation mora for each affected user
+                for user_id, items_removed in affected_users:
+                    compensation = cost * items_removed
+                    ts = int(time.time())
+                    cursor.execute(
+                        "INSERT INTO minigame_mora (uid, gid, cid, timestamp, count) VALUES (%s, %s, %s, %s, %s)",
+                        (user_id, guild_id, 0, ts, compensation)
+                    )
+                    compensated_users += 1
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
                 
                 message = f"Item deleted successfully. Compensated {compensated_users} users with {cost:,} Mora each."
             except Exception as e:
@@ -2102,20 +2096,20 @@ def api_edit_shop_item(guild_id):
         # Get existing rewards
         ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
         rewards_list = ref.get() or []
+        
+        # Find and update the item
+        item_found = False
+        for i, item in enumerate(rewards_list):
+            if len(item) > 0 and str(item[0]) == str(old_name):
+                # Check if new name conflicts with existing items (unless it's the same item)
+                if old_name != new_name:
+                    for other_item in rewards_list:
+                        if len(other_item) > 0 and str(other_item[0]) == str(new_name):
+                            return jsonify({"success": False, "message": "Item with this name/role already exists"}), 400
                 
-                # Find and update the item
-                for i, item in enumerate(rewards_list):
-                    if len(item) > 0 and str(item[0]) == str(old_name):
-                        # Check if new name conflicts with existing items (unless it's the same item)
-                        if old_name != new_name:
-                            for other_item in rewards_list:
-                                if len(other_item) > 0 and str(other_item[0]) == str(new_name):
-                                    return jsonify({"success": False, "message": "Item with this name/role already exists"}), 400
-                        
-                        # Update the item
-                        rewards_list[i] = [new_name, description, cost, multiple, stock_val]
-                        item_found = True
-                        break
+                # Update the item
+                rewards_list[i] = [new_name, description, cost, multiple, stock_val]
+                item_found = True
                 break
 
         if not item_found:
@@ -2496,43 +2490,27 @@ def api_add_milestone(guild_id):
 
             for user_id, mora_total in qualified_users:
                 # Check if the user already has this reward in this guild
-                inventory_ref = db.reference("/User Events Inventory")
-                inventories = inventory_ref.get() or {}
-                has_reward = False
+                conn = get_db_connection()
+                cursor = conn.cursor()
                 
-                for inv_key, inv_data in inventories.items():
-                    if inv_data.get("User ID") == user_id:
-                        for item in inv_data.get("Items", []):
-                            if len(item) >= 4 and item[0] == reward and str(item[3]) == str(guild_id):
-                                has_reward = True
-                                break
-                        if has_reward:
-                            break
+                cursor.execute(
+                    "SELECT COUNT(*) FROM minigame_inventory WHERE uid = %s AND gid = %s AND title = %s",
+                    (user_id, guild_id, reward)
+                )
+                has_reward = cursor.fetchone()[0] > 0
                 
                 if not has_reward:
                     count += 1
-                    # Prepare item data
-                    item_data = [
-                        reward, 
-                        description,
-                        0,  # Cost (free for milestones)
-                        int(guild_id),
-                        int(time.time())
-                    ]
-                    
-                    # Update inventory
-                    found = False
-                    for inv_key, inv_data in inventories.items():
-                        if inv_data.get("User ID") == user_id:
-                            items = inv_data.get("Items", [])
-                            items.append(item_data)
-                            inventory_ref.child(inv_key).update({"Items": items})
-                            found = True
-                            break
-                            
-                    if not found:
-                        inventory_data = {"User ID": user_id, "Items": [item_data]}
-                        inventory_ref.push().set(inventory_data)
+                    # Prepare item data and insert into PostgreSQL
+                    ts = int(time.time())
+                    cursor.execute(
+                        "INSERT INTO minigame_inventory (uid, gid, title, description, cost, timestamp, pinned) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (user_id, guild_id, reward, description, 0, ts, False)
+                    )
+                    conn.commit()
+                
+                cursor.close()
+                conn.close()
 
             message = f"Milestone added successfully! Automatically awarded to {count} existing users who qualified."
         except Exception as e:
