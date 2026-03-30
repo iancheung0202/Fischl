@@ -6,6 +6,7 @@ from firebase_admin import db
 
 from commands.Events.dropPack import create_drop_pack
 from commands.Events.seasons import get_current_season
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -76,7 +77,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
             backgrounds.append(background_name)
             ref.set(backgrounds)
             title = f"{'Elite Reward: ' if is_elite else ''} Animated Inventory Background Unlocked 🖼️"
-            description = f"**Tier `{tier}`:** You have unlocked **{background_name}**! Use </customize:1339721187953082544> to equip it in this server!"
+            description = f"**Tier `{tier}`:** You have unlocked **{background_name}**! Use {SlashCommand('customize')} to equip it in this server!"
         
     elif reward_type == "title":
         title_parts = reward_str.split('|')
@@ -87,7 +88,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         titles[timestamp] = {"name": title_name}
         cosmetics_ref.set(titles)
         title = f"{'Elite Reward: ' if is_elite else ''} Server Title Unlocked 📍"
-        description = f"**Tier `{tier}`:** You have unlocked **{title_name}**! Use </customize:1339721187953082544> to equip it in this server!"
+        description = f"**Tier `{tier}`:** You have unlocked **{title_name}**! Use {SlashCommand('customize')} to equip it in this server!"
             
     elif reward_type == "static_frame" or reward_type == "animated_frame":
         ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/profile_frames")
@@ -98,13 +99,13 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
             profile_frames.append(frame_name)
             ref.set(profile_frames)
             title = f"{'Elite Reward: ' if is_elite else ''} {'Static' if 'static' in reward_type else '**Animated**'} Profile Frame Unlocked 👤"
-            description = f"**Tier `{tier}`:** You have unlocked **{frame_name.split('.')[0]}**! Use </customize:1339721187953082544> to equip it in this server!"
+            description = f"**Tier `{tier}`:** You have unlocked **{frame_name.split('.')[0]}**! Use {SlashCommand('customize')} to equip it in this server!"
             
     elif reward_type == "embed_color":
         ref = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/embed_color")
         ref.set(True)
         title = f"{'Elite Reward: ' if is_elite else ''} Custom Embed Color Unlocked 🎨"
-        description = f"**Tier `{tier}`:** You can have a custom color on your inventory! Use </customize:1339721187953082544> to edit your favorite color!"
+        description = f"**Tier `{tier}`:** You can have a custom color on your inventory! Use {SlashCommand('customize')} to edit your favorite color!"
             
     elif reward_type == "prestige":
         async with pool.acquire() as conn:
@@ -113,7 +114,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                 guild_id, user_id
             )
         title = f"{'Elite Reward: ' if is_elite else ''} Prestige +1 <:PRIMOGEM:1364031230357540894>"
-        description = f"You have earned `+1` prestige for **reaching the end of the {'elite' if is_elite else 'free'} track**! Use </mora:1339721187953082543> view your prestige count!"
+        description = f"You have earned `+1` prestige for **reaching the end of the {'elite' if is_elite else 'free'} track**! Use {SlashCommand('mora')} to view your prestige count!"
         
     elif reward_type == "mora_boost" or reward_type == "mora_boost_67":
         boost_amount = 5 if reward_type == "mora_boost" else 67
@@ -145,7 +146,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                     guild_id, user_id
                 )
             title = "Mora Gifting Unlocked! :gift:"
-            description = f"**Tier `{tier}`:** You can now </gift:1382148690155802657> mora to others with an initial tax rate of `30%`!"
+            description = f"**Tier `{tier}`:** You can now {SlashCommand('gift')} mora to others with an initial tax rate of `30%`!"
     
     elif reward_type == "gift_tax":
         tax_reduction = 5
@@ -157,7 +158,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                 guild_id, user_id, new_tax
             )
         title = f"{'Elite Reward: ' if is_elite else ''}Gift Tax Reduced -{tax_reduction}% :chart_with_downwards_trend:"
-        description = f"**Tier `{tier}`:** Your gifting tax rate is now **`{new_tax}%`**! Use </gift:1382148690155802657> to send some love!"
+        description = f"**Tier `{tier}`:** Your gifting tax rate is now **`{new_tax}%`**! Use {SlashCommand('gift')} to send some love!"
     
     elif reward_type == "minigame_summon":
         summon_amount = int(reward_str.split()[0].replace('+', '')) # Extract summon amount (e.g., "+3" from "+3 Minigames Summon")
@@ -167,7 +168,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                 guild_id, user_id, summon_amount
             )
         title = f"{'Elite Reward: ' if is_elite else ''}+{summon_amount} Minigame Summons 🧲"
-        description = f"**Tier `{tier}`:** You have a total of **{new_summons} minigame summons** available! Use </summon:1382148690155802656> to immediately start a minigame in a channel!"
+        description = f"**Tier `{tier}`:** You have a total of **{new_summons} minigame summons** available! Use {SlashCommand('summon')} to immediately start a minigame in a channel!"
 
     return (title, description)
 

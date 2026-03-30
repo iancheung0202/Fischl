@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
 from PIL import Image, ImageEnhance, ImageSequence
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -94,7 +95,7 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
 
             self.embed = discord.Embed(
                 title="Customize which mini-games you'd like to enable",
-                description=f"**Channel:** <#{channelID}>\n\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
+                description=f"**Channel:** <#{channelID}>\n\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
                 color=discord.Color.blurple(),
             )
             self.update = discord.Embed(
@@ -183,7 +184,7 @@ class EnableEventButton(discord.ui.Button):
         )
         embed = discord.Embed(
             title="Customize which mini-games you'd like to enable",
-            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency_value)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
+            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency_value)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
             color=discord.Color.blurple(),
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -301,7 +302,7 @@ class FrequencySelect(discord.ui.Select):
         )
         embed = discord.Embed(
             title="Customize which mini-games you'd like to enable",
-            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/new_frequency)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
+            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/new_frequency)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
             color=discord.Color.blurple(),
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -387,7 +388,7 @@ class EventSystem(commands.GroupCog, name="events"):
 
             embed = discord.Embed(
                 title="Customize which mini-games you'd like to enable",
-                description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency) if frequency else 0}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the </shop:1345883946105311383> and </milestones:1380247962390888578> to customize further!",
+                description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency) if frequency else 0}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
                 color=discord.Color.blurple(),
             )
         else:

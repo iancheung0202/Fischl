@@ -8,6 +8,8 @@ from discord.ext import commands
 from discord.ui import Button, View
 from firebase_admin import db
 
+from utils.commands import SlashCommand
+
 BLANK = "<:blank:1036792889121980426>"
 REPLY = "<:reply:1036792837821435976>"
 
@@ -46,49 +48,49 @@ class Select(discord.ui.Select):
             "ticket": {
                 "title": "Tickets",
                 "emoji": "🎫",
-                "description": "The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use </ticket settings:1254927191129456641> and the bot will guide you through the procedures of setting up your ticket system!",
+                "description": f"The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use {SlashCommand('ticket settings')} and the bot will guide you through the procedures of setting up your ticket system!",
                 "condition": lambda cmd: "ticket" in cmd.name,
                 "formatter": simple_formatter
             },
             "coop": {
                 "title": "Co-op System",
                 "emoji": "🎮",
-                "description": "The following commands are used to setup co-op system in your server. Use </co-op setup:1254927191037317149> to starting setting up the co-op system, and the bot will guide you through the procedures!",
+                "description": f"The following commands are used to setup co-op system in your server. Use {SlashCommand('co-op setup')} to starting setting up the co-op system, and the bot will guide you through the procedures!",
                 "condition": lambda cmd: "co-op" in cmd.name,
                 "formatter": formatter
             },
             "partner": {
                 "title": "Partnership Panels",
                 "emoji": "🤝",
-                "description": "The following slash commands are for managing your server’s partnerships. When a user requests for partnership, a private thread is created, just like a ticket. Server representatives can be invited into the thread, and admins can easily add/remove partnered servers to the customizable and auto-updating partnership panels. Use </partner setup:1364761118324822128> to get started!",
+                "description": f"The following slash commands are for managing your server’s partnerships. When a user requests for partnership, a private thread is created, just like a ticket. Server representatives can be invited into the thread, and admins can easily add/remove partnered servers to the customizable and auto-updating partnership panels. Use {SlashCommand('partner setup')} to get started!",
                 "condition": lambda cmd: "partner" in cmd.name,
                 "formatter": simple_formatter
             },
             "sticky": {
                 "title": "Sticky Messages",
                 "emoji": "🫧",
-                "description": "The following slash commands are for setting up sticky messages in different channels. Sticky messages will be stayed at the bottom of the channel no matter what messages are sent afterwards. This function is especially useful when you need give your members a heads up on how to use this chat channel or what they need to know before going ahead and sending any messages. Use </sticky enable:1254927190915551254> to setup sticky messages in a channel.",
+                "description": f"The following slash commands are for setting up sticky messages in different channels. Sticky messages will be stayed at the bottom of the channel no matter what messages are sent afterwards. This function is especially useful when you need give your members a heads up on how to use this chat channel or what they need to know before going ahead and sending any messages. Use {SlashCommand('sticky enable')} to setup sticky messages in a channel.",
                 "condition": lambda cmd: "sticky" in cmd.name,
                 "formatter": formatter
             },
             "welcome": {
                 "title": "Welcomer",
                 "emoji": "👋",
-                "description": "The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use </welcome setup:1254927190915551255> to setup welcome messages.",
+                "description": f"The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use {SlashCommand('welcome setup')} to setup welcome messages.",
                 "condition": lambda cmd: "welcome" in cmd.name,
                 "formatter": formatter
             },
             "birthday": {
                 "title": "Birthday Wishes",
                 "emoji": "🎂",
-                "description": "The following slash commands are for wishing users in your server a happy birthday. Member will receive personalized birthday wishes from their favorite characters in servers that have this system enabled. Use </birthday enable:1254927191129456640> to setup birthday wishes in the server.",
+                "description": f"The following slash commands are for wishing users in your server a happy birthday. Member will receive personalized birthday wishes from their favorite characters in servers that have this system enabled. Use {SlashCommand('birthday enable')} to setup birthday wishes in the server.",
                 "condition": lambda cmd: "birthday" in cmd.name,
                 "formatter": formatter
             },
             "events": {
                 "title": "Chat Minigames",
                 "emoji": "🎉",
-                "description": "The following slash commands are dedicated to random events that appear in a chat channel. Servers that have random events enabled will have exciting mini-games randomly spawned to the chat based on the chat activity and frequency you provided. Use </events settings:1339782470677299260> to setup and configure random chat events in the server.",
+                "description": f"The following slash commands are dedicated to random events that appear in a chat channel. Servers that have random events enabled will have exciting mini-games randomly spawned to the chat based on the chat activity and frequency you provided. Use {SlashCommand('events settings')} to setup and configure random chat events in the server.",
                 "condition": lambda cmd: (
                     "customize" in cmd.name
                     or "mora" in cmd.name
@@ -111,14 +113,14 @@ class Select(discord.ui.Select):
             "boosterrole": {
                 "title": "Booster Roles",
                 "emoji": "💎",
-                "description": "The following slash commands are for rewarding your server boosters with customizable roles and thank-you messages. When a member boosts the server, the bot will automatically send a personalized thank-you message in a designated channel, and the booster can create a custom role. Use </boosterrole setup:1377127436247892080> to setup booster roles in your server.",
+                "description": f"The following slash commands are for rewarding your server boosters with customizable roles and thank-you messages. When a member boosts the server, the bot will automatically send a personalized thank-you message in a designated channel, and the booster can create a custom role. Use {SlashCommand('boosterrole setup')} to setup booster roles in your server.",
                 "condition": lambda cmd: "boosterrole" in cmd.name,
                 "formatter": formatter
             },
             "utility": {
                 "title": "Utility Commands",
                 "emoji": "🛠️",
-                "description": "The following slash commands are used for basic functions that many bots offer. These commands are accessible to everyone in the server.",
+                "description": f"The following slash commands are used for basic functions that many bots offer. These commands are accessible to everyone in the server.",
                 "condition": lambda cmd: (
                     "reload" not in cmd.name
                     and "update_rewards" not in cmd.name
@@ -126,13 +128,14 @@ class Select(discord.ui.Select):
                     and "Edit Embed" not in cmd.name
                     and "emotes" not in cmd.name
                     and "layout" not in cmd.name
+                    and "database" not in cmd.name
                 ),
                 "formatter": utility_formatter
             },
             "vanity": {
                 "title": "Vanity/Tag Roles",
                 "emoji": "👤",
-                "description": "We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
+                "description": f"We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
                 "condition": lambda cmd: False,  # Static entry
                 "formatter": lambda cmd: ""
             },

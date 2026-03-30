@@ -6,6 +6,7 @@ import asyncpg
 
 from typing import Optional
 from firebase_admin import db
+from utils.commands import SlashCommand
 
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
@@ -126,33 +127,37 @@ async def get_chest_upgrades(pool: asyncpg.Pool, gid: int, uid: int) -> int:
         )
     return val if val is not None else 4
 
-async def get_realm_chest_bonus_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
-    """Calculate chest bonus chance from kingdom_garten level. Max 50%."""
+async def get_chest_bonus_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
     garten_level = await get_building_level(pool, gid, uid, "garten")
     return min(50, garten_level)
 
-async def get_realm_xp_boost(pool: asyncpg.Pool, gid: int, uid: int) -> int:
-    """Calculate XP boost from kingdom_bibliothek level. Max 50%."""
+async def get_xp_boost(pool: asyncpg.Pool, gid: int, uid: int) -> int:
     bib_level = await get_building_level(pool, gid, uid, "bibliothek")
     return min(50, bib_level)
 
-async def get_realm_encore_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
-    """Calculate summon refund chance from kingdom_theater level. Max 50%."""
+async def get_encore_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
     theater_level = await get_building_level(pool, gid, uid, "theater")
     return min(50, theater_level)
 
-async def get_guild_kingdom_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = 50) -> list:
-    """Get all users' total kingdom levels for a guild, sorted descending."""
+async def get_guild_kingdom_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT uid, 
-                   (kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) as total_level
-            FROM minigame_progression
-            WHERE gid = $1 
-              AND (kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) > 0
-            ORDER BY total_level DESC
-            LIMIT $2
-        """, gid, limit)
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, 
+                       (kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) as total_level
+                FROM minigame_progression
+                WHERE gid = $1 
+                ORDER BY total_level DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, 
+                       (kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) as total_level
+                FROM minigame_progression
+                WHERE gid = $1 
+                ORDER BY total_level DESC
+            """, gid)
     return [(row['uid'], row['total_level']) for row in rows]
 
 # Mora helper functions
@@ -173,28 +178,85 @@ async def get_guild_mora(pool: asyncpg.Pool, uid: int, gid: int) -> int:
         )
     return result or 0
 
-async def get_global_leaderboard(pool: asyncpg.Pool, limit: int = 50) -> list:
+async def get_global_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT uid, SUM(count) as total
-            FROM minigame_mora
-            GROUP BY uid
-            ORDER BY total DESC
-            LIMIT $1
-        """, limit)
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(count) as total
+                FROM minigame_mora
+                GROUP BY uid
+                ORDER BY total DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(count) as total
+                FROM minigame_mora
+                GROUP BY uid
+                ORDER BY total DESC
+            """)
     return [(row['uid'], row['total']) for row in rows]
 
-async def get_guild_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = 50) -> list:
+async def get_guild_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT uid, SUM(count) as total
-            FROM minigame_mora
-            WHERE gid = $1
-            GROUP BY uid
-            ORDER BY total DESC
-            LIMIT $2
-        """, gid, limit)
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(count) as total
+                FROM minigame_mora
+                WHERE gid = $1
+                GROUP BY uid
+                ORDER BY total DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(count) as total
+                FROM minigame_mora
+                WHERE gid = $1
+                GROUP BY uid
+                ORDER BY total DESC
+            """, gid)
     return [(row['uid'], row['total']) for row in rows]
+
+async def get_global_items_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as item_count
+                FROM minigame_inventory
+                GROUP BY uid
+                ORDER BY item_count DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as item_count
+                FROM minigame_inventory
+                GROUP BY uid
+                ORDER BY item_count DESC
+            """)
+    return [(row['uid'], row['item_count']) for row in rows]
+
+async def get_global_kingdom_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, 
+                       SUM(kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) as total_level
+                FROM minigame_progression
+                GROUP BY uid
+                ORDER BY total_level DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, 
+                       SUM(kingdom_schloss + kingdom_theater + kingdom_bibliothek + kingdom_garten) as total_level
+                FROM minigame_progression
+                GROUP BY uid
+                ORDER BY total_level DESC
+            """)
+    return [(row['uid'], row['total_level']) for row in rows]
 
 async def get_users_by_mora_threshold(pool: asyncpg.Pool, gid: int, threshold: int) -> list:
     async with pool.acquire() as conn:
@@ -398,17 +460,152 @@ async def pin_item(pool: asyncpg.Pool, uid: int, gid: int, title) -> bool:
         )
         return result != "UPDATE 0"
 
-async def get_guild_items_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = 50) -> list:
+async def get_guild_items_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT uid, COUNT(*) as item_count
-            FROM minigame_inventory
-            WHERE gid = $1
-            GROUP BY uid
-            ORDER BY item_count DESC
-            LIMIT $2
-        """, gid, limit)
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as item_count
+                FROM minigame_inventory
+                WHERE gid = $1
+                GROUP BY uid
+                ORDER BY item_count DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as item_count
+                FROM minigame_inventory
+                WHERE gid = $1
+                GROUP BY uid
+                ORDER BY item_count DESC
+            """, gid)
     return [(row['uid'], row['item_count']) for row in rows]
+
+# Other leaderboard helper functions
+
+async def get_global_minigame_wins_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as win_count
+                FROM minigame_mora
+                WHERE count > 0
+                GROUP BY uid
+                ORDER BY win_count DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as win_count
+                FROM minigame_mora
+                WHERE count > 0
+                GROUP BY uid
+                ORDER BY win_count DESC
+            """)
+    return [(row['uid'], row['win_count']) for row in rows]
+
+async def get_guild_minigame_wins_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as win_count
+                FROM minigame_mora
+                WHERE gid = $1 AND count > 0
+                GROUP BY uid
+                ORDER BY win_count DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(*) as win_count
+                FROM minigame_mora
+                WHERE gid = $1 AND count > 0
+                GROUP BY uid
+                ORDER BY win_count DESC
+            """, gid)
+    return [(row['uid'], row['win_count']) for row in rows]
+
+async def get_global_active_days_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(DISTINCT DATE(TO_TIMESTAMP(timestamp))) as active_days
+                FROM minigame_mora
+                WHERE count > 0
+                GROUP BY uid
+                ORDER BY active_days DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(DISTINCT DATE(TO_TIMESTAMP(timestamp))) as active_days
+                FROM minigame_mora
+                WHERE count > 0
+                GROUP BY uid
+                ORDER BY active_days DESC
+            """)
+    return [(row['uid'], row['active_days']) for row in rows]
+
+async def get_guild_active_days_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(DISTINCT DATE(TO_TIMESTAMP(timestamp))) as active_days
+                FROM minigame_mora
+                WHERE gid = $1 AND count > 0
+                GROUP BY uid
+                ORDER BY active_days DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, COUNT(DISTINCT DATE(TO_TIMESTAMP(timestamp))) as active_days
+                FROM minigame_mora
+                WHERE gid = $1 AND count > 0
+                GROUP BY uid
+                ORDER BY active_days DESC
+            """, gid)
+    return [(row['uid'], row['active_days']) for row in rows]
+
+# Prestige leaderboard functions
+
+async def get_global_prestige_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(prestige) as total_prestige
+                FROM minigame_progression
+                GROUP BY uid
+                ORDER BY total_prestige DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(prestige) as total_prestige
+                FROM minigame_progression
+                GROUP BY uid
+                ORDER BY total_prestige DESC
+            """)
+    return [(row['uid'], row['total_prestige']) for row in rows]
+
+async def get_guild_prestige_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, prestige as total_prestige
+                FROM minigame_progression
+                WHERE gid = $1
+                ORDER BY prestige DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, prestige as total_prestige
+                FROM minigame_progression
+                WHERE gid = $1
+                ORDER BY prestige DESC
+            """, gid)
+    return [(row['uid'], row['total_prestige']) for row in rows]
 
 # Misc helper functions
 
@@ -512,7 +709,7 @@ class PersistentXPQuestInfoView(discord.ui.View):
         )
         embed.add_field(
             name="<:MelonBread_KeqingNote:1342924552392671254> Track in One Place",
-            value="-# Use </mora:1339721187953082543> to view **quests, XP, and rewards**. Each season's track lasts **3 months**!",
+            value=f"-# Use {SlashCommand('mora')} to view **quests, XP, and rewards**. Each season's track lasts **3 months**!",
             inline=True
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -575,7 +772,7 @@ class TierRewardsView(discord.ui.View):
         )
         embed.add_field(
             name="<:MelonBread_KeqingNote:1342924552392671254> Track in One Place",
-            value="-# Use </mora:1339721187953082543> to view **quests, XP, and rewards**. Each season's track lasts **3 months**!",
+            value=f"-# Use {SlashCommand('mora')} to view **quests, XP, and rewards**. Each season's track lasts **3 months**!",
             inline=True
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)

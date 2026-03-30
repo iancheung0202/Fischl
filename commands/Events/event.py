@@ -22,6 +22,7 @@ from bs4 import BeautifulSoup
 from commands.Events.trackData import get_current_track, check_tier_rewards
 from commands.Events.helperFunctions import addMora, get_minigame_list, get_guild_mora
 from commands.Events.quests import update_quest
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 MORA_CHEST_DESCRIPTION = f"""## How the Daily Mora Chest Works 🎁
@@ -3982,13 +3983,12 @@ class MoraChestView(discord.ui.View):
             streak_total = min((view.streak * 100), 10000)
             total = tier_map[view.tier] + streak_total
             
-            from commands.Events.helperFunctions import get_realm_chest_bonus_chance
-            bonus_chance = await get_realm_chest_bonus_chance(interaction.client.pool, view.guild_id, view.user_id)
+            from commands.Events.helperFunctions import get_chest_bonus_chance
+            bonus_chance = await get_chest_bonus_chance(interaction.client.pool, view.guild_id, view.user_id)
             is_bonus = False
             
             if bonus_chance > 0 and random.random() * 100 < bonus_chance:
                 is_bonus = True
-                current_summons = stats.get("minigame_summons", 0)
                 async with interaction.client.pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE minigame_progression SET minigame_summons = minigame_summons + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
@@ -4128,7 +4128,7 @@ class MoraChestView(discord.ui.View):
                         "You can do just that for each server that has minigame enabled at **https://fischl.app/profile**! <:PaimonWow:1188553806456291489>\n\n"
                         "<:dot:1357188726047899760>Play a **random daily minigame** on the website to earn **bonus Mora** + **1 extra summon** each day\n"
                         "<:dot:1357188726047899760>Each challenge refreshes **daily at 00:00 UTC** (like daily chests)!\n\n"
-                        "-# Once you finish, your rewards will **automatically be credited** to your </mora:1339721187953082543> inventory. <:AyakaShine:1191592023946432522>"
+                        f"-# Once you finish, your rewards will **automatically be credited** to your {SlashCommand('mora')} inventory. <:AyakaShine:1191592023946432522>"
                     ),
                     color=discord.Color.gold()
                 ).set_footer(text="Why are we doing this? We just launched our brand new profile website and dashboard! Check them out!"),
@@ -4142,7 +4142,7 @@ class MoraChestView(discord.ui.View):
                     description=(
                         "## <:CharlotteHeart:1191594476263702528> **Introducing the Fischl Profile Website!**\n"
                         "You can now access **your Fischl profile** directly from your browser at **https://fischl.app/profile**! <:PaimonWow:1188553806456291489>\n\n"
-                        f"<:dot:1357188726047899760>View your **Mora inventory**, **Elite status**, and **track progress** — everything you see in </mora:1339721187953082543>.\n"
+                        f"<:dot:1357188726047899760>View your **Mora inventory**, **Elite status**, and **track progress** — everything you see in {SlashCommand('mora')}.\n"
                         f"<:dot:1357188726047899760>**Purchase Elite Track instantly!** No more waiting for manual activation — it’ll **unlock automatically** right after purchase.\n"
                         "### <:PinkCelebrate:1204614140044386314> Still only **$0.99/month** *(or $2.97 per 3-month season!)*\n"
                         f"<:reply:1036792837821435976> ***[View Your Profile & Become Elite Now](https://fischl.app/profile)***"
@@ -4164,7 +4164,7 @@ class MoraChestView(discord.ui.View):
                         "### <:CharlotteHeart:1191594476263702528> **How to Restore Your Prestige**\n"
                         f"If you believe you’re affected by this issue:\n"
                         f"<:reply:1036792837821435976> Join our [support server](https://discord.gg/BXkc8CC4uJ) and create a **support ticket**\n"
-                        f"<:reply:1036792837821435976> **Forward a message by Fischl** showing your </mora:1339721187953082543> command as proof of your Season 1 track progress\n"
+                        f"<:reply:1036792837821435976> **Forward a message by Fischl** showing your {SlashCommand('mora')} command as proof of your Season 1 track progress\n"
                         f"<:reply:1036792837821435976> If you cannot find proof, **please provide any relevant information about your progress**\n\n"
                         "-# Your Prestige will then be **restored manually** after verification. Thank you for your understanding and patience!"
                     ),
@@ -4181,7 +4181,7 @@ class MoraChestView(discord.ui.View):
                             "## <:MelonBread_KeqingNote:1342924552392671254> **Season 2 Starts Now!**\n"
                             f"> The new season **started <t:1759276801:R>**! All seasonal boosts and cosmetics have been **reset**.\n\n"
                             f"- <:YanfeiNote:1335644122253623458> We've capped chest streak earnings at {MORA_EMOTE} `10,000` (if you reach >100 days on your streak)\n"
-                            f"- <:AyakaShine:1191592023946432522> We also added a </preview:1422386451705888850> command, allowing you to check out the **new profile frames**!\n\n"
+                            f"- <:AyakaShine:1191592023946432522> We also added a {SlashCommand('preview')} command, allowing you to check out the **new profile frames**!\n\n"
                             "-# *The XP needed to get to the end of the season track is **decreased by half** (from 90K to 55K XP)! <:CharlotteHeart:1191594476263702528> "
                             "Visit https://fischl.app/track/season_2/index.html and consider **purchasing the Elite Track** to support Fischl!*\n"
                         ),
@@ -4198,7 +4198,7 @@ class MoraChestView(discord.ui.View):
                 )
                 embed.add_field(
                     name="<:NingguangStonks:1265470501707321344> Chat ➜ Sigils",
-                    value="-# Start **meaningful conversations** to passively earn </sigils:1402740034603319569> in batches!",
+                    value="-# Start **meaningful conversations** to passively earn {SlashCommand('sigils')} in batches!",
                     inline=True
                 )
                 embed.add_field(
@@ -4215,22 +4215,22 @@ class MoraChestView(discord.ui.View):
             else:
                 embed = discord.Embed(
                     title=f"A new feature has just arrived <:AlbedoQuestion:1191574408544923799>",
-                    description="-# Ask your server admins to enable this system via </giveaway enable:1402740034603319570>.",
+                    description=f"-# Ask your server admins to enable this system via {SlashCommand('giveaway enable')}.",
                     color=discord.Color.purple()
                 )
                 embed.add_field(
                     name="<:NingguangStonks:1265470501707321344> Chat ➜ Sigils",
-                    value="-# Start **meaningful conversations** to passively earn <a:sigils:1402736987902967850> </sigils:1402740034603319569> in batches!",
+                    value=f"-# Start **meaningful conversations** to passively earn <a:sigils:1402736987902967850> {SlashCommand('sigils')} in batches!",
                     inline=True
                 )
                 embed.add_field(
                     name=f"<:CharlotteHeart:1191594476263702528> Sigils ➜ Giveaways",
-                    value="-# Spend your Sigils to **enter giveaways** and increase your chances with extra entries!",
+                    value=f"-# Spend your Sigils to **enter giveaways** and increase your chances with extra entries!",
                     inline=True
                 )
                 embed.add_field(
                     name="<:MelonBread_KeqingNote:1342924552392671254> Boost Your Earnings",
-                    value="-# **Special roles** can get increased daily Sigil caps for more rewards!",
+                    value=f"-# **Special roles** can get increased daily Sigil caps for more rewards!",
                     inline=True
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
@@ -4259,7 +4259,7 @@ class MoraChestView(discord.ui.View):
                         "<:dot:1357188726047899760>**Extra `18` Minigame Summons** (Free: `+9` only)\n"
                         "<:dot:1357188726047899760>**Extra `2` Chest Upgrades** (Free: `+3` only)\n"
                         "<:dot:1357188726047899760>**4+ Exclusive Animated Cosmetics**\n"
-                        "<:dot:1357188726047899760>Personalize your </mora:1339721187953082543> inventory with **custom colors**\n"
+                        f"<:dot:1357188726047899760>Personalize your {SlashCommand('mora')} inventory with **custom colors**\n"
                         "### <:PinkCelebrate:1204614140044386314> **All this and more for less than USD $1/month!**\n"
                         f"<:reply:1036792837821435976> ***[Compare Tracks / Purchase Now](https://fischlbot.web.app/track/season_1)***"
                     ),
@@ -4270,7 +4270,7 @@ class MoraChestView(discord.ui.View):
                 embed=embed,
                 ephemeral=True
             )
-            await interaction.followup.send(embed=discord.Embed(title="", description="## <:PaimonWow:1188553806456291489> NEW FEATURE ALERT! <:YanfeiNote:1335644122253623458>\nYou can now earn **XP** by **completing quests** or buying items! Unlock **Mora boosts**, **additional chest upgrades**, **Mora gifting**, exclusive cosmetics and titles in the new Progression Track! <:HuTaoEvil:1350630212617896120> \n### <:PinkCelebrate:1204614140044386314> **Use </mora:1339721187953082543> to check your daily quests & free rewards now!** \n-# **You can find the [full update release notes here!](https://fischlbot.web.app/track/update/)** <:MelonBread_KeqingNote:1342924552392671254> ", color=discord.Color.gold()), ephemeral=True)
+            await interaction.followup.send(embed=discord.Embed(title="", description=f"## <:PaimonWow:1188553806456291489> NEW FEATURE ALERT! <:YanfeiNote:1335644122253623458>\nYou can now earn **XP** by **completing quests** or buying items! Unlock **Mora boosts**, **additional chest upgrades**, **Mora gifting**, exclusive cosmetics and titles in the new Progression Track! <:HuTaoEvil:1350630212617896120> \n### <:PinkCelebrate:1204614140044386314> **Use {SlashCommand('mora')} to check your daily quests & free rewards now!** \n-# **You can find the [full update release notes here!](https://fischlbot.web.app/track/update/)** <:MelonBread_KeqingNote:1342924552392671254> ", color=discord.Color.gold()), ephemeral=True)
             frequency = enabledChannels[interaction.channel.id]
             await interaction.followup.send(
                 embed=discord.Embed(
@@ -4695,11 +4695,13 @@ class TheEventItself(commands.Cog):
                     
                     text = random.choice([
                         "Send 4-6 effortful messages a day to earn daily mora chests 📦",
-                        "Reach </milestones:1380247962390888578> to earn titles/roles! Check it out! 💎",
-                        "Use </customize:1339721187953082544> to add a custom inventory background image & pin titles 🌆",
-                        "Hug your favorite person(s) using </hug:1379632715707715594> 🫂",
-                        "Get FREE mora & minigame summons at [by **playing daily games on the website**](https://fischl.app/profile) 📈",
-                        "Admins can edit event settings & view purchase logs at **[Fischl Dashboard](https://fischl.app/dashboard) ⚙️**",
+                        f"Reach {SlashCommand('milestones')} to earn titles/roles! Check it out! 💎",
+                        f"Use {SlashCommand('customize')} to add a custom inventory background image & pin titles 🌆",
+                        f"Hug your favorite person(s) using {SlashCommand('hug')} 🫂",
+                        f"Check your inventory with {SlashCommand('mora')} with all your stats 🎉",
+                        f"Use {SlashCommand('gift')} to send Mora to your friends or even strangers! 🎁",
+                        f"Get FREE mora & minigame summons at [by **playing daily games on the website**](https://fischl.app/profile) 📈",
+                        f"Admins can edit event settings & view purchase logs on the **[dashboard](https://fischl.app/dashboard) ⚙️**",
                     ])
                     
                     embed = discord.Embed(
@@ -4847,7 +4849,7 @@ class Summon(commands.Cog):
     async def summon(self, interaction: discord.Interaction, minigame: str):
         await interaction.response.defer()
         
-        from commands.Events.helperFunctions import get_user_stats, get_realm_encore_chance
+        from commands.Events.helperFunctions import get_user_stats, get_encore_chance
         stats = await get_user_stats(interaction.client.pool, interaction.guild.id, interaction.user.id)
         summons = stats.get("minigame_summons", 0)
 
@@ -4858,7 +4860,7 @@ class Summon(commands.Cog):
         if not minigame_func:
             return await interaction.followup.send("<:no:1036810470860013639> Invalid minigame selection!")
 
-        encore_chance = await get_realm_encore_chance(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        encore_chance = await get_encore_chance(interaction.client.pool, interaction.guild.id, interaction.user.id)
         import random
         saved = False
         eff_chance = min(50, encore_chance)

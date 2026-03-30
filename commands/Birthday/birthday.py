@@ -6,7 +6,9 @@ import re
 from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
+
 from commands.Birthday.birthdayTexts import characters, characters_dict, timezones, months, days, time_to_emoji, month_map, months_short
+from utils.commands import SlashCommand
 
 async def timezone_autocomplete(
     interaction: discord.Interaction,
@@ -143,97 +145,6 @@ class Birthday(commands.GroupCog, name="birthday"):
     @birthday_sync.error
     async def birthday_sync_error(self, interaction: discord.Interaction, error: Exception):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
-    # @app_commands.command(
-    #     name="import", description="Import birthday data from a TXT file (New Format)"
-    # )
-    # @app_commands.describe(file="The TXT file with the new format")
-    # @app_commands.checks.has_permissions(administrator=True)
-    # async def birthday_import(
-    #     self, interaction: discord.Interaction, file: discord.Attachment
-    # ) -> None:
-    #     await interaction.response.defer()
-
-    #     content = await file.read()
-    #     text = content.decode("utf-8")
-    #     # Handle literal \n as newlines if present, primarily for single-line files with literal escapes
-    #     if "\\n" in text:
-    #          text = text.replace("\\n", "\n")
-    #     lines = text.splitlines()
-
-    #     month_name_to_num = {
-    #         "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
-    #         "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
-    #     }
-
-    #     count = 0
-    #     ref = db.reference("/Birthday")
-    #     existing_birthdays = ref.get() or {}
-    #     # We want to overwrite existing birthdays, so we track keys to update
-    #     # user_id -> firebase_key
-    #     existing_user_keys = {}
-        
-    #     if existing_birthdays:
-    #         for key, value in existing_birthdays.items():
-    #             if isinstance(value, dict) and "User ID" in value:
-    #                  existing_user_keys[value.get("User ID")] = key
-
-    #     for line in lines:
-    #         line = line.strip()
-    #         if not line:
-    #             continue
-
-    #         match = re.search(r"__\*\*(.+?) (\d{1,2})\*\*__:", line)
-    #         if not match:
-    #             continue
-
-    #         month_str = match.group(1).strip()
-    #         day = int(match.group(2))
-    #         month = month_name_to_num.get(month_str)
-
-    #         if not month:
-    #             continue
-
-    #         # Extract user IDs
-    #         # Looking for <@123456789> or <@!123456789>
-    #         user_ids_strs = re.findall(r"<@!?(\d+)>", line)
-            
-    #         for user_id_str in user_ids_strs:
-    #             uid = int(user_id_str)
-                
-    #             timezone = "Atlantic/Azores"
-    #             # Use a leap year like 2024 so Feb 29 is valid
-    #             birth_date = datetime.datetime(2024, month, day, 0, 0, 0)
-    #             birth_timezone = pytz.timezone(timezone)
-    #             localized_birth_date = birth_timezone.localize(birth_date)
-    #             utc_birth_date = localized_birth_date.astimezone(pytz.utc)
-    #             display_utc_date = utc_birth_date.strftime("%m-%d %H:%M")
-
-    #             data = {
-    #                 "User ID": uid,
-    #                 "Month": month,
-    #                 "Day": day,
-    #                 "Timezone": timezone,
-    #                 "Display UTC Date": display_utc_date,
-    #                 "Fav Character": "None",
-    #             }   
-                
-    #             if uid in existing_user_keys:
-    #                 # Update existing record
-    #                 db.reference(f"/Birthday/{existing_user_keys[uid]}").update(data)
-    #             else:
-    #                 # Push new record
-    #                 new_ref = ref.push()
-    #                 new_ref.set(data)
-    #                 existing_user_keys[uid] = new_ref.key # Prevent duplicates within same import session if any
-
-    #             count += 1
-        
-    #     await interaction.followup.send(f"Imported **{count}** birthday records.")
-
-    # @birthday_import.error
-    # async def birthday_import_error(self, interaction: discord.Interaction, error: Exception):
-    #     await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="set", description="Set your birth date and timezone")
     @app_commands.choices(
@@ -392,7 +303,7 @@ class Birthday(commands.GroupCog, name="birthday"):
         if month is None or day is None or timezone is None or display_utc_date is None:
             if user == interaction.user:
                 embed = discord.Embed(
-                    description=f"<:no:1036810470860013639> We don't have your birthday in our database. Use </birthday set:1246958872502075463> to set your birthday!",
+                    description=f"<:no:1036810470860013639> We don't have your birthday in our database. Use {SlashCommand('birthday set')} to set your birthday!",
                     color=0xFF0000,
                 )
             else:
@@ -442,13 +353,13 @@ class Birthday(commands.GroupCog, name="birthday"):
         if not found:
             embed = discord.Embed(
                 title="We could not find your birthday",
-                description=f"Maybe you have already removed your birthday, or you have never set one in the first place. Anyways, no records found in our database.\n\n*What are you doing anyways, go **set your birthday** by using </birthday set:1246958872502075463>!*",
+                description=f"Maybe you have already removed your birthday, or you have never set one in the first place. Anyways, no records found in our database.\n\n*What are you doing anyways, go **set your birthday** by using {SlashCommand('birthday set')}!*",
                 color=0xCDCB20,
             )
         else:
             embed = discord.Embed(
                 title="Birthday Removed :pensive:",
-                description=f"It's sad to see you go ~ your birthday is a very important milestone, and we want to celebrate it with you! Please consider changing your mind and **set your birthday** by using </birthday set:1246958872502075463>.",
+                description=f"It's sad to see you go ~ your birthday is a very important milestone, and we want to celebrate it with you! Please consider changing your mind and **set your birthday** by using {SlashCommand('birthday set')}.",
                 color=0xE35417,
             )
 
@@ -556,7 +467,7 @@ class Birthday(commands.GroupCog, name="birthday"):
 
         embed = discord.Embed(
             title="Birthday wishes enabled!",
-            description=f"If a member in your server has set their birthday in this bot using </birthday set:1254927191129456640>, then I will wish them a happy birthday when the day comes in {channel.mention} and grant them the {role.mention} temporarily.\n\n-# **Make sure that {role.mention} is below my bot role**! Otherwise, I cannot add/remove {role.mention} when the day comes.",
+            description=f"If a member in your server has set their birthday in this bot using {SlashCommand('birthday set')}, then I will wish them a happy birthday when the day comes in {channel.mention} and grant them the {role.mention} temporarily.\n\n-# **Make sure that {role.mention} is below my bot role**! Otherwise, I cannot add/remove {role.mention} when the day comes.",
             colour=0x00FF00,
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -587,7 +498,7 @@ class Birthday(commands.GroupCog, name="birthday"):
         if found:
             embed = discord.Embed(
                 title="Birthday Wishes disabled!",
-                description=f"Sad to see you go. If you change your mind at anytime, you could use </birthday enable:1036382520033415196> to enable birthday wishes again.",
+                description=f"Sad to see you go. If you change your mind at anytime, you could use {SlashCommand('birthday enable')} to enable birthday wishes again.",
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -595,7 +506,7 @@ class Birthday(commands.GroupCog, name="birthday"):
         else:
             embed = discord.Embed(
                 title="Birthday Wishes is not enabled!",
-                description=f"What are you thinking? Birthday wishes are even enabled in this server in the first place. To enable the function, use </birthday enable:1036382520033415196>.",
+                description=f"What are you thinking? Birthday wishes are even enabled in this server in the first place. To enable the function, use {SlashCommand('birthday enable')}.",
                 colour=0xFFFF00,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)

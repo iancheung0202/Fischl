@@ -5,6 +5,7 @@ import random
 
 from firebase_admin import db
 from discord.ext import commands
+from utils.commands import SlashCommand
 
 QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests", "earn_big_mora", "gift_mora_unique", "summon_minigame", "customize_profile", "purchase_items", "unlock_drop_packs", "upgrade_buildings", "gift_mora_poorer", "hug_user", "win_minigames_under_5s"]
 QUEST_GOAL_PRESETS = {
@@ -94,14 +95,14 @@ QUEST_DESCRIPTIONS = {
     "gift_mora": "Gift Mora",
     "collect_chests": "Collect chests",
     "earn_big_mora": "Earn 10k+ Mora in one go",
-    "gift_mora_unique": "Gift Mora to different users",
-    "summon_minigame": "</summon:1382148690155802656> a minigame",
-    "customize_profile": "</customize:1486970575372025978> your profile",
-    "purchase_items": "Purchase </shop:1486845290077225136> items with </buy:1487698743255105696>",
+    "gift_mora_unique": f"{SlashCommand('gift')} Mora to different users",
+    "summon_minigame": f"{SlashCommand('summon')} a minigame",
+    "customize_profile": f"{SlashCommand('customize')} your profile",
+    "purchase_items": f"Purchase {SlashCommand('shop')} items with {SlashCommand('buy')}",
     "unlock_drop_packs": "Unlock Mora Drop packs",
     "upgrade_buildings": "Upgrade your Kingdom buildings 🏰",
-    "gift_mora_poorer": "Gift Mora to users with less Mora",
-    "hug_user": "Hug other users",
+    "gift_mora_poorer": f"{SlashCommand('gift')} Mora to users with less Mora",
+    "hug_user": f"{SlashCommand('hug')} other users",
     "win_minigames_under_5s": "Win minigames in under 5 seconds"
 }
 QUEST_XP_REWARDS = {
@@ -152,6 +153,9 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
     now = time.time()
     total_xp = 0
     messages = []
+
+    from commands.Events.helperFunctions import get_xp_boost
+    xp_boost = await get_xp_boost(client.pool, guildID, userID)
     
     for duration in ["daily", "weekly", "monthly"]:
         dur_data = quest_data.get(duration, {})
@@ -200,10 +204,8 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                         completed[q_type] = True
                         xp_reward = QUEST_XP_REWARDS[duration]
                         
-                        from commands.Events.helperFunctions import get_realm_xp_boost
-                        realm_boost = await get_realm_xp_boost(client.pool, guildID, userID)
-                        if realm_boost > 0:
-                            xp_reward = int(xp_reward * (1 + realm_boost / 100))
+                        if xp_boost > 0:
+                            xp_reward = int(xp_reward * (1 + xp_boost / 100))
                             
                         total_xp += xp_reward
                         messages.append(
@@ -219,6 +221,8 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
 
                 if all_completed and "bonus_awarded" not in dur_data:
                     bonus = QUEST_BONUS_XP[duration]
+                    if xp_boost > 0:
+                        bonus = int(bonus * (1 + xp_boost / 100))
                     total_xp += bonus
                     dur_data["bonus_awarded"] = True
                     messages.append(

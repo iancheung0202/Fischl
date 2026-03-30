@@ -48,6 +48,15 @@ class BasePaginationView(View):
         self.page = 0
         self.initial_author = initial_author
         self.message: Optional[discord.Message] = None
+        self.original_footers = [page.footer.text if page.footer else None for page in pages]
+        
+        if self.pages:
+            first_page = self.pages[0]
+            footer_text = f"Page 1 of {len(self.pages)}"
+            if self.original_footers[0]:
+                footer_text += f" • {self.original_footers[0]}"
+            first_page.set_footer(text=footer_text)
+        
         self._update_button_states()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -107,7 +116,10 @@ class BasePaginationView(View):
         self.page = 0
         self._update_button_states()
         embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
+        footer_text = f"Page {self.page + 1} of {len(self.pages)}"
+        if self.original_footers[self.page]:
+            footer_text += f" • {self.original_footers[self.page]}"
+        embed.set_footer(text=footer_text)
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(
@@ -125,7 +137,10 @@ class BasePaginationView(View):
 
         self._update_button_states()
         embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
+        footer_text = f"Page {self.page + 1} of {len(self.pages)}"
+        if self.original_footers[self.page]:
+            footer_text += f" • {self.original_footers[self.page]}"
+        embed.set_footer(text=footer_text)
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(
@@ -143,7 +158,10 @@ class BasePaginationView(View):
 
         self._update_button_states()
         embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
+        footer_text = f"Page {self.page + 1} of {len(self.pages)}"
+        if self.original_footers[self.page]:
+            footer_text += f" • {self.original_footers[self.page]}"
+        embed.set_footer(text=footer_text)
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(
@@ -157,5 +175,8 @@ class BasePaginationView(View):
         self.page = len(self.pages) - 1
         self._update_button_states()
         embed = self.pages[self.page]
-        embed.set_footer(text=f"Page {self.page + 1} of {len(self.pages)}")
+        footer_text = f"Page {self.page + 1} of {len(self.pages)}"
+        if self.original_footers[self.page]:
+            footer_text += f" • {self.original_footers[self.page]}"
+        embed.set_footer(text=footer_text)
         await interaction.response.edit_message(embed=embed, view=self)

@@ -7,6 +7,7 @@ from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
 from enkapy import Enka
+from utils.commands import SlashCommand
 
 async def closeCoOpRequest(interaction):
     match = re.search(r"<@(\d+)>", interaction.message.content)
@@ -382,7 +383,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         if not found:
             embed = discord.Embed(
                 title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use </co-op setup:1254927191037317149> to setup the system!",
+                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -410,7 +411,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         if not found:
             embed = discord.Embed(
                 title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use </co-op setup:1254927191037317149> to setup the system!",
+                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -438,7 +439,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         if not found:
             embed = discord.Embed(
                 title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use </co-op setup:1254927191037317149> to setup the system!",
+                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -466,7 +467,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         if not found:
             embed = discord.Embed(
                 title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use </co-op setup:1254927191037317149> to setup the system!",
+                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -912,7 +913,7 @@ class CoOp(commands.GroupCog, name="co-op"):
         if found:
             embed = discord.Embed(
                 title="Co-op system successfully disabled",
-                description=f"You can use </co-op setup:1254927191037317149> at anytime to setup the co-op system again.",
+                description=f"You can use {SlashCommand('co-op setup')} at anytime to setup the co-op system again.",
                 colour=0xFFFF00,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -1021,7 +1022,7 @@ class CoOp(commands.GroupCog, name="co-op"):
 
         embed = discord.Embed(
             title="",
-            description=f"**<:yes:1036811164891480194> Custom Co-op Panel Sent!** {'This panel will now always be the last message in the channel.' if is_sticky_panel else ''} \n\n*Sent in the wrong channel? Delete the panel and use </co-op panel:1254927191037317149> in the correct channel!*",
+            description=f"**<:yes:1036811164891480194> Custom Co-op Panel Sent!** {'This panel will now always be the last message in the channel.' if is_sticky_panel else ''} \n\n*Sent in the wrong channel? Delete the panel and use {SlashCommand('co-op panel')} in the correct channel!*",
             colour=0x00FF00,
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -1055,7 +1056,7 @@ class CoOp(commands.GroupCog, name="co-op"):
             if value["Server ID"] == interaction.guild.id:
                 embed = discord.Embed(
                     title="Co-Op System already enabled!",
-                    description=f'Your co-op channel is already set as <#{value["Co-op Channel ID"]}> `({value["Co-op Channel ID"]})`\n\nPlease use </co-op panel:1254927191037317149> to create your own customized co-op panel.\n\nIf you wish to disable the co-op system, please use </co-op disable:1246163431912898582>.',
+                    description=f'Your co-op channel is already set as <#{value["Co-op Channel ID"]}> `({value["Co-op Channel ID"]})`\n\nPlease use {SlashCommand("co-op panel")} to create your own customized co-op panel.\n\nIf you wish to disable the co-op system, please use {SlashCommand("co-op disable")}.',
                     colour=0xFF0000,
                 )
                 embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -1082,7 +1083,7 @@ class CoOp(commands.GroupCog, name="co-op"):
             description=(
                 f"- The co-op channel has been set to <#{co_op_channel.id}> `({co_op_channel.id})`.\n"
                 f"- **By default, all administrators can close any co-op requests for moderation purposes.**\n"
-                f"- To create your own customized co-op panel, please use </co-op panel:1254927191037317149>.\n"
+                f"- To create your own customized co-op panel, please use {SlashCommand('co-op panel')}.\n"
                 f"- **Tip:** Make sure members cannot type in <#{co_op_channel.id}>. The system works best if only Fischl is able to send messages in that channel."
             ),
             colour=0x00FF00,

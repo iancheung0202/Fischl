@@ -9,6 +9,7 @@ from discord.ui import Button, View, Select
 
 from commands.Events.helperFunctions import addMora
 from utils.pagination import BasePaginationView, BaseSortSelect
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -45,8 +46,8 @@ async def get_shop_embeds(
         title=f"{interaction.guild.name}'s Server Shop",
         description=(
             f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-            f"<:reply:1036792837821435976> *To check your mora balance and inventory, use </mora:1339721187953082543>.*\n"
-            f"<:reply:1036792837821435976> *To purchase an item, use </buy:1345883946105311382>.*\n"
+            f"<:reply:1036792837821435976> *To check your mora balance and inventory, use {SlashCommand('mora')}.*\n"
+            f"<:reply:1036792837821435976> *To purchase an item, use {SlashCommand('buy')}.*\n"
             f"<:reply:1036792837821435976> *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
         ),
         color=discord.Color.gold(),
@@ -71,15 +72,15 @@ async def get_shop_embeds(
             
         if (i + 1) % 5 == 0 or (i + 1) == len(sorted_items):
             embed.set_footer(
-                text=f"Sorted by {sort_text} in {order_text} order • Page {len(pages) + 1} of {len(sorted_items) // 5 + 1 if len(sorted_items) % 5 != 0 else len(sorted_items) // 5}"
+                text=f"Sorted by {sort_text} in {order_text} order"
             )
             pages.append(embed)
             embed = discord.Embed(
                 title=f"{interaction.guild.name}'s Server Shop",
                 description=(
                     f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-                    f"<:reply:1036792837821435976> *To check your mora balance and inventory, use </mora:1339721187953082543>.*\n"
-                    f"<:reply:1036792837821435976> *To purchase an item, use </buy:1345883946105311382>.*\n"
+                    f"<:reply:1036792837821435976> *To check your mora balance and inventory, use {SlashCommand('mora')}.*\n"
+                    f"<:reply:1036792837821435976> *To purchase an item, use {SlashCommand('buy')}.*\n"
                 ),
                 color=discord.Color.gold(),
             )
@@ -730,7 +731,7 @@ class Shop(commands.Cog):
         else:
             embed = discord.Embed(
                 title="Random events are not enabled within this server!",
-                description=f"What are you thinking? Random event is currently not even enabled in **{interaction.guild.name}**. To enable the function in a channel, use </events enable:1339782470677299260>.",
+                description=f"What are you thinking? Random event is currently not even enabled in **{interaction.guild.name}**. To enable the function in a channel, use {SlashCommand('events enable')}.",
                 colour=0xFFFF00,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)

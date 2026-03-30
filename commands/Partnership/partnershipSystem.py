@@ -11,6 +11,8 @@ from discord.ui import Button, View, Modal, TextInput
 from firebase_admin import db
 from typing import Optional, List
 
+from utils.commands import SlashCommand
+
 def _config_ref(guild_id: int):
     return db.reference(f'Partner/config/{guild_id}')
 
@@ -46,7 +48,7 @@ async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
     if header_embed.title is None and header_embed.description is None:
         header_embed = discord.Embed(
             title='Server Partner List',
-            description='Use </partner edit-panel:1364761118324822128> and select `Header` to edit this embed!',
+            description=f'Use {SlashCommand("partner edit-panel")} and select `Header` to edit this embed!',
             color=int(header.get('color', '#5865F2').lstrip('#'), 16)
         )
     if 'thumbnail' in header:
@@ -142,7 +144,7 @@ async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
     if footer_embed.title is None and footer_embed.description is None:
         footer_embed = discord.Embed(
             title='Instructions',
-            description='Use </partner edit-panel:1364761118324822128> and select `Footer` to edit this embed!',
+            description=f'Use {SlashCommand("partner edit-panel")} and select `Footer` to edit this embed!',
             color=int(header.get('color', '#5865F2').lstrip('#'), 16)
         )
     if 'thumbnail' in footer:
@@ -419,7 +421,7 @@ class Partner(commands.GroupCog, name="partner"):
 
             embed = discord.Embed(
                 title="New Partnership Request",
-                description="-# - Staff can use </partner status:1364761118324822128> to update the thread and </partner add-partner:1364761118324822128> to add partner to the panel.\n-# - Everyone here can use </partner invite:1364761118324822128> to invite other server reps/staff to this thread.",
+                description=f"-# - Staff can use {SlashCommand('partner status')} to update the thread and {SlashCommand('partner add-partner')} to add partner to the panel.\n-# - Everyone here can use {SlashCommand('partner invite')} to invite other server reps/staff to this thread.",
                 color=0xfee75c
             )
 
@@ -605,7 +607,7 @@ class Partner(commands.GroupCog, name="partner"):
 
         embed = discord.Embed(
             title="Partnership Thread (initiated by Staff)",
-            description="-# - Staff can use </partner status:1364761118324822128> to update the thread and </partner add-partner:1364761118324822128> to add partner to the panel.\n-# - Everyone here can use </partner invite:1364761118324822128> to invite other server reps/staff to this thread.",
+            description=f"-# - Staff can use {SlashCommand('partner status')} to update the thread and {SlashCommand('partner add-partner')} to add partner to the panel.\n-# - Everyone here can use {SlashCommand('partner invite')} to invite other server reps/staff to this thread.",
             color=0xfee75c
         )
 
@@ -639,7 +641,7 @@ class Partner(commands.GroupCog, name="partner"):
                 "Members": data.get('approximate_member_count', 'Unknown')
             }
         )
-        await interaction.followup.send(f"<:yes:1036811164891480194> Thread created: {thread.mention}. Use </partner invite:1364761118324822128> to invite server representatives to the thread!", ephemeral=True)
+        await interaction.followup.send(f"<:yes:1036811164891480194> Thread created: {thread.mention}. Use {SlashCommand('partner invite')} to invite server representatives to the thread!", ephemeral=True)
     @partner_create.error
     async def partner_create_error(self, interaction: discord.Interaction, error: Exception):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
@@ -936,7 +938,7 @@ class Partner(commands.GroupCog, name="partner"):
         )
 
         await interaction.response.send_message(
-            f"<:yes:1036811164891480194> Group '{name}' created! To delete a group, use </partner remove-group:1364761118324822128>.",
+            f"<:yes:1036811164891480194> Group '{name}' created! To delete a group, use {SlashCommand('partner remove-group')}.",
             ephemeral=True
         )
     @partner_add_group.error
@@ -1162,13 +1164,13 @@ class Partner(commands.GroupCog, name="partner"):
             description=(
                 "Here are something you can do next to make everything work:\n"
                 f"- Check out {panel_channel.mention} and {request_channel.mention} and follow the instructions there.\n"
-                f"- Use </partner add-group:1364761118324822128> to group partners (e.g., \"Hangouts\", \"Genshin\", \"HSR\", etc).  \n"
+                f"- Use {SlashCommand('partner add-group')} to group partners (e.g., \"Hangouts\", \"Genshin\", \"HSR\", etc).  \n"
                 "  - **Name**: A short ID is required (no spaces, like `Genshin_Impact`).  \n"
                 "  - **Title**: The display name of the group (e.g., \"🎮 Genshin Impact Servers\").  \n"
                 "  - **Prefix/Suffix**: Customize how server links appear on the panel with your favorite symbols.  \n"
                 "  - Partners will only show up on the panel if they're in a group!\n"
-                "- Try </partner add-partner:1364761118324822128> and </partner remove-partner:1364761118324822128> to test add/remove partners.\n"
-                "- Use </partner create:1364761118324822128> to manually create a partnership thread as a staff\n\n"
+                f"- Try {SlashCommand('partner add-partner')} and {SlashCommand('partner remove-partner')} to test add/remove partners.\n"
+                f"- Use {SlashCommand('partner create')} to manually create a partnership thread as a staff\n\n"
                 "**⚙️ Your Configured Settings**"
             ),
             color=0x00FF00
@@ -1210,7 +1212,7 @@ class Partner(commands.GroupCog, name="partner"):
                 color=0x5865F2
             )
             instructions_embed.add_field(name="For Server Representatives", value=f"1. Click `Request Partnership` **[here]({panel_message.jump_url})** in {panel_channel.mention}\n2. Check existing threads using:\n  - **Threads <:thread_icon:1366092363822268598> button** at channel top\n  - **Channel Sidebar** on desktop (hover → 'See All')", inline=False)
-            instructions_embed.add_field(name="For Staff Only", value=f"- Manage partnership requests in threads. Use the methods above to access all the threads.\n- Use </partner create:1364761118324822128> to manually create a partnership thread.", inline=False)
+            instructions_embed.add_field(name="For Staff Only", value=f"- Manage partnership requests in threads. Use the methods above to access all the threads.\n- Use {SlashCommand('partner create')} to manually create a partnership thread.", inline=False)
             instructions_embed.set_image(url="https://media.discordapp.net/attachments/1106727534479032341/1366102857366896781/thread_instructions.png?ex=680fb9ee&is=680e686e&hm=4a80c4dda380d4b3e5ef7781576a9be6981e909a0179780e50dc605b1a4570c1&=")
             instructions_embed.set_footer(text="You may delete/replace this message if you wish to.")
             await request_channel.send(embed=instructions_embed)
@@ -1242,7 +1244,7 @@ class Partner(commands.GroupCog, name="partner"):
 
         categories = _categories_ref(interaction.guild.id).get()
         if not categories or group not in categories:
-            await interaction.followup.send("<:no:1036810470860013639> Invalid group! Create groups first using </partner add-group:1364761118324822128>.", ephemeral=True)
+            await interaction.followup.send(f"<:no:1036810470860013639> Invalid group! Create groups first using {SlashCommand('partner add-group')}.", ephemeral=True)
             return
 
         pattern = r'\[([^\]]+)\]\(([^)]+)\)'
@@ -1334,7 +1336,7 @@ class Partner(commands.GroupCog, name="partner"):
         await interaction.response.defer(ephemeral=True)
         categories = _categories_ref(interaction.guild.id).get()
         if not categories or group not in categories:
-            await interaction.followup.send("<:no:1036810470860013639> Invalid group! Create groups first using </partner add-group:1364761118324822128>.", ephemeral=True)
+            await interaction.followup.send(f"<:no:1036810470860013639> Invalid group! Create groups first using {SlashCommand('partner add-group')}.", ephemeral=True)
             return
         
         if server_rep is not None:

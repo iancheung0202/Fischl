@@ -19,6 +19,7 @@ from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -558,7 +559,7 @@ class Mora(commands.Cog):
             )
 
         inventory_items = await get_user_inventory(interaction.client.pool, user.id, interaction.guild.id)
-        inv = "No </shop:1345883946105311383> items purchased yet"
+        inv = f"No {SlashCommand('shop')} items purchased yet"
 
         MAX_INV_LENGTH = 1024
         EXTRA_LENGTH = 15 
@@ -687,8 +688,8 @@ class Mora(commands.Cog):
                 reward_display = f"<@&{ms['reward']}>" if is_role else ms["reward"]
                 milestones_text += f"- -# {reward_display} - *Earned at {MORA_EMOTE} `{ms['threshold']:,}` <t:{ms['timestamp']}:R>*\n"
         else:
-            milestones_text = "No </milestones:1380247962390888578> earned yet"
-    
+            milestones_text = f"No {SlashCommand('milestones')} earned yet"
+
         embed.add_field(name="Guild Milestones", value=milestones_text, inline=False)
 
         animated_background = selected.get("animated_background")
@@ -756,7 +757,7 @@ class Mora(commands.Cog):
         message = await interaction.followup.send(embed=embed, view=view)
         view.message = message
         if followup:
-            await interaction.followup.send("💡 Tip: Customize your inventory however you like (custom background, profile frame, titles) with </customize:1339721187953082544>!", ephemeral=True)
+            await interaction.followup.send(f"💡 Tip: Customize your inventory however you like (custom background, profile frame, titles) with {SlashCommand('customize')}!", ephemeral=True)
         end_time = time.perf_counter()
         print(f"Total /mora execution time: {end_time - start_time} seconds")
 

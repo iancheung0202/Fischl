@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
 from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -246,7 +247,7 @@ class ConfirmPurchaseView(discord.ui.View):
         if itemCost > total_available:
             embed = discord.Embed(
                 title="<:WrioShrug:1304094173795713114> Insufficient Mora",
-                description=f"We couldn't assign you **{role_mention}**. Please check your mora balance using </mora:1339721187953082543> to confirm if you have enough guild-specific mora for this purchase.",
+                description=f"We couldn't assign you **{role_mention}**. Please check your mora balance using {SlashCommand('mora')} to confirm if you have enough guild-specific mora for this purchase.",
                 color=discord.Color.red(),
             )
             await interaction.edit_original_response(embed=embed, view=None)

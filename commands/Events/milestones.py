@@ -8,6 +8,7 @@ from discord.ui import Button, View, Select
 
 from commands.Events.helperFunctions import get_guild_mora, get_users_by_mora_threshold
 from utils.pagination import BasePaginationView, BaseSortSelect
+from utils.commands import SlashCommand
 
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
@@ -39,13 +40,17 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sor
         reverse=reverse
     )
     
+    # Determine sort text for footer
+    sort_text = "Threshold" if sort_by == "threshold" else "Name"
+    order_text = "Descending" if reverse else "Ascending"
+    
     pages = []
     page = discord.Embed(
         title=f"{interaction.guild.name}'s Server Milestones",
         description=(
-            f"<:reply:1036792837821435976> *Unlike </shop:1345883946105311383> items, all milestones cost {MORA_EMOTE} `0`.*\n"
-            "<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds.*\n"
-            "<:reply:1036792837821435976> *Server milestones are designed to be cumulative.*"
+            f"<:reply:1036792837821435976> *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
+            f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds.*\n"
+            f"<:reply:1036792837821435976> *Server milestones are designed to be cumulative.*"
         ),
         color=discord.Color.pink()
     )
@@ -74,22 +79,21 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sor
         
         count += 1
         if count % 5 == 0:
+            page.set_footer(text=f"Sorted by {sort_text} in {order_text} order")
             pages.append(page)
             page = discord.Embed(
                 title=f"{interaction.guild.name}'s Server Milestones",
                 description=(
-                    f"<:reply:1036792837821435976> *Unlike </shop:1345883946105311383> items, all milestones cost {MORA_EMOTE} `0`.*\n"
-                    "<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds.*\n"
-                    "<:reply:1036792837821435976> *Server milestones are designed to be cumulative.*"
+                    f"<:reply:1036792837821435976> *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
+                    f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds.*\n"
+                    f"<:reply:1036792837821435976> *Server milestones are designed to be cumulative.*"
                 ),
                 color=discord.Color.pink()
             )
     
     if count % 5 != 0 or count == 0:
+        page.set_footer(text=f"Sorted by {sort_text} in {order_text} order")
         pages.append(page)
-    
-    for i, embed in enumerate(pages):
-        embed.set_footer(text=f"Page {i+1}/{len(pages)}")
     
     return pages
 

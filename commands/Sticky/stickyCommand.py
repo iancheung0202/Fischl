@@ -5,6 +5,8 @@ from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
 
+from utils.commands import SlashCommand
+
 
 @app_commands.guild_only()
 class Sticky(commands.GroupCog, name="sticky"):
@@ -58,7 +60,7 @@ class Sticky(commands.GroupCog, name="sticky"):
 
         embed = discord.Embed(
             title="Sticky message enabled!",
-            description=f"<:yes:1036811164891480194> This function allows a message to always stick to the bottom of the channel, which means no matter what, and how many messages are sent in the channel, this message is always going to be the last message in the channel. This is especially useful when you would like members to be notified what (not) to do in a channel instantly.\n\nIf you update the message content, you could use </sticky enable:1254927190915551254> again. If you no longer wish to use this function, use </sticky disable:1254927190915551254>.",
+            description=f"<:yes:1036811164891480194> This function allows a message to always stick to the bottom of the channel, which means no matter what, and how many messages are sent in the channel, this message is always going to be the last message in the channel. This is especially useful when you would like members to be notified what (not) to do in a channel instantly.\n\nIf you update the message content, you could use {SlashCommand('sticky enable')} again. If you no longer wish to use this function, use {SlashCommand('sticky disable')}.",
             colour=0x00FF00,
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -110,7 +112,7 @@ class Sticky(commands.GroupCog, name="sticky"):
         if found:
             embed = discord.Embed(
                 title="Sticky message disabled!",
-                description=f"Sad to see you go. If you change your mind at anytime, you could use </sticky enable:1254927190915551254> to enable sticky messages again.",
+                description=f"Sad to see you go. If you change your mind at anytime, you could use {SlashCommand('sticky enable')} to enable sticky messages again.",
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -128,7 +130,7 @@ class Sticky(commands.GroupCog, name="sticky"):
         else:
             embed = discord.Embed(
                 title="Sticky message is not enabled!",
-                description=f"What are you thinking? Sticky message is currently not even enabled in this channel. To enable the function, use </sticky enable:1254927190915551254>.",
+                description=f"What are you thinking? Sticky message is currently not even enabled in this channel. To enable the function, use {SlashCommand('sticky enable')}.",
                 colour=0xFFFF00,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
