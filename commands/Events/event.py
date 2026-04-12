@@ -4,7 +4,6 @@ import asyncio
 import time
 import random
 import os
-import requests
 import re
 import json
 import importlib
@@ -17,7 +16,6 @@ from discord.ui import Button, View
 from PIL import Image, ImageDraw, ImageFont
 from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
-from bs4 import BeautifulSoup
 
 from commands.Events.trackData import get_current_track, check_tier_rewards
 from commands.Events.helperFunctions import addMora, get_minigame_list, get_guild_mora
@@ -2539,6 +2537,9 @@ class answerLieBtn(discord.ui.Button):
             user_display = await userAndTitle(interaction.user.id, interaction.guild.id, interaction.client.pool)
             
             elapsed = time.time() - game_state.start_time if game_state.start_time else 300
+            
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, game_state.reward, interaction.channel.id, interaction.guild.id, interaction.client)
+            
             embed.color = discord.Color.green()
             embed.description += f"\n\n🏆 {user_display} chose {self.emoji} correctly and earned {MORA_EMOTE} `{text}`!"
             embed.set_footer(text="Now y'all know a little bit more about each other.")
@@ -2680,6 +2681,7 @@ class TwoTruthAndALieButton(discord.ui.Button):
 
 
 async def twoTruthsAndALie(channel, client):
+    reward = random.randint(4000, 6000)
     messages = [message async for message in channel.history(limit=10)]
     for msg in messages:
         user = msg.author
@@ -4460,6 +4462,9 @@ class DailyChestSystem:
         self.user_states = {} 
         self.cooldown = 5 
         self.claimed_today = set()
+        self.flag_cache = {}  # Cache: {(guild_id, user_id): (timestamp, is_disabled)}
+        self.minigame_flag_cache = {}  # Cache: {(guild_id, user_id): (timestamp, is_disabled)}
+        self.cache_ttl = 6000
         
     def is_effortful_message(self, content: str, last_content: str) -> bool:
         content = content.strip()
@@ -4487,9 +4492,28 @@ class DailyChestSystem:
             
         if message.channel.id not in enabledChannels:
             return
-            
+        
         user_id = message.author.id
         guild_id = message.guild.id
+        cache_key = (guild_id, user_id)
+        current_time = time.time()
+        
+        if cache_key in self.flag_cache:
+            cached_time, chest_disabled = self.flag_cache[cache_key]
+            if current_time - cached_time < self.cache_ttl:
+                if chest_disabled:
+                    return
+            else:
+                del self.flag_cache[cache_key]
+        
+        if cache_key not in self.flag_cache:
+            flag_ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/flag")
+            chest_disabled = flag_ref.get() or False
+            self.flag_cache[cache_key] = (current_time, chest_disabled)
+            
+            if chest_disabled:
+                return
+            
         key = (guild_id, user_id)
         today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         
@@ -4545,6 +4569,32 @@ class DailyChestSystem:
     def save_to_db(self, guild_id, user_id, state):
         ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/progress")
         ref.set(state)
+    
+    def invalidate_flag_cache(self, guild_id, user_id):
+        cache_key = (guild_id, user_id)
+        if cache_key in self.flag_cache:
+            del self.flag_cache[cache_key]
+    
+    def check_minigame_disabled(self, guild_id, user_id):
+        cache_key = (guild_id, user_id)
+        current_time = time.time()
+        
+        if cache_key in self.minigame_flag_cache:
+            cached_time, minigame_disabled = self.minigame_flag_cache[cache_key]
+            if current_time - cached_time < self.cache_ttl:
+                return minigame_disabled
+            else:
+                del self.minigame_flag_cache[cache_key]
+        
+        flag_ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/minigame_flag")
+        minigame_disabled = flag_ref.get() or False
+        self.minigame_flag_cache[cache_key] = (current_time, minigame_disabled)
+        return minigame_disabled
+    
+    def invalidate_minigame_flag_cache(self, guild_id, user_id):
+        cache_key = (guild_id, user_id)
+        if cache_key in self.minigame_flag_cache:
+            del self.minigame_flag_cache[cache_key]
         
     async def reset_daily_states(self):
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -4687,6 +4737,9 @@ class TheEventItself(commands.Cog):
                         pass
 
                 if okForEvent and originalList is not None:
+                    if self.chest_system.check_minigame_disabled(message.guild.id, message.author.id):
+                        return
+                    
                     channel_id = message.channel.id
 
                     if channel_id in active_channels:

@@ -138,7 +138,7 @@ SEASONS = [
         track_data = [
             {'tier': 1,  'xp_req': 1, 'cumulative_xp': 1,    'free': '+69 Chest Upgrade Limit',                                              'elite': 'pls'},
             {'tier': 2,  'xp_req': 1, 'cumulative_xp': 2,    'free': 'Mora Gain Boost +67%',                                            'elite': 'dont'},
-            {'tier': 3,  'xp_req': 1, 'cumulative_xp': 3,    'free': 'Animated Title: 67 <a:clown:1487325727497130024> <-- me',       'elite': 'buy'},
+            {'tier': 3,  'xp_req': 1, 'cumulative_xp': 3,    'free': 'Animated Title | 67 <a:clown:1487325727497130024> <-- me',       'elite': 'buy'},
         ]
     ),
     Season(

@@ -182,12 +182,12 @@ class ConfirmPurchaseView(discord.ui.View):
             if history_snapshot:
                 current_time = time.time()
                 for key, val in history_snapshot.items():
-                    if val.get('item_name') == roleName:
+                    if val.get('item_name') == roleName and any(keyword in val.get('item_description', '').lower() for keyword in ["welkin", "pass", "voucher", "nitro"]):
                         purchase_time = val.get('timestamp', 0)
                         if current_time - purchase_time < 60 * 60 * 24 * 45: # 45 days
                             embed = discord.Embed(
                                 title="<:keksweat:1381225834110652497> Miss Xianyun wants to give someone else a chance!",
-                                description=f"You have already purchased **{roleName}** recently. You can only buy this item again in <t:{int(60 +  purchase_time)}:R>.",
+                                description=f"You have already purchased **{roleName}** recently. You can only buy this item again <t:{int(60 * 60 * 24 * 45 +  purchase_time)}:R>.",
                                 color=discord.Color.red()
                             )
                             await interaction.edit_original_response(embed=embed, view=None)
@@ -280,7 +280,7 @@ class ConfirmPurchaseView(discord.ui.View):
             
             title = rewards[x][0]  # role_id or title string
             desc = rewards[x][1]   # description
-            cost = rewards[x][2]   # cost
+            cost = int(rewards[x][2])   # cost
             timestamp = int(time.mktime(datetime.datetime.now().timetuple()))
             
             # Add to inventory

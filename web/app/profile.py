@@ -1952,8 +1952,10 @@ def api_daily_game_submit_guild(guild_id, game_id):
         return jsonify({"error": "Game session expired"}), 400
     
     # Get user's answer
-    data = request.get_json()
+    data = request.get_json() or {}
     user_answer = data.get("answer")
+    if user_answer is None:
+        user_answer = ""
     
     # Check answer based on game type
     correct = False
@@ -2119,6 +2121,8 @@ def generate_game_html_guild(game_id, game_config, game_data, guild_id):
           }});
           
           window.submitMathAnswer = function() {{
+            if (window.isGameOver) return;
+            window.isGameOver = true;
             clearInterval(timer);
             const answer = document.getElementById('math-answer').value;
             fetch('/api/daily-games/{guild_id}/{game_id}/submit', {{
@@ -2239,6 +2243,8 @@ def generate_game_html_guild(game_id, game_config, game_data, guild_id):
           }}
           
           function endGame(won) {{
+            if (window.isGameOver) return;
+            window.isGameOver = true;
             clearInterval(timer);
             fetch('/api/daily-games/{guild_id}/{game_id}/submit', {{
               method: 'POST',
@@ -2288,6 +2294,8 @@ def generate_game_html_guild(game_id, game_config, game_data, guild_id):
           }}, 1000);
           
           window.flipCoin = function(choice) {{
+            if (window.isGameOver) return;
+            window.isGameOver = true;
             clearInterval(timer);
             fetch('/api/daily-games/{guild_id}/{game_id}/submit', {{
               method: 'POST',
@@ -2333,6 +2341,8 @@ def generate_game_html_guild(game_id, game_config, game_data, guild_id):
           }});
           
           window.submitUnscramble = function() {{
+            if (window.isGameOver) return;
+            window.isGameOver = true;
             clearInterval(timer);
             const answer = document.getElementById('unscramble-answer').value;
             fetch('/api/daily-games/{guild_id}/{game_id}/submit', {{
@@ -2383,6 +2393,8 @@ def generate_game_html_guild(game_id, game_config, game_data, guild_id):
           }});
           
           window.submitShapes = function() {{
+            if (window.isGameOver) return;
+            window.isGameOver = true;
             clearInterval(timer);
             const answer = document.getElementById('shapes-answer').value;
             fetch('/api/daily-games/{guild_id}/{game_id}/submit', {{
@@ -2425,6 +2437,8 @@ def generate_game_html_guild(game_id, game_config, game_data, guild_id):
           }}, 1000);
           
           window.submitTyping = function() {{
+            if (window.isGameOver) return;
+            window.isGameOver = true;
             clearInterval(timer);
             const answer = document.getElementById('typing-answer').value;
             fetch('/api/daily-games/{guild_id}/{game_id}/submit', {{

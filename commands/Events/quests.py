@@ -5,7 +5,15 @@ import random
 
 from firebase_admin import db
 from discord.ext import commands
-from utils.commands import SlashCommand
+try:
+    from utils.commands import SlashCommand
+except ImportError:
+    class SlashCommand:
+        def __init__(self, name):
+            self.name = name
+
+        def __str__(self):
+            return f"`/{self.name}`"
 
 QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests", "earn_big_mora", "gift_mora_unique", "summon_minigame", "customize_profile", "purchase_items", "unlock_drop_packs", "upgrade_buildings", "gift_mora_poorer", "hug_user", "win_minigames_under_5s"]
 QUEST_GOAL_PRESETS = {

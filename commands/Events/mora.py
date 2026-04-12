@@ -162,12 +162,13 @@ class ToggleView(discord.ui.View):
         self.user_id = user_id
         self.command_user_id = command_user_id
         self.message = message
-        self.state = "home"  # home, graph, track, quests, domain
+        self.state = "home"  # home, graph, track, quests, domain, settings
         self.guild_id = guild_id
         self.purchase_button = None
         self.custom_color = custom_color
         
         self.upgrade_select = None
+        self.settings_select = None
 
         self.profile_button = Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1)
         self.add_item(self.profile_button)
@@ -345,7 +346,7 @@ class ToggleView(discord.ui.View):
                 f"+ Current Tier: {current_tier_display} ({user_xp} total XP)\n"
                 + f"- Status: {'Elite Track Activated' if is_elite_active(self.user_id, self.guild_id) else 'Free Track Only'}\n"
                 + f"{next_tier_info}\n"
-                + (f" {double_struck_number(current_tier)} {emoji_bar(xp_in_current_tier / next_tier_xp)} {double_struck_number(current_tier + 1)}\n" if current_tier < 31 else "")
+                + (f" {double_struck_number(current_tier)} {emoji_bar(xp_in_current_tier / next_tier_xp if next_tier_xp else 0)} {double_struck_number(current_tier + 1)}\n" if current_tier < 31 else "")
                 + f"```\n"
                 + f"{track_table}\n"
                 + "`✅` = Tier reached     `🔄` = In progress     `🔐` = Locked\n"
@@ -435,6 +436,43 @@ class ToggleView(discord.ui.View):
         embed = await get_kingdom_embed(target_user, interaction.guild.id, self.custom_color, interaction.client.pool)
         await interaction.response.edit_message(embed=embed, view=self)
 
+    @discord.ui.button(label="Settings", style=discord.ButtonStyle.grey, custom_id="settings")
+    async def settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.command_user_id:
+            await interaction.response.send_message("You can't use this button!", ephemeral=True)
+            return
+
+        self.state = "settings"
+        await self.update_buttons(interaction.client.pool)
+        
+        # Get current chest and minigame spawn status
+        chest_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/flag")
+        chest_disabled = chest_flag_ref.get() or False
+        chest_status = "<:no:1036810470860013639> Disabled" if chest_disabled else "<:yes:1036811164891480194> Enabled"
+        
+        minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/minigame_flag")
+        minigame_disabled = minigame_flag_ref.get() or False
+        minigame_status = "<:no:1036810470860013639> Disabled" if minigame_disabled else "<:yes:1036811164891480194> Enabled"
+        
+        settings_embed = discord.Embed(
+            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
+            description="Customize your gameplay experience. Use the dropdown below to modify settings.",
+            color=self.custom_color or discord.Color.blurple()
+        )
+        settings_embed.add_field(
+            name="Daily Chest Spawning",
+            value=f"**Status:** {chest_status}\n-# When disabled, chests will not spawn from messages.",
+            inline=False
+        )
+        settings_embed.add_field(
+            name="Minigame Spawning",
+            value=f"**Status:** {minigame_status}\n-# When disabled, minigames will not trigger from messages.",
+            inline=False
+        )
+        settings_embed.set_footer(text="Tip: You can re-enable settings anytime by toggling them back on")
+        
+        await interaction.response.edit_message(embed=settings_embed, view=self)
+
     async def upgrade_select_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.command_user_id:
             return await interaction.response.send_message("You can't use this button!", ephemeral=True)
@@ -451,16 +489,98 @@ class ToggleView(discord.ui.View):
         else:
             await interaction.response.send_message(f"<:no:1036810470860013639> {msg}", ephemeral=True)
 
+    async def settings_select_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.command_user_id:
+            return await interaction.response.send_message("You can't use this button!", ephemeral=True)
+        
+        setting_key = self.settings_select.values[0]
+        
+        if setting_key == "toggle_chest_spawn":
+            flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/flag")
+            current_status = flag_ref.get() or False
+            new_status = not current_status
+            flag_ref.set(new_status)
+            
+            chest_cog = interaction.client.get_cog('TheEventItself')
+            if chest_cog and hasattr(chest_cog, 'chest_system'):
+                chest_cog.chest_system.invalidate_flag_cache(interaction.guild.id, self.user_id)
+            
+            chest_status = "<:no:1036810470860013639> Disabled" if new_status else "<:yes:1036811164891480194> Enabled"
+            minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/minigame_flag")
+            minigame_disabled = minigame_flag_ref.get() or False
+            minigame_status = "<:no:1036810470860013639> Disabled" if minigame_disabled else "<:yes:1036811164891480194> Enabled"
+            
+            settings_embed = discord.Embed(
+                title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
+                description="Customize your gameplay experience. Use the dropdown below to modify settings.",
+                color=self.custom_color or discord.Color.blurple()
+            )
+            settings_embed.add_field(
+                name="Daily Chest Spawning",
+                value=f"**Status:** {chest_status}\n-# When disabled, chests will not spawn from messages.",
+                inline=False
+            )
+            settings_embed.add_field(
+                name="Minigame Spawning",
+                value=f"**Status:** {minigame_status}\n-# When disabled, minigames will not trigger from messages.",
+                inline=False
+            )
+            settings_embed.set_footer(text="Tip: You can re-enable settings anytime by toggling them back on")
+            
+            await interaction.response.edit_message(embed=settings_embed, view=self)
+            await interaction.followup.send(
+                f"<:yes:1036811164891480194> Daily chest spawning is now **{'disabled' if new_status else 'enabled'}**!",
+                ephemeral=True
+            )
+        
+        elif setting_key == "toggle_minigame_spawn":
+            minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/minigame_flag")
+            current_status = minigame_flag_ref.get() or False
+            new_status = not current_status
+            minigame_flag_ref.set(new_status)
+            
+            chest_cog = interaction.client.get_cog('TheEventItself')
+            if chest_cog and hasattr(chest_cog, 'chest_system'):
+                chest_cog.chest_system.invalidate_minigame_flag_cache(interaction.guild.id, self.user_id)
+            
+            chest_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/flag")
+            chest_disabled = chest_flag_ref.get() or False
+            chest_status = "<:no:1036810470860013639> Disabled" if chest_disabled else "<:yes:1036811164891480194> Enabled"
+            minigame_status = "<:no:1036810470860013639> Disabled" if new_status else "<:yes:1036811164891480194> Enabled"
+            
+            settings_embed = discord.Embed(
+                title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
+                description="Customize your gameplay experience. Use the dropdown below to modify settings.",
+                color=self.custom_color or discord.Color.blurple()
+            )
+            settings_embed.add_field(
+                name="Daily Chest Spawning",
+                value=f"**Status:** {chest_status}\n-# When disabled, chests will not spawn from messages.",
+                inline=False
+            )
+            settings_embed.add_field(
+                name="Minigame Spawning",
+                value=f"**Status:** {minigame_status}\n-# When disabled, minigames will not trigger from messages.",
+                inline=False
+            )
+            settings_embed.set_footer(text="Tip: You can re-enable settings anytime by toggling them back on")
+            
+            await interaction.response.edit_message(embed=settings_embed, view=self)
+            await interaction.followup.send(
+                f"<:yes:1036811164891480194> Minigame spawning is now **{'disabled' if new_status else 'enabled'}**!",
+                ephemeral=True
+            )
+
     async def update_buttons(self, pool=None):
         for child in self.children:
-            if child.custom_id in ["home", "graph", "track", "quests", "domain"]:
+            if child.custom_id in ["home", "graph", "track", "quests", "domain", "settings"]:
                 child.disabled = False
                 child.style = discord.ButtonStyle.grey
             if self.state == child.custom_id:
                 child.disabled = True
                 child.style = discord.ButtonStyle.blurple
         
-        show_profile_promo = (self.state != "domain")
+        show_profile_promo = (self.state != "domain" and self.state != "settings")
         
         items_to_remove = []
         
@@ -473,7 +593,7 @@ class ToggleView(discord.ui.View):
         for child in self.children:
             cid = getattr(child, "custom_id", "")
             if cid:
-                if cid.startswith("upgrade_") or cid in ["kingdom_upgrade_select", "kingdom_upgrade_select_disabled"]:
+                if cid.startswith("upgrade_") or cid in ["kingdom_upgrade_select", "kingdom_upgrade_select_disabled", "settings_select"]:
                     items_to_remove.append(child)
                     
         for item in items_to_remove:
@@ -527,6 +647,34 @@ class ToggleView(discord.ui.View):
                 )
                 self.upgrade_select.callback = self.upgrade_select_callback
                 self.add_item(self.upgrade_select)
+        
+        if self.state == "settings":
+            # Get current chest and minigame spawn status for display
+            chest_flag_ref = db.reference(f"/Chat Minigames Chests/{self.guild_id}/{self.user_id}/flag")
+            chest_disabled = chest_flag_ref.get() or False
+            chest_status = "Disabled" if chest_disabled else "Enabled"
+            
+            minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{self.guild_id}/{self.user_id}/minigame_flag")
+            minigame_disabled = minigame_flag_ref.get() or False
+            minigame_status = "Disabled" if minigame_disabled else "Enabled"
+            
+            self.settings_select = Select(
+                placeholder="Select a setting to modify...",
+                options=[
+                    discord.SelectOption(
+                        label="Daily Chest Spawning",
+                        value="toggle_chest_spawn",
+                    ),
+                    discord.SelectOption(
+                        label="Minigame Spawning",
+                        value="toggle_minigame_spawn",
+                    )
+                ],
+                custom_id="settings_select",
+                row=2
+            )
+            self.settings_select.callback = self.settings_select_callback
+            self.add_item(self.settings_select)
 
 class Mora(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:

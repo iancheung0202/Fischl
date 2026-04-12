@@ -1,8 +1,11 @@
 import discord
 import datetime
+import aiohttp
+import base64
 
 from discord import app_commands
 from discord.ext import commands
+from assets.secret import DATABASE_USER, DATABASE_PASSWORD, NTFY_LINK
 
 def extract_params(options):
     params = []
@@ -29,6 +32,25 @@ def extract_params(options):
 class OnCommand(commands.Cog):
     def __init__(self, bot):
         self.client = bot
+        self.client.tree.on_error = self.on_app_command_error
+
+    async def on_app_command_error(self, interaction, error):
+        error_message = f"Command: {interaction.command.qualified_name if interaction.command else 'Unknown'}\nError: {str(error)[:500]}"
+        print(f"Error in app command: {error}")
+        
+        async with aiohttp.ClientSession() as session:
+            auth = aiohttp.BasicAuth(DATABASE_USER, DATABASE_PASSWORD)
+            try:
+                async with session.post(
+                    NTFY_LINK,
+                    data=error_message,
+                    auth=auth,
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status != 200:
+                        print(f"Failed to send ntfy notification: {resp.status}")
+            except Exception as e:
+                print(f"Error sending ntfy notification: {e}")
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction, command):
