@@ -5,7 +5,12 @@ import base64
 
 from discord import app_commands
 from discord.ext import commands
-from assets.secret import DATABASE_USER, DATABASE_PASSWORD, NTFY_LINK
+try:
+    from assets.secret import DATABASE_USER, DATABASE_PASSWORD, NTFY_LINK
+except ImportError:
+    DATABASE_USER = ""
+    DATABASE_PASSWORD = ""
+    NTFY_LINK = ""
 
 def extract_params(options):
     params = []

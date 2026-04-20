@@ -155,20 +155,101 @@ async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
 
     return [header_embed] + category_embeds + [footer_embed]
 
+def _calculate_embed_size(embed: discord.Embed) -> int:
+    size = 0
+    
+    if embed.title:
+        size += len(embed.title)
+    if embed.description:
+        size += len(embed.description)
+    if embed.author:
+        size += len(embed.author.name) if embed.author.name else 0
+    if embed.footer:
+        size += len(embed.footer.text) if embed.footer.text else 0
+    
+    for field in embed.fields:
+        size += len(field.name) + len(field.value)
+    
+    size += 100
+    return size
+
+def _group_embeds_by_message_limit(embeds: List[discord.Embed], limit: int = 6000) -> List[List[discord.Embed]]:
+    groups = []
+    current_group = []
+    current_size = 0
+    
+    for embed in embeds:
+        embed_size = _calculate_embed_size(embed)
+        
+        if current_size + embed_size > limit and current_group:
+            groups.append(current_group)
+            current_group = [embed]
+            current_size = embed_size
+        else:
+            current_group.append(embed)
+            current_size += embed_size
+    
+    if current_group:
+        groups.append(current_group)
+    
+    return groups
+
 async def _update_panel(guild_id: int, bot):
     config = _config_ref(guild_id).get()
     panel = _panel_ref(guild_id).get()
     if not config or not panel:
-        return
+        return None
 
     try:
         channel = bot.get_channel(panel['channel_id'])
         if not channel:
-            return
+            return None
+        
+        all_embeds = await _build_panel_embeds(guild_id)
+        embed_groups = _group_embeds_by_message_limit(all_embeds, limit=6000)
+        
+        old_message_ids = []
+        if 'message_ids' in panel:
+            # New format: array of message IDs
+            old_message_ids = panel.get('message_ids', [])
+        elif 'message_id' in panel:
+            # Old format: single message ID (backward compatibility)
+            old_message_ids = [panel['message_id']]
+        
+        new_message_ids = []
+        
+        for group_idx, embed_group in enumerate(embed_groups):
+            is_last_group = (group_idx == len(embed_groups) - 1)
+            view = None
+            if is_last_group:
+                view = View()
+                view.add_item(PartnerRequestButton())
             
-        message = await channel.fetch_message(panel['message_id'])
-        await message.edit(embeds=await _build_panel_embeds(guild_id))
-        return "<:yes:1036811164891480194> Panel updated!"
+            if group_idx < len(old_message_ids):
+                try:
+                    message = await channel.fetch_message(old_message_ids[group_idx])
+                    await message.edit(embeds=embed_group, view=view)
+                    new_message_ids.append(message.id)
+                except (discord.NotFound, discord.Forbidden):
+                    message = await channel.send(embeds=embed_group, view=view)
+                    new_message_ids.append(message.id)
+            else:
+                message = await channel.send(embeds=embed_group, view=view)
+                new_message_ids.append(message.id)
+        
+        for old_id in old_message_ids[len(embed_groups):]:
+            try:
+                message = await channel.fetch_message(old_id)
+                await message.delete()
+            except (discord.NotFound, discord.Forbidden):
+                pass
+        
+        _panel_ref(guild_id).set({
+            'message_ids': new_message_ids,
+            'channel_id': panel['channel_id']
+        })
+        
+        return f"<:yes:1036811164891480194> Panel updated! ({len(embed_groups)} message{'s' if len(embed_groups) != 1 else ''})"
     except Exception as e:
         return f"<:no:1036810470860013639> Failed to update panel: {e}"
         
@@ -800,16 +881,46 @@ class Partner(commands.GroupCog, name="partner"):
         if not config_ref.get():
             await interaction.response.send_message("<:no:1036810470860013639> Partnership system not enabled!", ephemeral=True)
             return
+        
+        panel = _panel_ref(interaction.guild.id).get()
+        if panel:
+            try:
+                channel = self.bot.get_channel(panel.get('channel_id'))
+                if channel:
+                    if 'message_ids' in panel:
+                        for msg_id in panel['message_ids']:
+                            try:
+                                message = await channel.fetch_message(msg_id)
+                                await message.delete()
+                            except (discord.NotFound, discord.Forbidden):
+                                pass 
+                    elif 'message_id' in panel:
+                        try:
+                            message = await channel.fetch_message(panel['message_id'])
+                            await message.delete()
+                        except (discord.NotFound, discord.Forbidden):
+                            pass  
+            except Exception as e:
+                print(f"[Partnership] Error deleting panel messages: {e}")
             
         config_ref.delete()
         _panel_ref(interaction.guild.id).delete()
         _categories_ref(interaction.guild.id).delete()
         _partners_ref(interaction.guild.id).delete()
         
+        await _log_action(
+            interaction.client,
+            interaction.guild.id,
+            interaction.user,
+            "Partnership System Disabled",
+            {"Status": "All configurations removed"}
+        )
+        
         await interaction.response.send_message(
             "<:yes:1036811164891480194> Partnership system disabled! All configurations removed.",
             ephemeral=True
         )
+    
     @partner_disable.error
     async def partner_disable_error(self, interaction: discord.Interaction, error: Exception):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
@@ -817,38 +928,56 @@ class Partner(commands.GroupCog, name="partner"):
     @app_commands.command(name="send-panel", description="Send the partnership panel")
     @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
     async def partner_send_panel(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
         config = _config_ref(interaction.guild.id).get()
         if not config:
-            await interaction.response.send_message("<:no:1036810470860013639> Partnership system not enabled!", ephemeral=True)
+            await interaction.followup.send("<:no:1036810470860013639> Partnership system not enabled!", ephemeral=True)
             return
 
-        view = View()
-        view.add_item(PartnerRequestButton())
-        
-        channel = self.bot.get_channel(config['panel_channel'])
-        message = await channel.send(
-            embeds=await _build_panel_embeds(interaction.guild.id),
-            view=view
-        )
-        
-        _panel_ref(interaction.guild.id).set({
-            'message_id': message.id,
-            'channel_id': channel.id
-        })
-        
-        await _log_action(
-            interaction.client,
-            interaction.guild.id,
-            interaction.user,
-            "Panel Sent",
-            {
-                "Channel": channel.mention,
-                "Message ID": message.id,
-                "Embed Count": len(await _build_panel_embeds(interaction.guild.id))
-            }
-        )
-        
-        await interaction.response.send_message(f"<:yes:1036811164891480194> [Partnership panel sent]({message.jump_url})! *All other panels sent previously will no longer automatically update.*", ephemeral=True)
+        try:
+            channel = self.bot.get_channel(config['panel_channel'])
+            if not channel:
+                await interaction.followup.send("<:no:1036810470860013639> Panel channel not found!", ephemeral=True)
+                return
+            
+            all_embeds = await _build_panel_embeds(interaction.guild.id)
+            embed_groups = _group_embeds_by_message_limit(all_embeds, limit=6000)
+            
+            new_message_ids = []
+            
+            for group_idx, embed_group in enumerate(embed_groups):
+                is_last_group = (group_idx == len(embed_groups) - 1)
+                
+                view = None
+                if is_last_group:
+                    view = View()
+                    view.add_item(PartnerRequestButton())
+                
+                message = await channel.send(embeds=embed_group, view=view)
+                new_message_ids.append(message.id)
+            
+            _panel_ref(interaction.guild.id).set({
+                'message_ids': new_message_ids,
+                'channel_id': channel.id
+            })
+            
+            await _log_action(
+                interaction.client,
+                interaction.guild.id,
+                interaction.user,
+                "Panel Sent",
+                {
+                    "Channel": channel.mention,
+                    "Message Count": len(new_message_ids),
+                    "Embed Count": len(all_embeds)
+                }
+            )
+            
+            await interaction.followup.send(f"<:yes:1036811164891480194> Partnership panel sent! ({len(new_message_ids)} message{'s' if len(new_message_ids) != 1 else ''}, {len(all_embeds)} embed{'s' if len(all_embeds) != 1 else ''})\n*All other panels sent previously will no longer automatically update.*", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"<:no:1036810470860013639> Failed to send panel: {e}", ephemeral=True)
+    
     @partner_send_panel.error
     async def partner_send_panel_error(self, interaction: discord.Interaction, error: Exception):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
