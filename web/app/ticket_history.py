@@ -1,39 +1,20 @@
-import os
 import requests
-
+import json
+import os
+from flask import Blueprint, request, session, render_template, redirect, url_for, abort
 from datetime import datetime
-from flask import Flask, redirect, request, session, abort, render_template
-from config.settings import API_BASE, CLIENT_ID, REDIRECT_URI, PROFILE_REDIRECT_URI, MYSTICRAFT_REDIRECT_URI, MYSTICRAFT_CLIENT_ID, MYSTICRAFT_CLIENT_SECRET, MYSTICRAFT_TOKEN
+from config.settings import (
+    API_BASE,
+    MYSTICRAFT_CLIENT_ID,
+    MYSTICRAFT_REDIRECT_URI,
+    MYSTICRAFT_CLIENT_SECRET,
+    MYSTICRAFT_TOKEN,
+)
 
-from app.logs import logs
-from app.dashboard import dashboard
-from app.tickets import tickets
-from app.partnership import partnership
-from app.profile import profile
-from app.minigames import minigames
-
-app = Flask(__name__, static_url_path="")
-app.secret_key = os.urandom(24)
-app.url_map.strict_slashes = False
-
-blueprints = [logs, dashboard, tickets, partnership, profile, minigames]
-for blueprint in blueprints:
-    app.register_blueprint(blueprint)
-
-@app.before_request
-def restrict_domain():
-    if not request.path.startswith("/logs") and request.host not in ["fischl.app", "ticket.mysticraft.xyz"]:
-      abort(404)
-
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template("404.html"), 404
-
-@app.errorhandler(500)
-def internal_server_error(e):
-    return render_template("500.html"), 500
+ticket_history = Blueprint("ticket_history", __name__, url_prefix="/")
 
 def get_dm_channel_with_user(user_id, bot_token):
+    """Fetch DM channel between bot and user using bot token"""
     headers = {"Authorization": f"Bot {bot_token}"}
     
     response = requests.post(
@@ -50,6 +31,7 @@ def get_dm_channel_with_user(user_id, bot_token):
 
 
 def fetch_dm_messages(channel_id, bot_token):
+    """Fetch all messages from a DM channel using bot token"""
     headers = {"Authorization": f"Bot {bot_token}"}
     messages = []
     after = None
@@ -58,29 +40,28 @@ def fetch_dm_messages(channel_id, bot_token):
         params = {"limit": 100}
         if after:
             params["after"] = after
-        response = requests.get(f"{API_BASE}/channels/{channel_id}/messages", headers=headers, params=params,)
+        
+        response = requests.get(
+            f"{API_BASE}/channels/{channel_id}/messages",
+            headers=headers,
+            params=params,
+        )
+        
         if response.status_code != 200:
             break
+        
         batch = response.json()
         if not batch:
             break
+        
         messages.extend(batch)
         after = batch[-1]["id"]
     
     return messages
 
 
-def extract_guild_name(description):
-    if not description:
-        return None
-    import re
-    match = re.search(r'\*\*(.+?)\*\*', description)
-    if match:
-        return match.group(1).replace("🎫", "").strip()
-    return None
-
-
 def extract_closed_tickets(messages):
+    """Extract closed ticket info from messages with 'Ticket closed' embeds"""
     tickets = []
     
     for message in messages:
@@ -91,9 +72,8 @@ def extract_closed_tickets(messages):
                 category = "Tickets"
                 fields = embed.get("fields", [])
                 if fields and len(fields) > 0:
-                    category = fields[0].get("value", "Others")
-                description = embed.get("description", "")
-                guild_name = extract_guild_name(description)
+                    category = fields[0].get("value", "Tickets")
+                
                 timestamp = embed.get("timestamp", "")
                 timestamp_obj = None
                 if timestamp:
@@ -101,6 +81,7 @@ def extract_closed_tickets(messages):
                         timestamp_obj = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
                     except:
                         pass
+                
                 transcript_link = None
                 components = message.get("components", [])
                 for component in components:
@@ -113,88 +94,66 @@ def extract_closed_tickets(messages):
                                     break
                     if transcript_link:
                         break
+                
                 if transcript_link:
                     tickets.append({
                         "category": category,
-                        "guild_name": guild_name,
                         "timestamp": timestamp_obj,
-                        "date_str": timestamp_obj.isoformat() if timestamp_obj else "Unknown",
+                        "date_str": timestamp_obj.strftime("%B %d, %Y") if timestamp_obj else "Unknown",
                         "transcript_link": transcript_link,
                     })
     
     tickets.sort(key=lambda x: x["timestamp"] or datetime.min, reverse=True)
     return tickets
 
-@app.route("/")
-def home():
-    if request.host == "fischl.app":
-        return app.send_static_file("index.html")
-    elif request.host == "ticket.mysticraft.xyz":
-        user_data = session.get("user_data")
-        if not user_data:
-            return render_template("ticket_history_login.html")
-        
-        return render_template("ticket_history.html", user=user_data)
-    else:
-        abort(404)
 
-@app.route("/api/tickets")
-def get_tickets():
-    if request.host != "ticket.mysticraft.xyz":
+@ticket_history.route("/")
+def index():
+    if request.host.split(':')[0] != "ticket.mysticraft.xyz":
         abort(404)
     
     user_data = session.get("user_data")
+    
     if not user_data:
-        return {"error": "Not authenticated"}, 401
+        return render_template("ticket_history_login.html")
     
     try:
         user_id = user_data.get("id")
+        
+        # Fetch DM channel with user using bot token
         dm_channel = get_dm_channel_with_user(user_id, MYSTICRAFT_TOKEN)
+        
         if not dm_channel:
-            return {"tickets": [], "error": None}
+            return render_template("ticket_history.html", tickets=[], user=user_data)
+        
+        # Fetch messages from DM channel using bot token
         messages = fetch_dm_messages(dm_channel["id"], MYSTICRAFT_TOKEN)
+        
+        # Extract closed tickets
         tickets = extract_closed_tickets(messages)
-        return {"tickets": tickets, "error": None}
+        
+        return render_template("ticket_history.html", tickets=tickets, user=user_data)
     
     except Exception as e:
-        return {"tickets": [], "error": f"Error loading ticket history: {str(e)}"}
+        return render_template("ticket_history.html", tickets=[], user=user_data, error=f"Error loading ticket history: {str(e)}")
 
-@app.route("/login")
+
+@ticket_history.route("/login")
 def login():
-    if request.host == "fischl.app":
-        scope = "identify guilds"
-        return redirect(
-            f"{API_BASE}/oauth2/authorize?client_id={CLIENT_ID}"
-            f"&redirect_uri={REDIRECT_URI}"
-            f"&response_type=code&scope={scope}"
-            f"&prompt=none"
-        )
-    elif request.host == "ticket.mysticraft.xyz":
-        scope = "identify"
-        return redirect(
-            f"{API_BASE}/oauth2/authorize?client_id={MYSTICRAFT_CLIENT_ID}"
-            f"&redirect_uri={MYSTICRAFT_REDIRECT_URI}"
-            f"&response_type=code&scope={scope}"
-            f"&prompt=none"
-        )
-    else:
+    if request.host.split(':')[0] != "ticket.mysticraft.xyz":
         abort(404)
-
-@app.route("/auth")
-def auth():
-    """Profile authentication route"""
-    scope = "identify guilds"
+    
+    scope = "identify"
     return redirect(
         f"{API_BASE}/oauth2/authorize?client_id={MYSTICRAFT_CLIENT_ID}"
         f"&redirect_uri={MYSTICRAFT_REDIRECT_URI}"
         f"&response_type=code&scope={scope}"
-        f"&prompt=none"
     )
 
-@app.route("/callback")
+
+@ticket_history.route("/callback")
 def callback():
-    """Callback route for ticket history authentication"""
-    if request.host != "ticket.mysticraft.xyz":
+    if request.host.split(':')[0] != "ticket.mysticraft.xyz":
         abort(404)
     
     code = request.args.get("code")
@@ -214,10 +173,9 @@ def callback():
         "redirect_uri": MYSTICRAFT_REDIRECT_URI,
     }
     
-    response = requests.post(f"{API_BASE}/oauth2/token", data=data)
+    response = requests.post(f"{API_BASE}/oauth2/token", json=data)
     
     if response.status_code != 200:
-        print("Token exchange failed:", response.text)
         return render_template("ticket_history_login.html", error="Failed to authenticate with Discord.")
     
     token_data = response.json()
@@ -226,15 +184,16 @@ def callback():
     if not access_token:
         return render_template("ticket_history_login.html", error="Failed to retrieve access token.")
     
+    # Fetch user info
     headers = {"Authorization": f"Bearer {access_token}"}
     user_response = requests.get(f"{API_BASE}/users/@me", headers=headers)
     
     if user_response.status_code != 200:
-        print("Failed to fetch user information:", user_response.text)
         return render_template("ticket_history_login.html", error="Failed to fetch user information.")
     
     user_info = user_response.json()
     
+    # Store in session
     session["user_data"] = {
         "id": user_info.get("id"),
         "username": user_info.get("username"),
@@ -242,13 +201,13 @@ def callback():
         "access_token": access_token,
     }
     
-    return redirect("/")
+    return redirect(url_for("ticket_history.index"))
 
-@app.route("/logout")
+
+@ticket_history.route("/logout")
 def logout():
+    if request.host.split(':')[0] != "ticket.mysticraft.xyz":
+        abort(404)
+    
     session.clear()
-    return redirect("/")
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    return redirect(url_for("ticket_history.index"))
