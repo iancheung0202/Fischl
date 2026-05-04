@@ -82,6 +82,7 @@ def extract_guild_name(description):
 
 def extract_closed_tickets(messages):
     tickets = []
+    seen_links = set()
     
     for message in messages:
         embeds = message.get("embeds", [])
@@ -113,7 +114,8 @@ def extract_closed_tickets(messages):
                                     break
                     if transcript_link:
                         break
-                if transcript_link:
+                if transcript_link and transcript_link not in seen_links:
+                    seen_links.add(transcript_link)
                     tickets.append({
                         "category": category,
                         "guild_name": guild_name,
