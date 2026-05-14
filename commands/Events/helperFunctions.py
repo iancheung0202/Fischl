@@ -351,11 +351,11 @@ async def get_mora_stats(pool: asyncpg.Pool, uid: int, gid: int) -> dict:
         'daily_breakdown': daily_stats
     }
 
-async def addMora(pool: asyncpg.Pool, userID: int, addedMora: int, channelID: int, guildID: int, client=None):
+async def addMora(pool: asyncpg.Pool, userID: int, addedMora: int, channelID: int, guildID: int, client=None, bypass_boost=False):
     baseMora = addedMora 
     boost = 0
     
-    if addedMora > 0:
+    if addedMora > 0 and not bypass_boost:
         boost = await get_mora_boost(pool, guildID, userID)
         addedMora = int(addedMora * (1 + boost / 100))
 

@@ -187,8 +187,8 @@ def auth():
     """Profile authentication route"""
     scope = "identify guilds"
     return redirect(
-        f"{API_BASE}/oauth2/authorize?client_id={MYSTICRAFT_CLIENT_ID}"
-        f"&redirect_uri={MYSTICRAFT_REDIRECT_URI}"
+        f"{API_BASE}/oauth2/authorize?client_id={CLIENT_ID}"
+        f"&redirect_uri={PROFILE_REDIRECT_URI}"
         f"&response_type=code&scope={scope}"
         f"&prompt=none"
     )

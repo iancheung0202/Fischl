@@ -948,19 +948,22 @@ class Mora(commands.Cog):
             )
 
         await addMora(interaction.client.pool, interaction.user.id, -total_cost, interaction.channel.id, interaction.guild.id, interaction.client) # Donor
-        await addMora(interaction.client.pool, user.id, amount, interaction.channel.id, interaction.guild.id, interaction.client) # Recipient
-        await addMora(interaction.client.pool, interaction.client.user.id, tax_amount, interaction.channel.id, interaction.guild.id, interaction.client) # Tax
+        await addMora(interaction.client.pool, user.id, amount, interaction.channel.id, interaction.guild.id, interaction.client, bypass_boost=True) # Recipient
+        await addMora(interaction.client.pool, interaction.client.user.id, tax_amount, interaction.channel.id, interaction.guild.id, interaction.client, bypass_boost=True) # Tax
 
-        await interaction.followup.send(
-            embed=discord.Embed(
-                title="<a:2_star:1366158196213022800> Gift Sent!",
-                description=(
-                    f"{interaction.user.mention} gifted {MORA_EMOTE} `{amount}` to {user.mention}\n"
-                    f"-# Fischl also collected {MORA_EMOTE} `{tax_amount}` ({tax_rate}%) in taxes"
-                ),
-                color=discord.Color.green()
-            )
+        embed = discord.Embed(
+            title="<a:2_star:1366158196213022800> Gift Sent",
+            description=(
+                f"**Sender:** {interaction.user.mention}\n"
+                f"**Total Deducted:** {MORA_EMOTE} `{total_cost:,}`\n"
+                f"-# Fischl also collected {MORA_EMOTE} `{tax_amount:,}` ({tax_rate}%) in taxes\n\n"
+                f"**Recipient:** {user.mention}\n"
+                f"**Total Received:** {MORA_EMOTE} `{amount:,}`"
+            ),
+            color=0x2ecc71 
         )
+        embed.set_footer(text="Sharing is caring! You just made your friend's day a little brighter!")
+        await interaction.followup.send(content=f"{user.mention} has been blessed by {interaction.user.mention}! <a:2_star:1366158196213022800>", embed=embed)
         
         quest_dict = {"gift_mora": amount, "gift_mora_unique": user.id}
         if recipient_mora < donor_mora:

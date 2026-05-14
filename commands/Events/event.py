@@ -4058,6 +4058,26 @@ class MoraChestView(discord.ui.View):
             print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
 
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title="",
+                    description=(
+                        "## <:YanfeiNote:1335644122253623458> **Mora Gifting Glitch**\n"
+                        "We recently identified an issue where **passive Mora boosts** were incorrectly applying to gifts, allowing more Mora to be received than was actually sent. To keep the economy fair for everyone, we have deployed a fix. <:HuTaoEvil:1350630212617896120>\n"
+                        "### <:NingguangStonks:1265470501707321344> **What Has Changed?**\n"
+                        f"<:dot:1357188726047899760> **Boosts Disabled for Gifts:** Your personal Mora boosts no longer apply to incoming gifts. The recipient now receives **exactly** what the donor sends.\n"
+                        f"<:dot:1357188726047899760> **Balance Adjustments:** Any extra Mora generated via this exploit has been **automatically reverted** from affected accounts.\n"
+                        f"<:dot:1357188726047899760> **Improved Notifications:** Gift messages now explicitly show the tax paid and ping the recipient directly! 🔔\n"
+                        "### <:CharlotteHeart:1191594476263702528> **Keeping it Fair**\n"
+                        "Fischl is watching! Exploiting system bugs to inflate the economy hurts the value of everyone's hard-earned Mora. We appreciate the honest players who reported this to us. <:PaimonWow:1188553806456291489>\n\n"
+                        f"-# You can still support your friends using {SlashCommand('gift')}, just remember that Fischl always takes her cut! 🦅"
+                    ),
+                    color=discord.Color.blue()
+                ).set_footer(text="Thank you for helping us maintain a balanced and fun economy! 🫶"),
+                ephemeral=True
+            )
+            return
+        
             embed = discord.Embed(
                 title="",
                 description=(
@@ -4072,8 +4092,6 @@ class MoraChestView(discord.ui.View):
                 color=discord.Color.blurple()
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
-            return 
 
             await interaction.followup.send(
                 embed=discord.Embed(
