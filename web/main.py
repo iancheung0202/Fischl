@@ -251,6 +251,12 @@ def logout():
     session.clear()
     return redirect("/")
 
+@app.route("/variables")
+def variables():
+    if request.host != "fischl.app":
+        abort(404)
+    return app.send_static_file("variables.html")
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
