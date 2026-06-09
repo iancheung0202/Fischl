@@ -8,6 +8,8 @@ import re
 import json
 import importlib
 import pandas as pd
+import io
+import aiohttp
 
 from firebase_admin import db
 from discord import app_commands
@@ -1426,9 +1428,20 @@ async def hsrEmojiRiddle(channel, client):
     start_time = time.time()
     timeout = 300 
 
-    df = pd.read_csv(
-        "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0pPz9A-wegeqpyIxYSjR-trCnP5ffIkOE-ThkVXhCC46pjgL9h5eEwOp42-oDce340eHYhO6TSbLl/pub?output=csv"
-    )
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0pPz9A-wegeqpyIxYSjR-trCnP5ffIkOE-ThkVXhCC46pjgL9h5eEwOp42-oDce340eHYhO6TSbLl/pub?output=csv"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                embed = discord.Embed(description=f"Event crashed: `Failed to fetch minigame data (HTTP {response.status})`")
+                embed.set_footer(text="Error has been logged and developer has been notified.")
+                msg = await channel.send(embed=embed)
+                ian = await client.fetch_user(692254240290242601)
+                await ian.send(f"Event crashed: {msg.jump_url}")
+                return
+            csv_text = await response.text()
+    
+    df = pd.read_csv(io.StringIO(csv_text))
+
     characterEmojis = dict(zip(df["Character Name"], df["Emojis"]))
     valid_names = {name.lower() for name in characterEmojis.keys()}
 
@@ -1445,7 +1458,6 @@ async def hsrEmojiRiddle(channel, client):
     )
     embed.set_footer(text="Credits: schaeffly, treble4tea_03755, rubi134 • 5-minute time limit")
     
-    # Generate Distractors
     all_chars = list(characterEmojis.keys())
     distractors = random.sample([n for n in all_chars if n != character], 4)
     options = [character] + distractors
@@ -1501,9 +1513,20 @@ async def genshinEmojiRiddle(channel, client):
     start_time = time.time()
     timeout = 300
 
-    df = pd.read_csv(
-        "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVeIY2FLhHODz6nyJ5D8IWBtDRRttfIZNkUKnRmqoTksaHXxZnckUD7ou4s5DKT_CDRZbMBs9tlnd8/pub?output=csv"
-    )
+    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVeIY2FLhHODz6nyJ5D8IWBtDRRttfIZNkUKnRmqoTksaHXxZnckUD7ou4s5DKT_CDRZbMBs9tlnd8/pub?output=csv"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                embed = discord.Embed(description=f"Event crashed: `Failed to fetch minigame data (HTTP {response.status})`")
+                embed.set_footer(text="Error has been logged and developer has been notified.")
+                msg = await channel.send(embed=embed)
+                ian = await client.fetch_user(692254240290242601)
+                await ian.send(f"Event crashed: {msg.jump_url}")
+                return
+            csv_text = await response.text()
+    
+    df = pd.read_csv(io.StringIO(csv_text))
+
     characterEmojis = dict(zip(df["Character Name"], df["Emojis"]))
     valid_names = {name.lower() for name in characterEmojis.keys()}
 
@@ -1520,7 +1543,6 @@ async def genshinEmojiRiddle(channel, client):
     )
     embed.set_footer(text="Credits: schaeffly, treble4tea_03755 • 5-minute time limit")
 
-    # Generate Distractors
     all_chars = list(characterEmojis.keys())
     distractors = random.sample([n for n in all_chars if n != character], 4)
     options = [character] + distractors
