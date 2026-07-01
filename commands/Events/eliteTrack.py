@@ -6,6 +6,8 @@ from firebase_admin import db
 
 from commands.Events.trackData import grant_elite_rewards_up_to_tier, load_elite_subscriptions, save_elite_subscriptions
 
+from commands.Events.config import YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, TRACK_PENDING_DB
+
 class EliteTrack(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -17,7 +19,7 @@ class EliteTrack(commands.Cog):
         
         while not self.bot.is_closed():
             try:
-                pending_ref = db.reference("/Elite Track Pending")
+                pending_ref = db.reference(f"{TRACK_PENDING_DB}")
                 all_pending = pending_ref.get() or {}
                 
                 for guild_id, pending_list in all_pending.items():
@@ -80,7 +82,7 @@ class EliteTrack(commands.Cog):
                         except Exception as e:
                             print(f"Error processing pending activation: {e}")
                     
-                    db.reference(f"/Elite Track Pending/{guild_id}").delete()
+                    db.reference(f"{TRACK_PENDING_DB}/{guild_id}").delete()
                         
             except Exception as e:
                 print(f"Error in process_pending_activations: {e}")
@@ -94,12 +96,12 @@ class EliteTrack(commands.Cog):
 
         if message.content.startswith("-addSub"):
             if message.author.id != 692254240290242601:
-                await message.channel.send("❌ You don't have permission to use this command.")
+                await message.channel.send(f"{NO_EMOTE} You don't have permission to use this command.")
                 return
 
             args = message.content.split()
             if len(args) != 4:
-                await message.channel.send("Usage: `-addSub userID serverID timestamp`")
+                await message.channel.send(f"{NO_EMOTE} Usage: `-addSub userID serverID timestamp`")
                 return
 
             try:
@@ -107,7 +109,7 @@ class EliteTrack(commands.Cog):
                 server_id = int(args[2])
                 timestamp = float(args[3])
             except ValueError:
-                await message.channel.send("❌ Invalid arguments. Make sure IDs are numbers and timestamp is a float.")
+                await message.channel.send(f"{NO_EMOTE} Invalid arguments. Make sure IDs are numbers and timestamp is a float.")
                 return
 
             key = f"{user_id}-{server_id}"
@@ -140,7 +142,7 @@ class EliteTrack(commands.Cog):
                     server_name = server.name if server else f"Server {server_id}"
                     await user.send(
                         embed=discord.Embed(
-                            title="<a:moneydance:1227425759077859359> Elite Track Activated!",
+                            title=f"{MONEYDANCE_EMOTE} Elite Track Activated!",
                             description=(
                                 f"🎉 You now have sweet perks in **{server_name}**! Enjoy friend!\n"
                                 f"⏰ Expires on <t:{int(timestamp)}> (<t:{int(timestamp)}:R>)\n\n"
@@ -152,7 +154,7 @@ class EliteTrack(commands.Cog):
                 except discord.Forbidden:
                     pass
 
-            await message.channel.send(f"✅ Subscription added for <@{user_id}> in server `{server_id}`")
+            await message.channel.send(f"{YES_EMOTE} Subscription added for <@{user_id}> in server `{server_id}`")
             
 async def setup(bot):
     await bot.add_cog(EliteTrack(bot))

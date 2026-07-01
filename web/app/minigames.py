@@ -111,7 +111,7 @@ minigames = Blueprint('minigames', __name__)
 # Minigame titles from the Discord bot
 minigame_titles = [
     "Boss Battle Blitz",
-    "Quicktype Racer", 
+    "Quicktype Racer",
     "Egg Walk",
     "Match The Profile Picture",
     "Split or Steal",
@@ -126,25 +126,20 @@ minigame_titles = [
     "Currency Counting",
     "Rock Paper Scissors Duel",
     "Roll A Dice",
-    "Teyvat Voiceline Quiz",
+    "Group Blackjack",
     "Teyvat Emoji Riddles",
     "Galaxy Emoji Riddles",
     "Double or Keep",
     "Know Your Members",
     "Hangman",
     "Mora Auction House",
-    "Mora Heist"
+    "Mora Heist",
+    "Simple Math Game",
+    "Tik Tac Tok"
 ]
 
-letter_emojis = [
-    "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", 
-    "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽"
-]
-
-letterList = [
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
-    "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X"
-]
+letter_emojis = [ "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿" ] 
+letterList = [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" ]
 
 frequency_choices = [
     {"name": "Very Frequent (~10%)", "value": "10"},

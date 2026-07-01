@@ -2,12 +2,12 @@ import discord
 import time
 import random
 
-from discord.ui import Button, View
+from discord.ui import View
 from firebase_admin import db
 
 from commands.Events.helperFunctions import addMora, TierRewardsView
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, PACK_DB
 
 def generate_drops():
     num_drops = random.randint(2, 6)
@@ -77,8 +77,8 @@ class DropPackView(View):
             await interaction.response.edit_message(embed=embed)
         else:
             text, addedMora = await addMora(interaction.client.pool, self.user_id, self.total_mora, interaction.channel.id, self.guild_id, interaction.client)
-            embed.title = "🎉 Mora Drop Pack Summary"
-            embed.description += f"\n\n**Total Mora:** {MORA_EMOTE} `{text}`"
+            embed.title = "🎉 Drop Pack Summary"
+            embed.description += f"\n\n**Total:** {MORA_EMOTE} `{text}`"
             
             if self.xp_bonus:
                 embed.description += f"\n✨ **Bonus Reward:** +1000 XP!"
@@ -109,7 +109,7 @@ class DropPackView(View):
                 )
                 await interaction.followup.send(view=TierRewardsView(free_embed, elite_embed))
                 
-            db.reference(f"/Mora Drop Packs/{self.guild_id}/{self.user_id}/{self.pack_id}").delete()
+            db.reference(f"{PACK_DB}/{self.guild_id}/{self.user_id}/{self.pack_id}").delete()
             
 class DropPackDelete(discord.ui.Button):
     def __init__(self):
@@ -121,7 +121,7 @@ class DropPackDelete(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if str(interaction.user.id) not in interaction.message.content:
-            await interaction.response.send_message("❌ This isn't your drop pack!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This isn't your drop pack!", ephemeral=True)
         else:
             await interaction.message.delete()
 
@@ -130,7 +130,7 @@ async def create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier)
     drops = generate_drops()
     xp_bonus = random.random() < 0.2  # 20% chance
     
-    ref = db.reference(f"/Mora Drop Packs/{guild_id}/{user_id}/{pack_id}")
+    ref = db.reference(f"{PACK_DB}/{guild_id}/{user_id}/{pack_id}")
     ref.set({
         "drops": drops,
         "xp_bonus": xp_bonus

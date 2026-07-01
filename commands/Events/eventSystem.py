@@ -8,7 +8,7 @@ from firebase_admin import db
 from PIL import Image, ImageEnhance, ImageSequence
 from utils.commands import SlashCommand
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, SYSTEM_DB
 
 letter_emojis = [ "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿" ] 
 letterList = [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" ]
@@ -57,7 +57,7 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
     async def on_submit(self, interaction: discord.Interaction):
         # await interaction.response.defer()
         channelID = int(str(self.title).split(":")[1].replace(")", "").strip())
-        ref = db.reference(f"/Chat Minigames System/{channelID}")
+        ref = db.reference(f"{SYSTEM_DB}/{channelID}")
         system_data = ref.get() or {}
         originalList = system_data.get("events", [])
         frequency = system_data.get("frequency", 50)
@@ -84,9 +84,9 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
 
             string = "\n> ".join(
                 [
-                    f"{emoji} - {title} <:yes:1036811164891480194>"
+                    f"{emoji} - {title} {YES_EMOTE}"
                     if self.toggleLetter in originalList
-                    else f"{emoji} - {title} <:no:1036810470860013639>"
+                    else f"{emoji} - {title} {NO_EMOTE}"
                     for self.toggleLetter, emoji, title in zip(
                         letterString, letter_emojis, minigame_titles
                     )
@@ -151,7 +151,7 @@ class EnableEventButton(discord.ui.Button):
 
         frequency_value = 50 # Uncommon (~2%)
 
-        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
         data = {
             "frequency": frequency_value,
             "events": letterList,  # All enabled by default
@@ -174,9 +174,9 @@ class EnableEventButton(discord.ui.Button):
         # Create settings embed
         string = "\n> ".join(
             [
-                f"{emoji} - {title} <:yes:1036811164891480194>"
+                f"{emoji} - {title} {YES_EMOTE}"
                 if letter in letterList
-                else f"{emoji} - {title} <:no:1036810470860013639>"
+                else f"{emoji} - {title} {NO_EMOTE}"
                 for letter, emoji, title in zip(
                     letterString, letter_emojis, minigame_titles
                 )
@@ -214,7 +214,7 @@ class DisableEventButton(discord.ui.Button):
         )
         channel = interaction.guild.get_channel(channel_id)
 
-        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
         ref.delete()
 
         with open("./commands/Events/enabledChannels.py", "r") as file:
@@ -265,7 +265,7 @@ class FrequencySelect(discord.ui.Select):
 
         new_frequency = int(self.values[0])
 
-        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
         system_data = ref.get() or {}
         system_data["Frequency"] = new_frequency
         system_data["frequency"] = new_frequency
@@ -292,9 +292,9 @@ class FrequencySelect(discord.ui.Select):
         # Create settings embed
         string = "\n> ".join(
             [
-                f"{emoji} - {title} <:yes:1036811164891480194>"
+                f"{emoji} - {title} {YES_EMOTE}"
                 if letter in events
-                else f"{emoji} - {title} <:no:1036810470860013639>"
+                else f"{emoji} - {title} {NO_EMOTE}"
                 for letter, emoji, title in zip(
                     letterString, letter_emojis, minigame_titles
                 )
@@ -324,7 +324,7 @@ class EventSettingsView(discord.ui.View):
         super().__init__()
         self.channel = channel
 
-        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
         system_data = ref.get()
         enabled = False
         frequency = None
@@ -364,7 +364,7 @@ class EventSystem(commands.GroupCog, name="events"):
 
         view = EventSettingsView(channel)
 
-        ref = db.reference(f"/Chat Minigames System/{channel.id}")
+        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
         system_data = ref.get()
         enabled = False
         frequency = None
@@ -377,9 +377,9 @@ class EventSystem(commands.GroupCog, name="events"):
         if enabled:
             string = "\n> ".join(
                 [
-                    f"{emoji} - {title} <:yes:1036811164891480194>"
+                    f"{emoji} - {title} {YES_EMOTE}"
                     if letter in events
-                    else f"{emoji} - {title} <:no:1036810470860013639>"
+                    else f"{emoji} - {title} {NO_EMOTE}"
                     for letter, emoji, title in zip(
                         letterString, letter_emojis, minigame_titles
                     )
@@ -412,7 +412,7 @@ async def format_animated_background(ctx, gif_name):
     if not gif_name.lower().endswith('.gif'):
         return await ctx.send("Please provide a GIF file!", delete_after=5)
 
-    base_path = "./assets/Animated Mora Inventory Background/"
+    base_path = f"{ANIMATED_INVENTORY_BG_PATH}/"
     input_path = os.path.join(base_path, gif_name)
     
     if not os.path.exists(input_path):
@@ -456,11 +456,11 @@ async def format_animated_background(ctx, gif_name):
                 disposal=2
             )
         
-        await ctx.send(f"✅ Successfully formatted `{gif_name}`!", 
+        await ctx.send(f"{YES_EMOTE} Successfully formatted `{gif_name}`!", 
                        file=discord.File(output_path))
     
     except Exception as e:
-        await ctx.send(f"❌ Error processing GIF: {str(e)}", delete_after=15)
+        await ctx.send(f"{NO_EMOTE} Error processing GIF: {str(e)}", delete_after=15)
         
 class NewGameUpdate(commands.Cog):
     def __init__(self, bot):
@@ -479,13 +479,13 @@ class NewGameUpdate(commands.Cog):
             uid = message.content.split(" ")[1].replace("<@", "").replace(">", "")
             ian = self.client.get_user(692254240290242601)
             await ian.send(f"User with ID `{message.author.id}` reported the inventory background of a user with ID `{uid}` in **{message.guild.name}**")
-            await ian.send(file=discord.File(f"./assets/Mora Inventory Background/{uid}.png"))
-            await message.add_reaction("<:yes:1036811164891480194>")
+            await ian.send(file=discord.File(f"{INVENTORY_BG_PATH}/{uid}.png"))
+            await message.add_reaction(YES_EMOTE)
 
         if message.content.startswith("-newgameupdate") and message.author.id == 692254240290242601:
             LETTER = message.content.split(" ")[1].strip().upper()  # NEW GAME LETTER
 
-            ref = db.reference("/Chat Minigames System")
+            ref = db.reference(f"{SYSTEM_DB}")
             all_channels = ref.get() or {}
             count = 0
 
@@ -501,7 +501,7 @@ class NewGameUpdate(commands.Cog):
                     "frequency": frequency,
                     "events": originalList,
                 }
-                db.reference(f"/Chat Minigames System/{channel_id}").set(updated_data)
+                db.reference(f"{SYSTEM_DB}/{channel_id}").set(updated_data)
 
                 count += 1
 
@@ -514,7 +514,7 @@ class NewGameUpdate(commands.Cog):
         if message.content.startswith("-removegame") and message.author.id == 692254240290242601:
             LETTER = message.content.split(" ")[1].strip().upper()  # GAME LETTER TO REMOVE
 
-            ref = db.reference("/Chat Minigames System")
+            ref = db.reference(f"{SYSTEM_DB}")
             all_channels = ref.get() or {}
             count = 0
             
@@ -532,7 +532,7 @@ class NewGameUpdate(commands.Cog):
                         "frequency": frequency,
                         "events": originalList,
                     }
-                    db.reference(f"/Chat Minigames System/{channel_id}").set(updated_data)
+                    db.reference(f"{SYSTEM_DB}/{channel_id}").set(updated_data)
 
                     count += 1
 

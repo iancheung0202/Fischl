@@ -4,20 +4,12 @@ import time
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
-from discord.ui import Button, View, Select
 
-from commands.Events.helperFunctions import get_guild_mora, get_users_by_mora_threshold
+from commands.Events.helperFunctions import get_users_by_mora_threshold
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
-
-MILESTONE_SORT_OPTIONS = [
-    ("sort by threshold (low to high)", "<:price_ascending:1346329079145562112>"),
-    ("sort by threshold (high to low)", "<:price_descending:1346329080462577725>"),
-    ("sort by name (a-z)", "<:name_ascending:1346329053455585324>"),
-    ("sort by name (z-a)", "<:name_descending:1346329054634053703>"),
-]
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MILESTONE_SORT_OPTIONS, REWARDS_DB
 
 def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sort_by="threshold", reverse=True) -> list:
     if not milestones:
@@ -49,8 +41,7 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sor
         title=f"{interaction.guild.name}'s Server Milestones",
         description=(
             f"<:reply:1036792837821435976> *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
-            f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds.*\n"
-            f"<:reply:1036792837821435976> *Server milestones are designed to be cumulative.*"
+            f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds. They are designed to be cumulative.*"
         ),
         color=discord.Color.pink()
     )
@@ -85,8 +76,7 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sor
                 title=f"{interaction.guild.name}'s Server Milestones",
                 description=(
                     f"<:reply:1036792837821435976> *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
-                    f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds.*\n"
-                    f"<:reply:1036792837821435976> *Server milestones are designed to be cumulative.*"
+                    f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds. They are designed to be cumulative.*"
                 ),
                 color=discord.Color.pink()
             )
@@ -142,7 +132,7 @@ class MilestoneModal(discord.ui.Modal, title="Add a Milestone"):
                 await interaction.followup.send("That role ID doesn't exist in this server!", ephemeral=True)
                 return
         
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
         milestones = ref.get() or []
         # New format: [description, reward, threshold]
         milestone_data = [description, reward, threshold]
@@ -180,12 +170,12 @@ class MilestoneModal(discord.ui.Modal, title="Add a Milestone"):
                     except Exception:
                         pass
         
-        milestones_ref = db.reference(f"/Milestones/{interaction.guild.id}")
-        updated_milestones = milestones_ref.get() or {}
+        milestones_ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
+        updated_milestones = milestones_ref.get() or []
         self.pages = get_milestone_embeds(interaction, updated_milestones) 
         
         await interaction.followup.send(
-            f"✅ Milestone added successfully! It has also been awarded to existing players who qualified.",
+            f"{YES_EMOTE} Milestone added successfully! It has also been awarded to existing players who qualified.",
             ephemeral=True
         )
 
@@ -199,7 +189,7 @@ class RemoveMilestoneModal(discord.ui.Modal, title="Remove a Milestone"):
 
     async def on_submit(self, interaction: discord.Interaction):
         name = self.milestone_name.value.strip()
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
         milestones = ref.get() or []
         removed = False
         
@@ -213,9 +203,9 @@ class RemoveMilestoneModal(discord.ui.Modal, title="Remove a Milestone"):
         if removed:
             ref.set(new_milestones)
             self.pages = get_milestone_embeds(interaction, new_milestones)
-            await interaction.response.send_message("✅ Milestone removed successfully.", ephemeral=True)
+            await interaction.response.send_message(f"{YES_EMOTE} Milestone removed successfully.", ephemeral=True)
         else:
-            await interaction.response.send_message("Milestone not found!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} Milestone not found!", ephemeral=True)
 
 
 class MilestoneSort(BaseSortSelect):
@@ -223,7 +213,7 @@ class MilestoneSort(BaseSortSelect):
         super().__init__(MILESTONE_SORT_OPTIONS, default, initial_author, custom_id="milestonesorting")
 
     async def callback(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
         milestones = ref.get() or []
 
         sort_mapping = {
@@ -251,7 +241,7 @@ class MilestonePageView(BasePaginationView):
     @discord.ui.button(label="Add Milestone", style=discord.ButtonStyle.green, custom_id="add_milestone", row=1)
     async def add_milestone(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("<:no:1036810470860013639> You need administrator permissions to do that.", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} You need administrator permissions to do that.", ephemeral=True)
             return
         modal = MilestoneModal()
         await interaction.response.send_modal(modal)
@@ -265,7 +255,7 @@ class MilestonePageView(BasePaginationView):
     @discord.ui.button(label="Remove Milestone", style=discord.ButtonStyle.red, custom_id="remove_milestone", row=1)
     async def remove_milestone(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("<:no:1036810470860013639> You need administrator permissions to do that.", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} You need administrator permissions to do that.", ephemeral=True)
             return
         modal = RemoveMilestoneModal()
         await interaction.response.send_modal(modal)
@@ -297,7 +287,7 @@ class Milestones(commands.Cog):
         interaction: discord.Interaction,
     ) -> None:
         await interaction.response.defer(thinking=True)
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
         milestones = ref.get() or []
         
         pages = get_milestone_embeds(interaction, milestones)

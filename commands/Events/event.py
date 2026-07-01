@@ -24,27 +24,8 @@ from commands.Events.helperFunctions import addMora, get_minigame_list, get_guil
 from commands.Events.quests import update_quest
 from utils.commands import SlashCommand
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
-MORA_CHEST_DESCRIPTION = f"""## How the Daily Mora Chest Works 🎁
-<:dot:1357188726047899760> Earn a chest per day after sending **4 to 6 effortful messages** in minigame channels.
-<:dot:1357188726047899760> Messages must be spaced out and not repetitive/spammy.
-<:dot:1357188726047899760> A chest starts as **Common**, containing {MORA_EMOTE} `2500`.
-<:dot:1357188726047899760> You get a minimum of **4 chances** to upgrade your chest.
-<:dot:1357188726047899760> You must claim your chest within **5 minutes** or it will be wasted.
-<:dot:1357188726047899760> After claiming, wait until the next **UTC +0 midnight** to earn a new chest.
-### Rewards (Base Mora) 🏆
-<:dot:1357188726047899760> `Common:       2,500 Mora`
-<:dot:1357188726047899760> `Exquisite:    7,500 Mora`
-<:dot:1357188726047899760> `Precious:    15,000 Mora`
-<:dot:1357188726047899760> `Luxurious:   30,000 Mora`
-### Upgrade Chances :arrow_up:  
-<:dot:1357188726047899760> `Common → Exquisite:     30% chance`
-<:dot:1357188726047899760> `Exquisite → Precious:   15% chance`
-<:dot:1357188726047899760> `Precious → Luxurious:   20% chance`
-### Streak Bonus <a:streak:1371651844652273694>
-<:dot:1357188726047899760> You gain a **daily streak** if you claim a chest every day.
-<:dot:1357188726047899760> Each day in your streak adds `+100` {MORA_EMOTE} (max 10000) to the reward.
-<:dot:1357188726047899760> Miss a day? Your streak resets to 1."""
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_UPGRADE_TIMES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_TIMEOUT, MORA_TIER_MAP, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, EMOTE_CHESTS, MORA_CHEST_ICONS, MORA_CHEST_DESCRIPTION
+
 
 def get_next_reset_unix():
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -552,11 +533,11 @@ async def pickUpIceCream(channel, client):
 ### --- TYPE RACER --- ###
 
 async def createImage(
-    text, bg="./assets/F7E8BE.png", filename="./assets/typeracer.png"
+    text, bg=TYPERACER_BG_PATH, filename=TYPERACER_PATH
 ):
     im1 = Image.open(bg)
     color = (0, 0, 0)
-    font = ImageFont.truetype("./assets/ja-jp.ttf", 55)
+    font = ImageFont.truetype(FONT_PATH, 55)
     d1 = ImageDraw.Draw(im1)
     d1.text((120, 60), text, font=font, fill=color)
     im1.save(filename)
@@ -602,7 +583,7 @@ async def quicktype(channel, client):
 
             if typed == correct:
                 try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
+                    await answer.add_reaction(YES_EMOTE)
                 except Exception:
                     continue
                     
@@ -633,7 +614,7 @@ async def quicktype(channel, client):
             elif sum(1 for a, b in zip(typed, correct) if a == b) >= 10:
                 qualified_users.add(answer.author.id)
                 try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
+                    await answer.add_reaction(NO_EMOTE)
                 except Exception:
                     continue
 
@@ -705,7 +686,7 @@ async def reverseQuicktype(channel, client):
 
             if typed == reversed_words:
                 try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
+                    await answer.add_reaction(YES_EMOTE)
                 except Exception:
                     continue
                     
@@ -735,7 +716,7 @@ async def reverseQuicktype(channel, client):
 
             elif sum(1 for a, b in zip(typed, reversed_words) if a == b) >= 5:
                 try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
+                    await answer.add_reaction(NO_EMOTE)
                 except Exception:
                     continue
                 qualified_users.add(answer.author.id)
@@ -827,7 +808,7 @@ async def unscrambleWords(channel, client):
 
             if typed == word:
                 try:
-                    await answer.add_reaction("<:yes:1036811164891480194>")
+                    await answer.add_reaction(YES_EMOTE)
                 except Exception:
                     continue
                     
@@ -860,7 +841,7 @@ async def unscrambleWords(channel, client):
 
             elif contains_all_letters(typed, scrambled):
                 try:
-                    await answer.add_reaction("<:no:1036810470860013639>")
+                    await answer.add_reaction(NO_EMOTE)
                 except Exception:
                     continue
                 qualified_users.add(answer.author.id)
@@ -914,7 +895,7 @@ class RollDiceButton(discord.ui.Button):
 
         if len(view.user_rolls[user_id]) >= 2:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You've already rolled twice!", 
+                f"{NO_EMOTE} You've already rolled twice!", 
                 ephemeral=True
             )
             return
@@ -935,7 +916,7 @@ class RollDiceButton(discord.ui.Button):
             msg = (
                 f"You rolled: **{roll}**\n"
                 f"Your total: **{current_total}**\n"
-                "<:yes:1036810470860013639> You've completed your two rolls! Wait patiently for the results!"
+                f"{YES_EMOTE} You've completed your two rolls! Wait patiently for the results!"
             )
 
         await interaction.response.send_message(embed=discord.Embed(description=msg, color=discord.Color.green()), ephemeral=True)
@@ -1293,11 +1274,11 @@ class EventBlackjackLobbyView(View):
         user_id = interaction.user.id
 
         if time.time() > self.deadline:
-            return await interaction.response.send_message("❌ The blackjack table is closed! No new games can be started.", ephemeral=True)
+            return await interaction.response.send_message(f"{NO_EMOTE} The blackjack table is closed! No new games can be started.", ephemeral=True)
         if user_id in self.active_players:
-            return await interaction.response.send_message("❌ You already have an active game!", ephemeral=True)
+            return await interaction.response.send_message(f"{NO_EMOTE} You already have an active game!", ephemeral=True)
         if user_id in self.all_participants:
-            return await interaction.response.send_message("❌ You've already played your game for this event!", ephemeral=True)
+            return await interaction.response.send_message(f"{NO_EMOTE} You've already played your game for this event!", ephemeral=True)
 
         self.active_players.add(user_id)
         self.all_participants.add(user_id)
@@ -1621,7 +1602,7 @@ async def eggWalk(channel, client):
                 if answer.content.strip() == str(number):
                     if answer.author != previousUser:
                         try:
-                            await answer.add_reaction("<:yes:1036811164891480194>")
+                            await answer.add_reaction(YES_EMOTE)
                         except Exception:
                             continue
                         number += 1
@@ -1629,7 +1610,7 @@ async def eggWalk(channel, client):
                         userCounts[answer.author] = userCounts.get(answer.author, 0) + 1
                     else:
                         try:
-                            await answer.add_reaction("<:no:1036810470860013639>")
+                            await answer.add_reaction(NO_EMOTE)
                         except Exception:
                             continue
                         await answer.reply(
@@ -1642,7 +1623,7 @@ async def eggWalk(channel, client):
                         break
                 else:
                     try:
-                        await answer.add_reaction("<:no:1036810470860013639>")
+                        await answer.add_reaction(NO_EMOTE)
                     except Exception:
                         continue
                     await answer.reply(
@@ -1849,7 +1830,7 @@ async def countingCurrency(channel, client):
                 participants.add(answer.author.id)
                 if int(answer.content.strip()) == number:
                     try:
-                        await answer.add_reaction("<:yes:1036811164891480194>")
+                        await answer.add_reaction(YES_EMOTE)
                     except Exception:
                         continue
                     winner_id = answer.author.id
@@ -1866,7 +1847,7 @@ async def countingCurrency(channel, client):
                     break
                 else:
                     try:
-                        await answer.add_reaction("<:no:1036810470860013639>")
+                        await answer.add_reaction(NO_EMOTE)
                     except Exception:
                         continue
                     asyncio.create_task(handle_message_deletion(answer))
@@ -1943,8 +1924,8 @@ class HangmanButton(discord.ui.Button):
         display_word = update_word(view.word, view.guessed_letters)
         
         view.embed.set_field_at(0, name="Word:", value=f"`{display_word}`", inline=False)
-        view.embed.set_field_at(1, name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(view.correct_letters), inline=True)
-        view.embed.set_field_at(2, name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(view.incorrect_letters), inline=True)
+        view.embed.set_field_at(1, name=YES_EMOTE + " Correct letters:", value=format_guess_dict(view.correct_letters), inline=True)
+        view.embed.set_field_at(2, name=NO_EMOTE + " Incorrect letters:", value=format_guess_dict(view.incorrect_letters), inline=True)
         view.embed.set_field_at(3, name="Tries remaining:", value=f"`{view.tries}`", inline=True)
 
         if "_" not in display_word:
@@ -2005,8 +1986,8 @@ async def hangmanGame(channel, client):
         color=discord.Color.blurple(),
     )
     embed.add_field(name="Word:", value=f"`{display_word}`", inline=False)
-    embed.add_field(name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(correct_letters), inline=True)
-    embed.add_field(name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(incorrect_letters), inline=True)
+    embed.add_field(name=YES_EMOTE + " Correct letters:", value=format_guess_dict(correct_letters), inline=True)
+    embed.add_field(name=NO_EMOTE + " Incorrect letters:", value=format_guess_dict(incorrect_letters), inline=True)
     embed.add_field(name="Tries remaining:", value=f"`{tries}`", inline=True)
     embed.set_footer(text="Click a letter to guess • 5-minute time limit")
     
@@ -2045,8 +2026,8 @@ async def hangmanGame(channel, client):
 
     display_word = update_word(word, view.guessed_letters)
     final_embed.add_field(name="Word:", value=f"`{display_word}`", inline=False)
-    final_embed.add_field(name="<:yes:1036811164891480194> Correct letters:", value=format_guess_dict(view.correct_letters), inline=True)
-    final_embed.add_field(name="<:no:1036810470860013639> Incorrect letters:", value=format_guess_dict(view.incorrect_letters), inline=True)
+    final_embed.add_field(name=YES_EMOTE + " Correct letters:", value=format_guess_dict(view.correct_letters), inline=True)
+    final_embed.add_field(name=NO_EMOTE + " Incorrect letters:", value=format_guess_dict(view.incorrect_letters), inline=True)
     final_embed.add_field(name="Tries remaining:", value=f"`{view.tries}`", inline=True)
 
     for user_id, letters in view.correct_letters.items():
@@ -2085,11 +2066,11 @@ class MatchPFPButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         game_state = active_pfp_games.get(interaction.message.id)
         if not game_state:
-            await interaction.response.send_message("This game session has expired!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This game session has expired!", ephemeral=True)
             return
 
         if interaction.user.id in game_state.participants:
-            await interaction.response.send_message("<:no:1036810470860013639> You already guessed!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} You already guessed!", ephemeral=True)
             return
 
         game_state.participants.append(interaction.user.id)
@@ -2122,7 +2103,7 @@ class MatchPFPButton(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
             del active_pfp_games[interaction.message.id]
         else:
-            await interaction.response.send_message("Wrong! <:no:1036810470860013639>", ephemeral=True)
+            await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
 async def matchThePFP(channel, client):
@@ -2139,7 +2120,7 @@ async def matchThePFP(channel, client):
             break
 
     if len(selected_items) < 3:
-        return await channel.send(embed=discord.Embed(description="<:no:1036810470860013639> Not enough unique users for the game."))
+        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique users for the game."))
 
     target_user = random.choice(selected_items)
     
@@ -2195,11 +2176,11 @@ class WhoSaidItButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         game_state = active_who_said_it_games.get(interaction.message.id)
         if not game_state:
-            await interaction.response.send_message("This game session has expired!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This game session has expired!", ephemeral=True)
             return
 
         if interaction.user.id in game_state.participants:
-            await interaction.response.send_message("<:no:1036810470860013639> You already guessed!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} You already guessed!", ephemeral=True)
             return
 
         game_state.participants.append(interaction.user.id)
@@ -2226,7 +2207,7 @@ class WhoSaidItButton(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
             del active_who_said_it_games[interaction.message.id]
         else:
-            await interaction.response.send_message("Wrong! <:no:1036810470860013639>", ephemeral=True)
+            await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
 async def whoSaidIt(channel, client):
@@ -2245,7 +2226,7 @@ async def whoSaidIt(channel, client):
                 break
 
     if len(selected_messages) < 3:
-        return await channel.send(embed=discord.Embed(description="<:no:1036810470860013639> Not enough unique messages for the game."))
+        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique messages for the game."))
 
     target_message = random.choice(selected_messages)
     options = selected_messages
@@ -2304,11 +2285,11 @@ class KnowMembersButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         game_state = active_know_members_games.get(interaction.message.id)
         if not game_state:
-            await interaction.response.send_message("This game session has expired!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This game session has expired!", ephemeral=True)
             return
 
         if interaction.user.id in game_state.answerers:
-            await interaction.response.send_message("<:no:1036810470860013639> You already guessed!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} You already guessed!", ephemeral=True)
             return
 
         game_state.answerers.append(interaction.user.id)
@@ -2344,7 +2325,7 @@ class KnowMembersButton(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
             del active_know_members_games[interaction.message.id]
         else:
-            await interaction.response.send_message("Incorrect! <:no:1036810470860013639>", ephemeral=True)
+            await interaction.response.send_message(f"Incorrect! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
 async def knowYourMembers(channel, client):
@@ -2352,7 +2333,7 @@ async def knowYourMembers(channel, client):
     
     author_ids = list({msg.author.id for msg in messages if not msg.author.bot})
     if len(author_ids) < 2:
-        return await channel.send(embed=discord.Embed(description="<:no:1036810470860013639> Not enough unique recent messaging users for the game."))
+        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique recent messaging users for the game."))
     
     authors = []
     for author_id in author_ids:
@@ -2363,7 +2344,7 @@ async def knowYourMembers(channel, client):
             continue
     
     if len(authors) < 2:
-        return await channel.send(embed=discord.Embed(description="<:no:1036810470860013639> Not enough valid members for the game."))
+        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough valid members for the game."))
     
     selected = random.sample(authors, 2)
     mode = random.choice(["earlier", "later", "specific"])
@@ -2438,7 +2419,7 @@ class memoryBtn(discord.ui.Button):
         
         if interaction.user.id in game_state.participants:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You have guessed once already. No second try!", ephemeral=True
+                f"{NO_EMOTE} You have guessed once already. No second try!", ephemeral=True
             )
             return
             
@@ -2468,7 +2449,7 @@ class memoryBtn(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
             del active_memory_games[interaction.message.id]
         else:
-            await interaction.response.send_message("Wrong! <:no:1036810470860013639>", ephemeral=True)
+            await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             game_state.participants.append(interaction.user.id)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
@@ -2541,7 +2522,7 @@ class answerLieBtn(discord.ui.Button):
             return
 
         if interaction.user.id in game_state.participants:
-            await interaction.response.send_message("<:no:1036810470860013639> You have guessed once already. No second try!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} You have guessed once already. No second try!", ephemeral=True)
             return
 
         game_state.participants.append(interaction.user.id)
@@ -2574,7 +2555,7 @@ class answerLieBtn(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
             del active_ttol_games[interaction.message.id]
         else:
-            await interaction.response.send_message("Wrong! <:no:1036810470860013639>", ephemeral=True)
+            await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
 
@@ -2677,7 +2658,7 @@ class TwoTruthAndALieButton(discord.ui.Button):
         view.add_item(answerLieBtn("<:Pyro:1364310441949663274>"))
         view.add_item(answerLieBtn("<:Electro:1364310441014071345>"))
         
-        await modal.submission_interaction.response.send_message("<:yes:1036811164891480194> Success", ephemeral=True)
+        await modal.submission_interaction.response.send_message(f"{YES_EMOTE} Success", ephemeral=True)
         
         await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
         
@@ -2905,7 +2886,7 @@ async def splitOrSteal(channel, client):
                 break
 
     if len(selected_players) < 2:
-        return await channel.send(embed=discord.Embed(description="<:no:1036810470860013639> Not enough unique recent messaging users for the game."))
+        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique recent messaging users for the game."))
 
     a, b = selected_players[0], selected_players[1]
     reward = random.randint(10000, 14000)
@@ -3065,7 +3046,7 @@ async def rockPaperScissors(channel, client):
                 break
 
     if len(selected_players) < 2:
-        return await channel.send("<:no:1036810470860013639> Not enough players for the game.")
+        return await channel.send(f"{NO_EMOTE} Not enough players for the game.")
 
     a, b = selected_players[0], selected_players[1]
     reward = random.randint(5000, 7000)
@@ -3268,7 +3249,7 @@ async def doubleOrKeep(channel: discord.TextChannel, client: discord.Client):
     first_user = user_list[0]
     
     if len(user_list) < 2:
-        return await channel.send(embed=discord.Embed(description="<:no:1036810470860013639> Not enough unique recent messaging users for the game."))
+        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique recent messaging users for the game."))
 
     await channel.send(
         content=f"{first_user.mention}",
@@ -3306,7 +3287,7 @@ class BidModal(discord.ui.Modal):
         try:
             if interaction.user.id in self.auction_view.bids:
                 embed = discord.Embed(
-                    title="Already Bid! <:no:1036810470860013639>",
+                    title=f"Already Bid! {NO_EMOTE}",
                     description="You can only bid **once** per auction!",
                     color=discord.Color.red()
                 )
@@ -3321,7 +3302,7 @@ class BidModal(discord.ui.Modal):
 
             if bid > user_mora:
                 embed = discord.Embed(
-                    title="Bid Failed <:no:1036810470860013639>",
+                    title=f"Bid Failed {NO_EMOTE}",
                     description=(
                         f"{MORA_EMOTE} **Insufficient Funds!**\n"
                         f"You only have: {MORA_EMOTE} {user_mora}"
@@ -3334,7 +3315,7 @@ class BidModal(discord.ui.Modal):
             self.auction_view.bids[interaction.user.id] = bid
             self.auction_view.participant_ids.add(interaction.user.id)
             embed = discord.Embed(
-                title="Bid Placed <:yes:1036811164891480194>",
+                title=f"Bid Placed {YES_EMOTE}",
                 description=f"You've bid {MORA_EMOTE} **{bid}**!\n*This will only be deducted if you win the box!*",
                 color=discord.Color.green()
             )
@@ -3349,7 +3330,7 @@ class BidModal(discord.ui.Modal):
             
         except ValueError:
             embed = discord.Embed(
-                title="Invalid Bid <:no:1036810470860013639>",
+                title=f"Invalid Bid {NO_EMOTE}",
                 description="Please enter a number between **1000** and **15000**!",
                 color=discord.Color.red()
             )
@@ -3370,7 +3351,7 @@ class AuctionView(discord.ui.View):
     async def bid_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id in self.bids:
             embed = discord.Embed(
-                description="<:no:1036810470860013639> You've already bid!",
+                description=f"{NO_EMOTE} You've already bid!",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -3430,7 +3411,7 @@ async def moraAuctionHouse(channel, client):
     box_value = random.randint(5000, 15000)
     
     if not view.bids:
-        await view.message.reply(embed=discord.Embed(description="<:no:1036810470860013639> Auction ended with no bids.", color=discord.Color.red()))
+        await view.message.reply(embed=discord.Embed(description=f"{NO_EMOTE} Auction ended with no bids.", color=discord.Color.red()))
         return
 
     # Winner: Closest bid under (or equal to) box value
@@ -3905,7 +3886,7 @@ async def ticTacTok(channel, client):
     
 class MoraChestView(discord.ui.View):
     def __init__(self, cog, user_id, guild_id, initial_tier, streak, clicks_remaining):
-        super().__init__(timeout=300)
+        super().__init__(timeout=MORA_CHEST_TIMEOUT)
         self.cog = cog
         self.user_id = user_id
         self.guild_id = guild_id
@@ -3926,7 +3907,7 @@ class MoraChestView(discord.ui.View):
 
     async def interaction_check(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ This isn't your chest!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This isn't your chest!", ephemeral=True)
             return False
         return True
 
@@ -3954,40 +3935,29 @@ class MoraChestView(discord.ui.View):
             view.clicks_remaining -= 1
             new_tier = view.tier
 
-            if view.tier == "Common" and random.random() < 0.30:
-                new_tier = "Exquisite"
-            elif view.tier == "Exquisite" and random.random() < 0.15:
-                new_tier = "Precious"
-            elif view.tier == "Precious" and random.random() < 0.20:
-                new_tier = "Luxurious"
+            if view.tier == MORA_CHEST_TIERS[0] and random.random() < MORA_CHEST_UPGRADE_CHANCES[0]:
+                new_tier = MORA_CHEST_TIERS[1]
+            elif view.tier == MORA_CHEST_TIERS[1] and random.random() < MORA_CHEST_UPGRADE_CHANCES[1]:
+                new_tier = MORA_CHEST_TIERS[2]
+            elif view.tier == MORA_CHEST_TIERS[2] and random.random() < MORA_CHEST_UPGRADE_CHANCES[2]:
+                new_tier = MORA_CHEST_TIERS[3]
 
             success = new_tier != view.tier
             view.tier = new_tier
 
-            tier_map = {
-                "Common": 2500,
-                "Exquisite": 7500,
-                "Precious": 15000,
-                "Luxurious": 30000
-            }
-            streak_total = min((view.streak * 100), 10000)
-            total = tier_map[view.tier] + streak_total
+            streak_total = min((view.streak * MORA_CHEST_STREAK_BONUS), MORA_CHEST_MAX_STREAK_BONUS)
+            total = MORA_TIER_MAP[view.tier] + streak_total
+            
             embed = interaction.message.embeds[0]
-            embed.title = f"Daily Mora Chest 🎁 ({view.tier})"
+            embed.title = f"{MORA_CHEST_NAME} 🎁 ({view.tier})"
             embed.description = (
                 f"Upgrades left: `{view.clicks_remaining}`\n\n"
-                f"**Tier:** {view.tier} Chest ({MORA_EMOTE} `{tier_map[view.tier]}`)\n"
-                f"**Streak:** {'<a:streak:1371651844652273694>' if view.streak > 1 else ''} `{view.streak}` day{'s' if view.streak > 1 else ''} (`+{streak_total}` {MORA_EMOTE})\n"
+                f"**Tier:** {view.tier} Chest ({MORA_EMOTE} `{MORA_TIER_MAP[view.tier]}`)\n"
+                f"**Streak:** {EMOTE_STREAK if view.streak > 1 else ''} `{view.streak}` day{'s' if view.streak > 1 else ''} (`+{streak_total}` {MORA_EMOTE})\n"
                 f"**Total:** {MORA_EMOTE} `{total}`"
             )
             embed.color = discord.Color.gold() if success else discord.Color.random()
-            chest_icon = {
-                "Common": "https://i.imgur.com/2kOfLSC.png",
-                "Exquisite": "https://i.imgur.com/DBPQSAu.png",
-                "Precious": "https://i.imgur.com/zxOlrCo.png",
-                "Luxurious": "https://i.imgur.com/5nWwRdc.png"
-            }
-            embed.set_thumbnail(url=chest_icon[view.tier])
+            embed.set_thumbnail(url=MORA_CHEST_ICONS[view.tier])
 
             view.update_buttons()
             await interaction.response.edit_message(embed=embed, view=view)
@@ -3998,14 +3968,8 @@ class MoraChestView(discord.ui.View):
 
         async def callback(self, interaction: discord.Interaction):
             view = self.view
-            tier_map = {
-                "Common": 2500,
-                "Exquisite": 7500,
-                "Precious": 15000,
-                "Luxurious": 30000
-            }
-            streak_total = min((view.streak * 100), 10000)
-            total = tier_map[view.tier] + streak_total
+            streak_total = min((view.streak * MORA_CHEST_STREAK_BONUS), MORA_CHEST_MAX_STREAK_BONUS)
+            total = MORA_TIER_MAP[view.tier] + streak_total
             
             from commands.Events.helperFunctions import get_chest_bonus_chance
             bonus_chance = await get_chest_bonus_chance(interaction.client.pool, view.guild_id, view.user_id)
@@ -4019,7 +3983,8 @@ class MoraChestView(discord.ui.View):
                         view.guild_id, view.user_id
                     )
 
-            streak_ref = db.reference(f"/Chat Minigames Chests/{view.guild_id}/{view.user_id}/streaks")
+            streak_path = f"{CHEST_DB}/{view.guild_id}/{view.user_id}/streaks"
+            streak_ref = db.reference(streak_path)
             streak_data = streak_ref.get() or {}
             max_streak = streak_data.get("max_streak", 0)
 
@@ -4027,16 +3992,16 @@ class MoraChestView(discord.ui.View):
             text, addedMora = await addMora(interaction.client.pool, view.user_id, total, interaction.channel.id, view.guild_id, interaction.client)
 
             embed = discord.Embed(
-                title=f"<a:moneydance:1227425759077859359> {view.tier} Chest Claimed! <a:moneydance:1227425759077859359>",
+                title=f"{MONEYDANCE_EMOTE} {view.tier} {MORA_CHEST_NAME.split(' ')[-1]} Claimed! {MONEYDANCE_EMOTE}",
                 description=f"{MORA_EMOTE} `{text}` is **added** to your inventory!",
                 color=discord.Color.green()
             )
 
-            breakdown_val = f"-# Base: {MORA_EMOTE} `{tier_map[view.tier]}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {'<a:streak:1371651844652273694>' if view.streak > 1 else ''}"
+            breakdown_val = f"-# Base: {MORA_EMOTE} `{MORA_TIER_MAP[view.tier]}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {EMOTE_STREAK if view.streak > 1 else ''}"
             if is_bonus:
                 breakdown_val += f"\n-# 🌹 **Realm Bonus:** +1 Summon!"
 
-            embed.add_field(name="Chest Breakdown", value=breakdown_val, inline=True)
+            embed.add_field(name="Reward Breakdown", value=breakdown_val, inline=True)
 
             reset_unix = get_next_reset_unix()
             embed.add_field(
@@ -4045,29 +4010,26 @@ class MoraChestView(discord.ui.View):
                 inline=True
             )
             
-            counts_ref = db.reference(f"/Chat Minigames Chests/{view.guild_id}/{view.user_id}/counts")
-            chest_counts = counts_ref.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
+            counts_path = f"{CHEST_DB}/{view.guild_id}/{view.user_id}/counts"
+            counts_ref = db.reference(counts_path)
+            chest_counts = counts_ref.get() or {tier: 0 for tier in MORA_CHEST_TIERS}
             chest_counts[view.tier] = chest_counts.get(view.tier, 0) + 1
             total_chests = sum(chest_counts.values())
 
             chest_info = (
-                f"<a:common:1371641883121680465> `{chest_counts.get('Common', 0)}` <:blank:1036792889121980426>"
-                f"<a:exquisite:1371641856344985620> `{chest_counts.get('Exquisite', 0)}` <:blank:1036792889121980426>"
-                f"<a:precious:1371641871452995689> `{chest_counts.get('Precious', 0)}` <:blank:1036792889121980426>"
-                f"<a:luxurious:1371641841338023976> `{chest_counts.get('Luxurious', 0)}`\n"
-                f"📦 **Total:** `{total_chests}` <:blank:1036792889121980426>"
-                f"<a:streak:1371651844652273694> `{view.streak}` day{'s' if view.streak > 1 else ''} <:blank:1036792889121980426>"
-                f"<a:max_streak:1371655286049214672> `{new_max_streak}` day{'s' if new_max_streak > 1 else ''}"
+                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[0]]} `{chest_counts.get(MORA_CHEST_TIERS[0], 0)}` {EMOTE_BLANK}"
+                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[1]]} `{chest_counts.get(MORA_CHEST_TIERS[1], 0)}` {EMOTE_BLANK}"
+                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[2]]} `{chest_counts.get(MORA_CHEST_TIERS[2], 0)}` {EMOTE_BLANK}"
+                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[3]]} `{chest_counts.get(MORA_CHEST_TIERS[3], 0)}`\n"
+                f"📦 **Total:** `{total_chests}` {EMOTE_BLANK}"
+                f"{EMOTE_STREAK} `{view.streak}` day{'s' if view.streak > 1 else ''} {EMOTE_BLANK}"
+                f"{EMOTE_MAX_STREAK} `{new_max_streak}` day{'s' if new_max_streak > 1 else ''}"
             )
             embed.add_field(name="Your Inventory", value=chest_info, inline=False)
-            chest_icon = {
-                "Common": "https://i.imgur.com/2kOfLSC.png",
-                "Exquisite": "https://i.imgur.com/DBPQSAu.png",
-                "Precious": "https://i.imgur.com/zxOlrCo.png",
-                "Luxurious": "https://i.imgur.com/5nWwRdc.png"
-            }
-            embed.set_thumbnail(url=chest_icon[view.tier])
+            embed.set_thumbnail(url=MORA_CHEST_ICONS[view.tier])
+            
             await interaction.response.edit_message(content=interaction.user.mention, embed=embed, view=PersistentChestInfoView())
+            
             streak_ref.set({
                 "streak": view.streak,
                 "max_streak": new_max_streak,
@@ -4080,253 +4042,8 @@ class MoraChestView(discord.ui.View):
             print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
 
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:YanfeiNote:1335644122253623458> **Mora Gifting Glitch**\n"
-                        "We recently identified an issue where **passive Mora boosts** were incorrectly applying to gifts, allowing more Mora to be received than was actually sent. To keep the economy fair for everyone, we have deployed a fix. <:HuTaoEvil:1350630212617896120>\n"
-                        "### <:NingguangStonks:1265470501707321344> **What Has Changed?**\n"
-                        f"<:dot:1357188726047899760> **Boosts Disabled for Gifts:** Your personal Mora boosts no longer apply to incoming gifts. The recipient now receives **exactly** what the donor sends.\n"
-                        f"<:dot:1357188726047899760> **Balance Adjustments:** Any extra Mora generated via this exploit has been **automatically reverted** from affected accounts.\n"
-                        f"<:dot:1357188726047899760> **Improved Notifications:** Gift messages now explicitly show the tax paid and ping the recipient directly! 🔔\n"
-                        "### <:CharlotteHeart:1191594476263702528> **Keeping it Fair**\n"
-                        "Fischl is watching! Exploiting system bugs to inflate the economy hurts the value of everyone's hard-earned Mora. We appreciate the honest players who reported this to us. <:PaimonWow:1188553806456291489>\n\n"
-                        f"-# You can still support your friends using {SlashCommand('gift')}, just remember that Fischl always takes her cut! 🦅"
-                    ),
-                    color=discord.Color.blue()
-                ).set_footer(text="Thank you for helping us maintain a balanced and fun economy! 🫶"),
-                ephemeral=True
-            )
-            return
-        
-            embed = discord.Embed(
-                title="",
-                description=(
-                    "## <:MelonBread_KeqingNote:1342924552392671254> **Database Migration**\n"
-                    "Fischl just underwent a **huge refactor** with a **complete database migration** to improve stability and performance! <:PaimonWow:1188553806456291489>\n\n"
-                    "<:dot:1357188726047899760> Everything remains the same for now (in preparation for a major update)\n"
-                    "<:dot:1357188726047899760> All your minigame stats has been **carefully moved** to the new database\n"
-                    "<:dot:1357188726047899760> Everything has been **tested** with no errors so far\n\n"
-                    "-# However, it is entirely possible that I might have missed something. **If you discover any bugs or issues**, please don't hesitate to let me know by **creating a support ticket** in our [support server](https://discord.gg/BXkc8CC4uJ)!\n"
-                    "### <:CharlotteHeart:1191594476263702528> Thank you for your understanding! Stay tuned for the new season on April 1! 🫶"
-                ),
-                color=discord.Color.blurple()
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:PinkCelebrate:1204614140044386314> **Minigames Just Got a Fresh New Look!**\n"
-                        "We’ve given **many minigames a visual revamp** with cleaner layouts, smoother flow, and an overall fresher feel. "
-                        "Everything should now feel clearer and more fun to play! <:PaimonWow:1188553806456291489>\n"
-                        "### <:YanfeiNote:1335644122253623458> **2 New Minigames Added**\n"
-                        "<:dot:1357188726047899760> **Simple Math Game** — Quick mental math challenges to test your speed and accuracy 🧠\n"
-                        "<:dot:1357188726047899760> **Tik Tac Tok** — The classic **tic-tac-toe**, but with a *punny twist* 😏\n\n"
-                        "-# Jump in and try them out — your usual rewards, streaks, and progression all work just like before!"
-                    ),
-                    color=discord.Color.green()
-                ),
-                ephemeral=True
-            )
-
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:CharlotteHeart:1191594476263702528> **Bot Development Isn't Cheap**\n"
-                        f"<:reply:1036792837821435976> Consider purchasing the **Elite Track** for **{interaction.guild.name}** to unlock exclusive cosmetics and boosts, all while supporting ~~your favorite bot~~ Fischl! ***[:yum: Click the link and select {interaction.guild.name} to view and purchase the Elite Track!](https://fischl.app/profile)***"
-                    ),
-                    color=discord.Color.gold()
-                ),
-                ephemeral=True,
-                view=View().add_item(Button(label="Your Support Would Mean A Lot!", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
-            )
-
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:YanfeiNote:1335644122253623458> **How do you even check your staff past experiences?**\n"
-                        "Introducing **ServerCV** — a **verified staff experience resume** applicants can share when applying for roles. "
-                        "It helps servers instantly spot real experience and reduce fake claims. <:PaimonWow:1188553806456291489>\n\n"
-                        "<:dot:1357188726047899760> Clean, trusted resume link (example: https://servercv.com/u/ian)\n"
-                        "<:dot:1357188726047899760> No setup required for your server. Just endorse your staff members!\n"
-                        "### <:CharlotteHeart:1191594476263702528> **Check us out for more info:** https://servercv.com/"
-                    ),
-                    color=discord.Color.blurple()
-                ).set_footer(text="Share this to your server owner or staff members!"),
-                ephemeral=True,
-                view=View().add_item(Button(label="Try ServerCV", url="https://servercv.com/", style=discord.ButtonStyle.link))
-            )
-
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:HuTaoEvil:1350630212617896120> **Free Mora & Summons Every day?!**\n"
-                        "You can do just that for each server that has minigame enabled at **https://fischl.app/profile**! <:PaimonWow:1188553806456291489>\n\n"
-                        "<:dot:1357188726047899760>Play a **random daily minigame** on the website to earn **bonus Mora** + **1 extra summon** each day\n"
-                        "<:dot:1357188726047899760>Each challenge refreshes **daily at 00:00 UTC** (like daily chests)!\n\n"
-                        f"-# Once you finish, your rewards will **automatically be credited** to your {SlashCommand('mora')} inventory. <:AyakaShine:1191592023946432522>"
-                    ),
-                    color=discord.Color.gold()
-                ).set_footer(text="Why are we doing this? We just launched our brand new profile website and dashboard! Check them out!"),
-                ephemeral=True,
-                view=View().add_item(Button(label="Complete your daily challenge", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
-            ) 
-        
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:CharlotteHeart:1191594476263702528> **Introducing the Fischl Profile Website!**\n"
-                        "You can now access **your Fischl profile** directly from your browser at **https://fischl.app/profile**! <:PaimonWow:1188553806456291489>\n\n"
-                        f"<:dot:1357188726047899760>View your **Mora inventory**, **Elite status**, and **track progress** — everything you see in {SlashCommand('mora')}.\n"
-                        f"<:dot:1357188726047899760>**Purchase Elite Track instantly!** No more waiting for manual activation — it’ll **unlock automatically** right after purchase.\n"
-                        "### <:PinkCelebrate:1204614140044386314> Still only **$0.99/month** *(or $2.97 per 3-month season!)*\n"
-                        f"<:reply:1036792837821435976> ***[View Your Profile & Become Elite Now](https://fischl.app/profile)***"
-                    ),
-                    color=discord.Color.random()
-                ).set_thumbnail(url="https://media.discordapp.net/attachments/1106727534479032341/1381827880488669327/elite_track.png"),
-                ephemeral=True,
-                view=View().add_item(Button(label="View Your Profile", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
-            )
-
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:YanfeiNote:1335644122253623458> **Prestige Reset Notice**\n"
-                        "Due to a **season reset malfunction**, all players’ **Prestige levels were accidentally reset to 0**, even though Prestige is meant to be **permanent**.\n\n"
-                        "<:dot:1357188726047899760>Players who **completed all 31 tiers in Season 1’s track** should have **`+1 Prestige`**.\n"
-                        "<:dot:1357188726047899760>Those who **purchased the Elite Track** *and* reached its end should receive an **additional `+1 Prestige`** *(total of 2)*.\n"
-                        "### <:CharlotteHeart:1191594476263702528> **How to Restore Your Prestige**\n"
-                        f"If you believe you’re affected by this issue:\n"
-                        f"<:reply:1036792837821435976> Join our [support server](https://discord.gg/BXkc8CC4uJ) and create a **support ticket**\n"
-                        f"<:reply:1036792837821435976> **Forward a message by Fischl** showing your {SlashCommand('mora')} command as proof of your Season 1 track progress\n"
-                        f"<:reply:1036792837821435976> If you cannot find proof, **please provide any relevant information about your progress**\n\n"
-                        "-# Your Prestige will then be **restored manually** after verification. Thank you for your understanding and patience!"
-                    ),
-                    color=discord.Color.red()
-                ).set_thumbnail(url="https://i.imgur.com/Lhyd7HI.png"),
-                ephemeral=True
-            )
-        
-            if datetime.datetime.now(datetime.timezone.utc).month == 10:
-                await interaction.followup.send(
-                    embed=discord.Embed(
-                        title="",
-                        description=(
-                            "## <:MelonBread_KeqingNote:1342924552392671254> **Season 2 Starts Now!**\n"
-                            f"> The new season **started <t:1759276801:R>**! All seasonal boosts and cosmetics have been **reset**.\n\n"
-                            f"- <:YanfeiNote:1335644122253623458> We've capped chest streak earnings at {MORA_EMOTE} `10,000` (if you reach >100 days on your streak)\n"
-                            f"- <:AyakaShine:1191592023946432522> We also added a {SlashCommand('preview')} command, allowing you to check out the **new profile frames**!\n\n"
-                            "-# *The XP needed to get to the end of the season track is **decreased by half** (from 90K to 55K XP)! <:CharlotteHeart:1191594476263702528> "
-                            "Visit https://fischl.app/track/season_2/index.html and consider **purchasing the Elite Track** to support Fischl!*\n"
-                        ),
-                        color=discord.Color.random()
-                    ),
-                    ephemeral=True
-                )
-
-            if sigils_earned:
-                embed = discord.Embed(
-                    title=f"What Are Lunar Sigils? <:AlbedoQuestion:1191574408544923799>",
-                    description="-# Earn <a:sigils:1402736987902967850> **Sigils** by chatting actively and use them to enter giveaways!",
-                    color=discord.Color.purple()
-                )
-                embed.add_field(
-                    name="<:NingguangStonks:1265470501707321344> Chat ➜ Sigils",
-                    value="-# Start **meaningful conversations** to passively earn {SlashCommand('sigils')} in batches!",
-                    inline=True
-                )
-                embed.add_field(
-                    name=f"<:CharlotteHeart:1191594476263702528> Sigils ➜ Giveaways",
-                    value="-# Spend your Sigils to **enter giveaways** and increase your chances with extra entries!",
-                    inline=True
-                )
-                embed.add_field(
-                    name="<:MelonBread_KeqingNote:1342924552392671254> Boost Your Earnings",
-                    value="-# **Special roles** can get increased daily Sigil caps for more rewards!",
-                    inline=True
-                )
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                embed = discord.Embed(
-                    title=f"A new feature has just arrived <:AlbedoQuestion:1191574408544923799>",
-                    description=f"-# Ask your server admins to enable this system via {SlashCommand('giveaway enable')}.",
-                    color=discord.Color.purple()
-                )
-                embed.add_field(
-                    name="<:NingguangStonks:1265470501707321344> Chat ➜ Sigils",
-                    value=f"-# Start **meaningful conversations** to passively earn <a:sigils:1402736987902967850> {SlashCommand('sigils')} in batches!",
-                    inline=True
-                )
-                embed.add_field(
-                    name=f"<:CharlotteHeart:1191594476263702528> Sigils ➜ Giveaways",
-                    value=f"-# Spend your Sigils to **enter giveaways** and increase your chances with extra entries!",
-                    inline=True
-                )
-                embed.add_field(
-                    name="<:MelonBread_KeqingNote:1342924552392671254> Boost Your Earnings",
-                    value=f"-# **Special roles** can get increased daily Sigil caps for more rewards!",
-                    inline=True
-                )
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            embed = discord.Embed(
-                title="",
-                description=(
-                    "## <:YanfeiNote:1335644122253623458> **Chest System Just Got Smarter!**\n"
-                    "We’ve improved how **message-based chest unlocking** works to make things fairer and less abusable for everyone. Here’s what’s changed:\n\n"
-                    "<:dot:1357188726047899760>Messages must now meet **minimum quality** (no spam, repeats, or filler)\n"
-                    "<:dot:1357188726047899760>Added a **cooldown** between countable messages\n"
-                    "<:dot:1357188726047899760>Anywhere between **4 to 6** effortful messages are needed for chest to spawn\n"
-                    "### <:PinkCelebrate:1204614140044386314> All your **upgrades, streaks, and chest rewards** stay the same!\n"
-                    f"<:reply:1036792837821435976> ***[Unlock the Elite Track](https://fischlbot.web.app/track/season_1)***"
-                ),
-                color=discord.Color.teal()
-            )
-            embed.set_footer(text="Thank you for helping keep things fair for everyone! 🫶")
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
-            embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <a:moneydance:1227425759077859359> Did you know...?\n"
-                        "Upgrade to **Elite Track** and get more than **DOUBLE** the rewards of the free version! Here's what you're missing: <:KokoWow:1191868161851666583>\n\n"
-                        "<:dot:1357188726047899760>**Extra `60%` Mora Boosts** (Free: `+50%` only)\n"
-                        "<:dot:1357188726047899760>**Extra `18` Minigame Summons** (Free: `+9` only)\n"
-                        "<:dot:1357188726047899760>**Extra `2` Chest Upgrades** (Free: `+3` only)\n"
-                        "<:dot:1357188726047899760>**4+ Exclusive Animated Cosmetics**\n"
-                        f"<:dot:1357188726047899760>Personalize your {SlashCommand('mora')} inventory with **custom colors**\n"
-                        "### <:PinkCelebrate:1204614140044386314> **All this and more for less than USD $1/month!**\n"
-                        f"<:reply:1036792837821435976> ***[Compare Tracks / Purchase Now](https://fischlbot.web.app/track/season_1)***"
-                    ),
-                    color=0xfa0af6
-                ).set_thumbnail(url="https://media.discordapp.net/attachments/1106727534479032341/1381827880488669327/elite_track.png")
-            embed.set_footer(text="Your purchase will help support bot development tremendously! 🙏")
-            await interaction.followup.send(
-                embed=embed,
-                ephemeral=True
-            )
-            await interaction.followup.send(embed=discord.Embed(title="", description=f"## <:PaimonWow:1188553806456291489> NEW FEATURE ALERT! <:YanfeiNote:1335644122253623458>\nYou can now earn **XP** by **completing quests** or buying items! Unlock **Mora boosts**, **additional chest upgrades**, **Mora gifting**, exclusive cosmetics and titles in the new Progression Track! <:HuTaoEvil:1350630212617896120> \n### <:PinkCelebrate:1204614140044386314> **Use {SlashCommand('mora')} to check your daily quests & free rewards now!** \n-# **You can find the [full update release notes here!](https://fischlbot.web.app/track/update/)** <:MelonBread_KeqingNote:1342924552392671254> ", color=discord.Color.gold()), ephemeral=True)
-            frequency = enabledChannels[interaction.channel.id]
-            await interaction.followup.send(
-                embed=discord.Embed(
-                    title="",
-                    description=(
-                        "## <:MelonBread_KeqingNote:1342924552392671254> **1 Day Until the Massive Update!**\n"
-                        f"> The first season **starts <t:1751328000:R>**! When you claim your chest tomorrow, you’ll see everything you need to know to **maximize your rewards**.\n\n"
-                        f"<:AyakaShine:1191592023946432522> Hang out and chat - minigames are still the best way to earn **tons of {MORA_EMOTE}**!\n"
-                        "-# **Feeling curious?** Sneak a peek at ||the [update preview](https://fischlbot.web.app/track/update/) and the new [season track](https://fischlbot.web.app/track/season_1/) :eyes:||"
-                    ),
-                    color=discord.Color.random()
-                ),
-                ephemeral=True
-            )
+            from commands.Events.announcements import announcement_embed
+            await interaction.followup.send(embed=announcement_embed, ephemeral=True)
             
     class WhatIsItButton(discord.ui.Button):
         def __init__(self):
@@ -4408,12 +4125,12 @@ class FeedbackModal(discord.ui.Modal):
             feedback_target = await interaction.client.fetch_user(692254240290242601)
             await feedback_target.send(embed=embed)
             await interaction.response.send_message(
-                "📬 Thank you for your feedback! Your responses have been recorded. \n<:yes:1036811164891480194> You can always resubmit this form as long as it's available.",
+                f"📬 Thank you for your feedback! Your responses have been recorded. \n{YES_EMOTE} You can always resubmit this form as long as it's available.",
                 ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                "❌ Failed to submit feedback. Please try again later.",
+                f"{NO_EMOTE} Failed to submit feedback. Please try again later.",
                 ephemeral=True
             )
             
@@ -4449,7 +4166,7 @@ class PersistentChestInfoView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if str(interaction.user.id) not in interaction.message.content:
-            await interaction.response.send_message("❌ This isn't your chest!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This isn't your chest!", ephemeral=True)
         else:
             await interaction.message.delete()
     
@@ -4547,7 +4264,7 @@ class DailyChestSystem:
                 del self.flag_cache[cache_key]
         
         if cache_key not in self.flag_cache:
-            flag_ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/flag")
+            flag_ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/flag")
             chest_disabled = flag_ref.get() or False
             self.flag_cache[cache_key] = (current_time, chest_disabled)
             
@@ -4603,11 +4320,11 @@ class DailyChestSystem:
             await self.trigger_chest(message, cog)
 
     def load_from_db(self, guild_id, user_id):
-        ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/progress")
+        ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/progress")
         return ref.get()
         
     def save_to_db(self, guild_id, user_id, state):
-        ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/progress")
+        ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/progress")
         ref.set(state)
     
     def invalidate_flag_cache(self, guild_id, user_id):
@@ -4626,7 +4343,7 @@ class DailyChestSystem:
             else:
                 del self.minigame_flag_cache[cache_key]
         
-        flag_ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/minigame_flag")
+        flag_ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/minigame_flag")
         minigame_disabled = flag_ref.get() or False
         self.minigame_flag_cache[cache_key] = (current_time, minigame_disabled)
         return minigame_disabled
@@ -4648,7 +4365,7 @@ class DailyChestSystem:
         guild_id = message.guild.id
         key = (user_id, guild_id)
         
-        ref = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/streaks")
+        ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/streaks")
         streak_data = ref.get() or {}
         last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
         current_streak = streak_data.get("streak", 0)
@@ -4659,21 +4376,21 @@ class DailyChestSystem:
         from commands.Events.helperFunctions import get_chest_upgrades
         clicks_remaining = await get_chest_upgrades(cog.client.pool, guild_id, user_id)
 
-        view = MoraChestView(cog, user_id, guild_id, "Common", new_streak, clicks_remaining)
+        view = MoraChestView(cog, user_id, guild_id, MORA_CHEST_TIERS[0], new_streak, clicks_remaining)
         embed = discord.Embed(
-            title="Daily Mora Chest Unlocked! <a:tada:1227425729654820885>",
+            title=f"{MORA_CHEST_NAME} Unlocked! <a:tada:1227425729654820885>",
             description=(
-                f"**Common Chest** - *{MORA_EMOTE} `2500`*\n"
+                f"**{MORA_CHEST_TIERS[0]} Chest** - *{MORA_EMOTE} `{MORA_CHEST_REWARDS[0]:,}`*\n"
                 f"**Click to upgrade** (`{clicks_remaining}` chances left)\n"
                 f"**Messages counted:** `{self.user_states[(guild_id, user_id)]['message_count']}`\n"
-                f"**Streak:** {'<a:streak:1371651844652273694>' if new_streak > 1 else ''} `{new_streak}` day{'s' if new_streak > 1 else ''} ({MORA_EMOTE} `+{new_streak * 100}`)"
+                f"**Streak:** {EMOTE_STREAK if new_streak > 1 else ''} `{new_streak}` day{'s' if new_streak > 1 else ''} ({MORA_EMOTE} `+{new_streak * MORA_CHEST_STREAK_BONUS}`)"
             ),
             color=discord.Color.random()
         )
-        embed.set_thumbnail(url="https://i.imgur.com/2kOfLSC.png")
-        embed.set_footer(text="A chest spawns after sending 4-7 effortful messages in minigame channels each day")
+        embed.set_thumbnail(url=MORA_CHEST_ICONS[MORA_CHEST_TIERS[0]])
+        embed.set_footer(text=f"A chest spawns after sending {MORA_CHEST_SPAWN_REQ[0]}-{MORA_CHEST_SPAWN_REQ[1]} effortful messages in minigame channels each day")
         chest_msg = await message.channel.send(
-            content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + 300}:R>!",
+            content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + MORA_CHEST_TIMEOUT}:R>!",
             embed=embed,
             view=view
         )
@@ -4706,7 +4423,7 @@ class TheEventItself(commands.Cog):
 
         if "-addMora" in message.content:
             if message.author.id not in [692254240290242601, 1251949796210638989, 885217186468229140]:
-                return await message.add_reaction("<:no:1036810470860013639>")
+                return await message.add_reaction(f"{NO_EMOTE}")
             else:
                 uid = int(
                     message.content.split(" ")[1].replace("<@", "").replace(">", "")
@@ -4728,7 +4445,7 @@ class TheEventItself(commands.Cog):
                 
         if message.content.startswith('-addXP'):
             if message.author.id != 692254240290242601: 
-                return await message.add_reaction("<:no:1036810470860013639>")
+                return await message.add_reaction(f"{NO_EMOTE}")
             try:
                 parts = message.content.split()
                 user = message.mentions[0] if message.mentions else None
@@ -4947,11 +4664,11 @@ class Summon(commands.Cog):
         summons = stats.get("minigame_summons", 0)
 
         if summons < 1:
-            return await interaction.followup.send("<:no:1036810470860013639> You don't have any minigame summons left!")
+            return await interaction.followup.send(f"{NO_EMOTE} You don't have any minigame summons left!")
 
         minigame_func = self.minigame_mapping.get(minigame)
         if not minigame_func:
-            return await interaction.followup.send("<:no:1036810470860013639> Invalid minigame selection!")
+            return await interaction.followup.send(f"{NO_EMOTE} Invalid minigame selection!")
 
         encore_chance = await get_encore_chance(interaction.client.pool, interaction.guild.id, interaction.user.id)
         import random

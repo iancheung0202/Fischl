@@ -21,7 +21,7 @@ from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, QUEST_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
     history = await get_user_mora_history(pool, user_id, guild_id)
@@ -41,28 +41,28 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     average_daily = stats_data['average_daily']
     days_active = stats_data['days_active']
     
-    ref_counts = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/counts")
-    chest_counts = ref_counts.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
+    ref_counts = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/counts")
+    chest_counts = ref_counts.get() or {MORA_CHEST_TIERS[0]: 0, MORA_CHEST_TIERS[1]: 0, MORA_CHEST_TIERS[2]: 0, MORA_CHEST_TIERS[3]: 0}
     total_chests = sum(chest_counts.values())
 
-    ref_streak = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/streaks")
+    ref_streak = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/streaks")
     streak_data = ref_streak.get() or {}
     last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
     current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
     max_streak = streak_data.get("max_streak", current_streak)
 
     chest_info = (
-        f"<a:common:1371641883121680465> `{chest_counts.get('Common', 0)}` <:blank:1036792889121980426>"
-        f"<a:exquisite:1371641856344985620> `{chest_counts.get('Exquisite', 0)}` <:blank:1036792889121980426>"
-        f"<a:precious:1371641871452995689> `{chest_counts.get('Precious', 0)}` <:blank:1036792889121980426>"
-        f"<a:luxurious:1371641841338023976> `{chest_counts.get('Luxurious', 0)}`\n"
-        f"**Total:** `{total_chests}` <:blank:1036792889121980426>"
-        f"<a:streak:1371651844652273694> `{current_streak}` day{'s' if current_streak > 1 else ''} <:blank:1036792889121980426>"
-        f"<a:max_streak:1371655286049214672> `{max_streak}` day{'s' if max_streak > 1 else ''}"
+        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[0]]} `{chest_counts.get(MORA_CHEST_TIERS[0], 0)}` {EMOTE_BLANK}"
+        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[1]]} `{chest_counts.get(MORA_CHEST_TIERS[1], 0)}` {EMOTE_BLANK}"
+        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[2]]} `{chest_counts.get(MORA_CHEST_TIERS[2], 0)}` {EMOTE_BLANK}"
+        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[3]]} `{chest_counts.get(MORA_CHEST_TIERS[3], 0)}`\n"
+        f"**Total:** `{total_chests}` {EMOTE_BLANK}"
+        f"{EMOTE_STREAK} `{current_streak}` day{'s' if current_streak > 1 else ''} {EMOTE_BLANK}"
+        f"{EMOTE_MAX_STREAK} `{max_streak}` day{'s' if max_streak > 1 else ''}"
     )
 
     stats = {
-        "`📦` Daily Mora Chests": chest_info,
+        f"`📦` {MORA_CHEST_NAME}s": chest_info,
         "`📅` First Played": f"<t:{first_played}:D>",
         "`💰` Largest Day Earning": f"<t:{largest_daily_date}:D>\n({MORA_EMOTE} `{largest_daily:,}`)",
         "`📈` Average Daily Mora": f"{MORA_EMOTE} `{average_daily:,}`",
@@ -126,7 +126,7 @@ class PurchaseEliteTrack(discord.ui.Button):
         super().__init__(
             label="Elite Track",
             style=discord.ButtonStyle.green,
-            emoji="<a:moneydance:1227425759077859359>",
+            emoji=MONEYDANCE_EMOTE,
             row=1
         )
 
@@ -137,14 +137,14 @@ class PurchaseEliteTrack(discord.ui.Button):
             url="https://fischl.app/profile",
         )
         embed = discord.Embed(
-            title="<a:tada:1227425729654820885> Less than USD $1/month. More than worth it. <a:moneydance:1227425759077859359>",
+            title=f"{MONEYDANCE_EMOTE} Less than USD $1/month. More than worth it. {MONEYDANCE_EMOTE}",
             description=(
-                "> -# *\"Cheaper than a single Genshin wish, plus you always get value.\"*\n\n"
-                "**Elite Track** unlocks a premium reward tier alongside every free tier while supporting development work:\n\n"
-                "-# <:dot:1357188726047899760>**Animated Cosmetics**: exclusive animated backgrounds, frames, and badge titles <:KokoWow:1191868161851666583>\n"
-                "-# <:dot:1357188726047899760>**Enhanced Boosts**: extra Mora gains, reduced gifting tax, more chest upgrades, and more <:PinkCelebrate:1204614140044386314>\n"
-                "-# <:dot:1357188726047899760>**Flexing Perks**: earn **+1 additional Prestige** at the final tier <:LynetteSip:1335609206988079169>\n\n"
-                "**Elite rewards are server-specific, and a season lasts for 3 months.**\n"
+                f"> -# *\"Cheaper than a single Genshin wish, plus you always get value.\"*\n\n"
+                f"**Elite Track** unlocks a premium reward tier alongside every free tier while supporting development work:\n\n"
+                f"-# {DOT_EMOTE}**Animated Cosmetics**: exclusive animated backgrounds, frames, and badge titles <:KokoWow:1191868161851666583>\n"
+                f"-# {DOT_EMOTE}**Enhanced Boosts**: extra Mora gains, reduced gifting tax, more chest upgrades, and more <:PinkCelebrate:1204614140044386314>\n"
+                f"-# {DOT_EMOTE}**Flexing Perks**: earn **+1 additional Prestige** at the final tier <:LynetteSip:1335609206988079169>\n\n"
+                f"**Elite rewards are server-specific, and a season lasts for 3 months.**\n"
                 f"<:reply:1036792837821435976> <:YanfeiNote:1335644122253623458> ***[View Full Track Comparison](https://fischl.app/profile)***"
             ),
             color=0xfa0af6
@@ -361,9 +361,9 @@ class ToggleView(discord.ui.View):
         embed.add_field(name=":gift: Gift Tax", value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' else ''}`", inline=True)
         embed.add_field(name="🧲 Minigame Summons", value=f"`{stats.get('minigame_summons', 0)}`", inline=True)
 
-        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{self.user_id}/selected")
+        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{self.user_id}/selected")
         selected = ref_selected.get() or {}
-        ref_color = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{self.user_id}/embed_color")
+        ref_color = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{self.user_id}/embed_color")
         color_unlocked = ref_color.get() or False
         color_status = "`Not unlocked`"
         if color_unlocked:
@@ -383,7 +383,7 @@ class ToggleView(discord.ui.View):
         
         await update_quest(self.user_id, interaction.guild.id, interaction.channel.id, 0, interaction.client, refresh_only=True)
         
-        ref = db.reference(f"/Chat Minigames Quests/{self.guild_id}/{self.user_id}")
+        ref = db.reference(f"{QUEST_DB}/{self.guild_id}/{self.user_id}")
         quest_data = ref.get() or {}
         
         quest_text = []
@@ -400,13 +400,13 @@ class ToggleView(discord.ui.View):
             quest_text.append(f"### {duration.capitalize()} Quests - `{QUEST_XP_REWARDS[duration]}` XP each *(resets {reset_time})*")
             
             for q_type, data in quests.items():
-                status = f"`{data['current']}/{data['goal']}` <:yes:1036811164891480194>" if q_type in completed else f"`{data['current']}/{data['goal']}`"
+                status = f"`{data['current']}/{data['goal']}` {YES_EMOTE}" if q_type in completed else f"`{data['current']}/{data['goal']}`"
                 quest_text.append(f"- {QUEST_DESCRIPTIONS.get(q_type, q_type)}: {status}")
                 
             if dur_data.get("bonus_awarded"):
-                quest_text.append(f"-# <:reply:1036792837821435976> *`{QUEST_BONUS_XP[duration]}` XP bonus already claimed! <:resolved:1364813186028797984>*")
+                quest_text.append(f"-# <:reply:1036792837821435976> *`{QUEST_BONUS_XP[duration]}` XP bonus already claimed! {RESOLVED_EMOTE}*")
             else:
-                quest_text.append(f"-# <:reply:1036792837821435976> *Complete all for `+{QUEST_BONUS_XP[duration]}` XP bonus! <:yae_hi:1364813223307645000>*")
+                quest_text.append(f"-# <:reply:1036792837821435976> *Complete all for `+{QUEST_BONUS_XP[duration]}` XP bonus! {UNRESOLVED_EMOTE}*")
         
         if not quest_text:
             quest_text = ["No active quests. The next season starts <t:1751328000:R>."]
@@ -446,13 +446,13 @@ class ToggleView(discord.ui.View):
         await self.update_buttons(interaction.client.pool)
         
         # Get current chest and minigame spawn status
-        chest_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/flag")
+        chest_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/flag")
         chest_disabled = chest_flag_ref.get() or False
-        chest_status = "<:no:1036810470860013639> Disabled" if chest_disabled else "<:yes:1036811164891480194> Enabled"
+        chest_status = f"{NO_EMOTE} Disabled" if chest_disabled else f"{YES_EMOTE} Enabled"
         
-        minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/minigame_flag")
+        minigame_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/minigame_flag")
         minigame_disabled = minigame_flag_ref.get() or False
-        minigame_status = "<:no:1036810470860013639> Disabled" if minigame_disabled else "<:yes:1036811164891480194> Enabled"
+        minigame_status = f"{NO_EMOTE} Disabled" if minigame_disabled else f"{YES_EMOTE} Enabled"
         
         settings_embed = discord.Embed(
             title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
@@ -485,9 +485,9 @@ class ToggleView(discord.ui.View):
             embed = await get_kingdom_embed(interaction.user, interaction.guild.id, self.custom_color, interaction.client.pool)
             await self.update_buttons(interaction.client.pool)
             await interaction.response.edit_message(embed=embed, view=self)
-            await interaction.followup.send(f"<:yes:1036811164891480194> {msg}", ephemeral=True)
+            await interaction.followup.send(f"{YES_EMOTE} {msg}", ephemeral=True)
         else:
-            await interaction.response.send_message(f"<:no:1036810470860013639> {msg}", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} {msg}", ephemeral=True)
 
     async def settings_select_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.command_user_id:
@@ -496,7 +496,7 @@ class ToggleView(discord.ui.View):
         setting_key = self.settings_select.values[0]
         
         if setting_key == "toggle_chest_spawn":
-            flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/flag")
+            flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/flag")
             current_status = flag_ref.get() or False
             new_status = not current_status
             flag_ref.set(new_status)
@@ -505,10 +505,10 @@ class ToggleView(discord.ui.View):
             if chest_cog and hasattr(chest_cog, 'chest_system'):
                 chest_cog.chest_system.invalidate_flag_cache(interaction.guild.id, self.user_id)
             
-            chest_status = "<:no:1036810470860013639> Disabled" if new_status else "<:yes:1036811164891480194> Enabled"
-            minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/minigame_flag")
+            chest_status = f"{NO_EMOTE} Disabled" if new_status else f"{YES_EMOTE} Enabled"
+            minigame_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/minigame_flag")
             minigame_disabled = minigame_flag_ref.get() or False
-            minigame_status = "<:no:1036810470860013639> Disabled" if minigame_disabled else "<:yes:1036811164891480194> Enabled"
+            minigame_status = f"{NO_EMOTE} Disabled" if minigame_disabled else f"{YES_EMOTE} Enabled"
             
             settings_embed = discord.Embed(
                 title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
@@ -529,12 +529,12 @@ class ToggleView(discord.ui.View):
             
             await interaction.response.edit_message(embed=settings_embed, view=self)
             await interaction.followup.send(
-                f"<:yes:1036811164891480194> Daily chest spawning is now **{'disabled' if new_status else 'enabled'}**!",
+                f"{YES_EMOTE} Daily chest spawning is now **{'disabled' if new_status else 'enabled'}**!",
                 ephemeral=True
             )
         
         elif setting_key == "toggle_minigame_spawn":
-            minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/minigame_flag")
+            minigame_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/minigame_flag")
             current_status = minigame_flag_ref.get() or False
             new_status = not current_status
             minigame_flag_ref.set(new_status)
@@ -543,11 +543,11 @@ class ToggleView(discord.ui.View):
             if chest_cog and hasattr(chest_cog, 'chest_system'):
                 chest_cog.chest_system.invalidate_minigame_flag_cache(interaction.guild.id, self.user_id)
             
-            chest_flag_ref = db.reference(f"/Chat Minigames Chests/{interaction.guild.id}/{self.user_id}/flag")
+            chest_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/flag")
             chest_disabled = chest_flag_ref.get() or False
-            chest_status = "<:no:1036810470860013639> Disabled" if chest_disabled else "<:yes:1036811164891480194> Enabled"
-            minigame_status = "<:no:1036810470860013639> Disabled" if new_status else "<:yes:1036811164891480194> Enabled"
-            
+            chest_status = f"{NO_EMOTE} Disabled" if chest_disabled else f"{YES_EMOTE} Enabled"
+            minigame_status = f"{NO_EMOTE} Disabled" if new_status else f"{YES_EMOTE} Enabled"
+
             settings_embed = discord.Embed(
                 title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
                 description="Customize your gameplay experience. Use the dropdown below to modify settings.",
@@ -567,7 +567,7 @@ class ToggleView(discord.ui.View):
             
             await interaction.response.edit_message(embed=settings_embed, view=self)
             await interaction.followup.send(
-                f"<:yes:1036811164891480194> Minigame spawning is now **{'disabled' if new_status else 'enabled'}**!",
+                f"{YES_EMOTE} Minigame spawning is now **{'disabled' if new_status else 'enabled'}**!",
                 ephemeral=True
             )
 
@@ -650,11 +650,11 @@ class ToggleView(discord.ui.View):
         
         if self.state == "settings":
             # Get current chest and minigame spawn status for display
-            chest_flag_ref = db.reference(f"/Chat Minigames Chests/{self.guild_id}/{self.user_id}/flag")
+            chest_flag_ref = db.reference(f"{CHEST_DB}/{self.guild_id}/{self.user_id}/flag")
             chest_disabled = chest_flag_ref.get() or False
             chest_status = "Disabled" if chest_disabled else "Enabled"
             
-            minigame_flag_ref = db.reference(f"/Chat Minigames Chests/{self.guild_id}/{self.user_id}/minigame_flag")
+            minigame_flag_ref = db.reference(f"{CHEST_DB}/{self.guild_id}/{self.user_id}/minigame_flag")
             minigame_disabled = minigame_flag_ref.get() or False
             minigame_status = "Disabled" if minigame_disabled else "Enabled"
             
@@ -775,7 +775,7 @@ class Mora(commands.Cog):
             except Exception as e:
                 print(e)
             
-        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{user.id}/selected")
+        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/selected")
         selected = ref_selected.get() or {}
         custom_color_hex = selected.get("embed_color_hex")
         custom_color = discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
@@ -802,7 +802,7 @@ class Mora(commands.Cog):
 
         embed.add_field(name="Guild Inventory", value=inv, inline=False)
         
-        milestones_ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/milestones")
+        milestones_ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
         milestones = milestones_ref.get() or []
 
         user_milestones = []
@@ -843,12 +843,12 @@ class Mora(commands.Cog):
         animated_background = selected.get("animated_background")
         profile_frame = selected.get("profile_frame")
         
-        customized = os.path.isfile(f"./assets/Mora Inventory Background/{user.id}.png") or bool(profile_frame) or bool(animated_background)
+        customized = os.path.isfile(f"{INVENTORY_BG_PATH}/{user.id}.png") or bool(profile_frame) or bool(animated_background)
             
         title_key = selected.get("title")
         title_display = None
         if title_key:
-            title_ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{user.id}/titles")
+            title_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/titles")
             titles = title_ref.get() or {}
             
             if title_key in titles:
@@ -869,9 +869,9 @@ class Mora(commands.Cog):
 
         if customized:
             if animated_background:
-                bg_path = f"./assets/Animated Mora Inventory Background/{animated_background}.gif"
+                bg_path = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}.gif"
             else:
-                bg_path = f"./assets/Mora Inventory Background/{user.id}.png"
+                bg_path = f"{INVENTORY_BG_PATH}/{user.id}.png"
 
             filename = await createProfileCard(
                 user,
@@ -924,16 +924,16 @@ class Mora(commands.Cog):
             return await interaction.followup.send("⏳ You haven't unlocked Mora gifting for this season yet. Unlock it at Tier `5` in the free track!")
 
         if amount <= 0:
-            return await interaction.followup.send("<:no:1036810470860013639> Amount must be positive and non-zero!")
+            return await interaction.followup.send(f"{NO_EMOTE} Amount must be positive and non-zero!")
 
         if amount < 100:
-            return await interaction.followup.send(f"<:no:1036810470860013639> The minimum amount to gift is {MORA_EMOTE} `100`!")
+            return await interaction.followup.send(f"{NO_EMOTE} The minimum amount to gift is {MORA_EMOTE} `100`!")
 
         if interaction.user == user:
-            return await interaction.followup.send(f"<:no:1036810470860013639> You can't gift {MORA_EMOTE} to yourself!")
+            return await interaction.followup.send(f"{NO_EMOTE} You can't gift {MORA_EMOTE} to yourself!")
         
         if user.bot:
-            return await interaction.followup.send(f"<:no:1036810470860013639> Why would you waste your {MORA_EMOTE} on a non-human being?")
+            return await interaction.followup.send(f"{NO_EMOTE} Why would you waste your {MORA_EMOTE} on a non-human being?")
 
         tax_rate = stats["gift_tax"]
         tax_amount = int(amount * tax_rate / 100)

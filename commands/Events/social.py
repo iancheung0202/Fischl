@@ -4,7 +4,6 @@ import os
 
 from discord.ext import commands
 from discord import app_commands
-from firebase_admin import db
 from discord.ui import Button, View
 from commands.Events.quests import update_quest
 

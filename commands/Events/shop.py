@@ -5,20 +5,12 @@ import datetime
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
-from discord.ui import Button, View, Select
 
 from commands.Events.helperFunctions import addMora
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
-
-SHOP_SORT_OPTIONS = [
-    ("sort by cost (low to high)", "<:price_ascending:1346329079145562112>"),
-    ("sort by cost (high to low)", "<:price_descending:1346329080462577725>"),
-    ("sort by name (a-z)", "<:name_ascending:1346329053455585324>"),
-    ("sort by name (z-a)", "<:name_descending:1346329054634053703>"),
-]
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, REWARDS_DB, SYSTEM_DB, SHOP_EDITS_PENDING_DB
 
 async def get_shop_embeds(
     interaction, item_list, empty_condition, sort_by="cost", reverse=True
@@ -46,7 +38,7 @@ async def get_shop_embeds(
         title=f"{interaction.guild.name}'s Server Shop",
         description=(
             f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-            f"<:reply:1036792837821435976> *To check your mora balance and inventory, use {SlashCommand('mora')}.*\n"
+            f"<:reply:1036792837821435976> *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
             f"<:reply:1036792837821435976> *To purchase an item, use {SlashCommand('buy')}.*\n"
             f"<:reply:1036792837821435976> *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
         ),
@@ -55,7 +47,8 @@ async def get_shop_embeds(
 
     for i, item in enumerate(sorted_items):
         count = i + 1
-        stock_count = f"\n> **Remaining:** {'<a:out_of_stock:1384990609584033812> ' if item[4] == 0 else ''}`{item[4]}`" if item[4] != -1 else None
+        emote = f"{NO_STOCK_EMOTE} " if item[4] == 0 else ''
+        stock_count = f"\n> **Remaining:** {emote}`{item[4]}`" if item[4] != -1 else None
         if isinstance(item[0], int) or item[0].isdigit():
             role = interaction.guild.get_role(int(item[0]))
             embed.add_field(
@@ -79,7 +72,7 @@ async def get_shop_embeds(
                 title=f"{interaction.guild.name}'s Server Shop",
                 description=(
                     f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-                    f"<:reply:1036792837821435976> *To check your mora balance and inventory, use {SlashCommand('mora')}.*\n"
+                    f"<:reply:1036792837821435976> *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
                     f"<:reply:1036792837821435976> *To purchase an item, use {SlashCommand('buy')}.*\n"
                 ),
                 color=discord.Color.gold(),
@@ -92,7 +85,7 @@ class SortSelection(BaseSortSelect):
         super().__init__(SHOP_SORT_OPTIONS, default, initial_author, custom_id="sortselection")
 
     async def callback(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         originalList = ref.get() or []
 
         if interaction.data["values"][0] == "sort by cost (low to high)":
@@ -147,7 +140,7 @@ class ShopView(BasePaginationView):
             )
         else:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
             )
 
     @discord.ui.button(
@@ -172,7 +165,7 @@ class ShopView(BasePaginationView):
             )
         else:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
             )
 
     @discord.ui.button(
@@ -197,7 +190,7 @@ class ShopView(BasePaginationView):
             )
         else:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
             )
         
     @discord.ui.button(
@@ -222,7 +215,7 @@ class ShopView(BasePaginationView):
             )
         else:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You are missing `Administrator` permissions.", ephemeral=True
+                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
             )
 
 
@@ -264,7 +257,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         originalList = ref.get() or []
 
         duplicate = False
@@ -298,7 +291,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
                     raise ValueError
             except ValueError:
                 self.update = discord.Embed(
-                    description=f"Stock must be a non-negative integer <:no:1036810470860013639>",
+                    description=f"Stock must be a non-negative integer {NO_EMOTE}",
                     color=discord.Color.red(),
                 )
 
@@ -314,17 +307,17 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
         else:
             if costNotInteger:
                 self.update = discord.Embed(
-                    description=f"Cost must be a reasonable integer <:no:1036810470860013639>",
+                    description=f"Cost must be a reasonable integer {NO_EMOTE}",
                     color=discord.Color.red(),
                 )
             else:
                 self.update = discord.Embed(
-                    description=f"Found duplicate entry <:no:1036810470860013639>", color=discord.Color.red()
+                    description=f"Found duplicate entry {NO_EMOTE}", color=discord.Color.red()
                 )
         
         if self.cost <= 0:
             self.update = discord.Embed(
-                description=f"Cost must be greater than zero <:no:1036810470860013639>",
+                description=f"Cost must be greater than zero {NO_EMOTE}",
                 color=discord.Color.red(),
             )
 
@@ -352,13 +345,13 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         originalList = ref.get() or []
 
         if len(originalList) == 0:
             await interaction.response.send_message(
                 embed=discord.Embed(
-                    description=f"Put on your glasses. What are you trying to delete? You haven't previously added any rewards at all yet... <:no:1036810470860013639>",
+                    description=f"Put on your glasses. What are you trying to delete? You haven't previously added any rewards at all yet... {NO_EMOTE}",
                     color=discord.Color.red(),
                 ),
                 ephemeral=True,
@@ -378,7 +371,7 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
             )
         else:
             self.update = discord.Embed(
-                description=f"Reward not found <:no:1036810470860013639>", color=discord.Color.red()
+                description=f"Reward not found {NO_EMOTE}", color=discord.Color.red()
             )
 
         ref.set(originalList)
@@ -446,7 +439,7 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         originalList = ref.get() or []
         found_key = None
             
@@ -474,14 +467,14 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
                     )
                 except Exception:
                     self.update = discord.Embed(
-                        description=f"Invalid cost value <:no:1036810470860013639>\nMust be a positive number (e.g. 5000 or 5k)",
+                        description=f"Invalid cost value {NO_EMOTE}\nMust be a positive number (e.g. 5000 or 5k)",
                         color=discord.Color.red(),
                     )
                 break
                 
         if not item_found:
             self.update = discord.Embed(
-                description=f"Item **{self.item}** not found <:no:1036810470860013639>",
+                description=f"Item **{self.item}** not found {NO_EMOTE}",
                 color=discord.Color.red(),
             )
             
@@ -493,7 +486,7 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
 
 async def process_pending_stock_edits(guild_id: int):
     current_time = time.time()
-    ref = db.reference(f"/Pending Shop Edits/{guild_id}")
+    ref = db.reference(f"{SHOP_EDITS_PENDING_DB}/{guild_id}")
     pending_edits = ref.get() or {}
     
     processed_count = 0
@@ -503,7 +496,7 @@ async def process_pending_stock_edits(guild_id: int):
         if scheduled_time > current_time:
             continue
 
-        guild_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        guild_ref = db.reference(f"{REWARDS_DB}/{guild_id}/shop")
         rewards_list = guild_ref.get() or []
         guild_key = None
         
@@ -587,7 +580,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         originalList = ref.get() or []
         found_key = None
         
@@ -611,7 +604,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                 else:
                     immediate = False
                     
-                    pending_ref = db.reference(f"/Pending Shop Edits/{interaction.guild.id}")
+                    pending_ref = db.reference(f"{SHOP_EDITS_PENDING_DB}/{interaction.guild.id}")
                     new_edit = {
                         'item_identifier': str(self.item),
                         'stock_change': stock_value,
@@ -626,7 +619,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
             except ValueError:
                 immediate = True
                 self.update = discord.Embed(
-                    description=f"Invalid timestamp format <:no:1036810470860013639>",
+                    description=f"Invalid timestamp format {NO_EMOTE}",
                     color=discord.Color.red(),
                 )
         else:
@@ -660,7 +653,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                             new_stock = int(stock_value)
                         except ValueError:
                             self.update = discord.Embed(
-                                description=f"Invalid stock value <:no:1036810470860013639>",
+                                description=f"Invalid stock value {NO_EMOTE}",
                                 color=discord.Color.red(),
                             )
                             break
@@ -677,7 +670,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                     
             if not item_found:
                 self.update = discord.Embed(
-                    description=f"Item **{self.item}** not found <:no:1036810470860013639>",
+                    description=f"Item **{self.item}** not found {NO_EMOTE}",
                     color=discord.Color.red(),
                 )
             
@@ -708,14 +701,14 @@ class Shop(commands.Cog):
         # Check if events are enabled in any channel of this guild
         found = None
         for channel in interaction.guild.channels:
-            ref = db.reference(f"/Chat Minigames System/{channel.id}")
+            ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
             system_data = ref.get()
             if system_data:
                 found = system_data.get("events", [])
                 break
 
         if found is not None:
-            ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+            ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
             foundGuild = ref.get() or []
 
             pages = await get_shop_embeds(

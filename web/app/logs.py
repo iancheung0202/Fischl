@@ -26,7 +26,7 @@ def view_log(token):
         
         if response.status_code != 200:
             if request.host == "ticket.mysticraft.xyz":
-                token = BLOCK_CENTRAL_TOKEN
+                token = MYSTICRAFT_TOKEN
             else:
                 token = BRAWL_TOKEN
 

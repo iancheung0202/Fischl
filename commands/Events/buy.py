@@ -9,7 +9,7 @@ from firebase_admin import db
 from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory
 from utils.commands import SlashCommand
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, HISTORY_DB, SHOP_EDITS_PENDING_DB
 
 global_purchase_queue = asyncio.Queue()
 
@@ -29,8 +29,10 @@ async def purchase_worker():
 
 async def process_pending_stock_edits(guild_id: int):
     current_time = time.time()
-    ref = db.reference(f"/Pending Shop Edits/{guild_id}")
+    ref = db.reference(f"{SHOP_EDITS_PENDING_DB}/{guild_id}")
     pending_edits = ref.get() or {}
+
+    guild_key = str(guild_id)
     
     processed_count = 0
     for key, edit in list(pending_edits.items()):
@@ -39,7 +41,7 @@ async def process_pending_stock_edits(guild_id: int):
         if scheduled_time > current_time:
             continue
         
-        guild_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+        guild_ref = db.reference(f"{REWARDS_DB}/{guild_id}/shop")
         rewards_list = guild_ref.get() or []
         
         if not rewards_list:
@@ -99,7 +101,7 @@ async def purchase_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+    ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
     rewards = ref.get() or []
     choices = []
 
@@ -152,7 +154,7 @@ class ConfirmPurchaseView(discord.ui.View):
                     item.disabled = True
             
             embed = current_embed.copy()
-            embed.set_footer(text="❌ Purchase cancelled due to timeout")
+            embed.set_footer(text=f"{NO_EMOTE} Purchase cancelled due to timeout")
             await current_message.edit(embed=embed, view=self)
         except (discord.NotFound, IndexError, AttributeError):
             pass
@@ -176,7 +178,7 @@ class ConfirmPurchaseView(discord.ui.View):
         roleName = self.itemName
 
         if interaction.guild.id == 1344543366372655164:  # Xianyun's Hangout
-            history_ref = db.reference(f"/Mora Purchase History/{interaction.guild.id}/{interaction.user.id}")
+            history_ref = db.reference(f"{HISTORY_DB}/{interaction.guild.id}/{interaction.user.id}")
             history_snapshot = history_ref.order_by_key().limit_to_last(10).get()
             
             if history_snapshot:
@@ -199,14 +201,14 @@ class ConfirmPurchaseView(discord.ui.View):
             gangRole = None
         if gangRole is not None and gangRole in interaction.user.roles:
             embed = discord.Embed(
-                title="<:DW_elhmm:971735422147379200> Oops!",
+                title=f"{HMM_EMOTE} Oops!",
                 description=f"You already have the {gangRole.mention} role. Unlike some titles, you can only purchase roles **once**.",
                 color=discord.Color.red(),
             )
             await interaction.edit_original_response(embed=embed, view=None)
             return
 
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         daily = ref.get() or []
         rewards = daily
 
@@ -222,10 +224,6 @@ class ConfirmPurchaseView(discord.ui.View):
         cannotBuyAgain = False
         if not (len(rewards[x]) > 3 and rewards[x][3]):
             cannotBuyAgain = True
-        
-        user_key = str(interaction.user.id)
-        guild_key = str(interaction.guild.id)
-        channel_key = str(interaction.channel.id)
 
         total_available = await get_guild_mora(interaction.client.pool, interaction.user.id, interaction.guild.id)
         
@@ -237,7 +235,7 @@ class ConfirmPurchaseView(discord.ui.View):
                 
         if len(rewards[x]) > 4 and rewards[x][4] == 0:
             embed = discord.Embed(
-                title="<a:out_of_stock:1384990609584033812> Out of Stock",
+                title=f"{NO_STOCK_EMOTE} Out of Stock",
                 description=f"**{role_mention}** has run out of stock! Ask an admin to restock.",
                 color=discord.Color.red(),
             )
@@ -246,8 +244,8 @@ class ConfirmPurchaseView(discord.ui.View):
         
         if itemCost > total_available:
             embed = discord.Embed(
-                title="<:WrioShrug:1304094173795713114> Insufficient Mora",
-                description=f"We couldn't assign you **{role_mention}**. Please check your mora balance using {SlashCommand('mora')} to confirm if you have enough guild-specific mora for this purchase.",
+                title=f"{SHRUG_EMOTE} Insufficient Balance",
+                description=f"We couldn't assign you **{role_mention}**. Please check your {MORA_EMOTE} balance using {SlashCommand('mora')} to confirm if you have enough for this purchase.",
                 color=discord.Color.red(),
             )
             await interaction.edit_original_response(embed=embed, view=None)
@@ -266,7 +264,7 @@ class ConfirmPurchaseView(discord.ui.View):
                     else roleName
                 )
                 embed = discord.Embed(
-                    title="Oops",
+                    title=f"{HMM_EMOTE} Oops",
                     description=f"You already own **{role_mention}**! This title does not allow multiple purchases. If you believe this is a mistake, contact a server admin.",
                     color=discord.Color.red(),
                 )
@@ -283,16 +281,13 @@ class ConfirmPurchaseView(discord.ui.View):
             cost = int(rewards[x][2])   # cost
             timestamp = int(time.mktime(datetime.datetime.now().timetuple()))
             
-            # Add to inventory
             await add_inventory_item(interaction.client.pool, interaction.user.id, interaction.guild.id, title, desc, cost, timestamp, pinned=False)
-                
-            timestamp_str = str(int(time.time()))
             await subtractGuildMora(interaction.client.pool, interaction.user.id, itemCost, interaction.channel.id, interaction.guild.id)
             
             xp_earned = f"\n> <:PinkConfused:1204614149628498010> You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"
                 
             embed = discord.Embed(
-                title="<a:NekoHappy:1335019855920758855> Successful Purchase",
+                title=f"{HAPPY_EMOTE} Successful Purchase",
                 description=f"Congratulations! You have paid {MORA_EMOTE} **{itemCost:,}** and now own **{role_mention}**. {xp_earned}",
                 color=discord.Color.green(),
             )
@@ -316,16 +311,16 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=TierRewardsView(free_embed, elite_embed) if xp_earned != "" else None)
             
             if len(ogRewards[x]) > 4 and ogRewards[x][4] > 0:
-                ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+                ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
                 ogRewards[x][4] -= 1
                 ref.set(ogRewards)
                 
             link = (await interaction.original_response()).jump_url
-            print(f"{interaction.user.name} ({interaction.user.id}) have paid {itemCost:,} Mora and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
+            print(f"{interaction.user.name} ({interaction.user.id}) have paid {itemCost:,} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
 
             try:
                 purchase_timestamp = int(time.time())
-                purchase_history_ref = db.reference(f"/Mora Purchase History/{interaction.guild.id}/{interaction.user.id}")
+                purchase_history_ref = db.reference(f"{HISTORY_DB}/{interaction.guild.id}/{interaction.user.id}")
                 purchase_id = f"purchase_{purchase_timestamp}_{interaction.user.id}"
                 
                 item_name = roleName
@@ -363,14 +358,14 @@ class ConfirmPurchaseView(discord.ui.View):
         if global_purchase_queue.qsize() > 0:
             embed = discord.Embed(
                 title="Purchase Queued",
-                description=f"Your purchase is in queue. Please wait while we validate your purchase <a:loading:1026905298088243240>",
+                description=f"Your purchase is in queue. Please wait while we validate your purchase {LOADING_EMOTE}",
                 color=discord.Color.orange()
             )
             await interaction.edit_original_response(embed=embed)
         else:
             processing_embed = discord.Embed(
                 title="Processing Purchase",
-                description="Validating your purchase <a:loading:1026905298088243240>",
+                description=f"Validating your purchase {LOADING_EMOTE}",
                 color=discord.Color.gold()
             )
             await interaction.edit_original_response(embed=processing_embed)
@@ -415,7 +410,7 @@ class Buy(commands.Cog):
     async def buy(self, interaction: discord.Interaction, item: str) -> None:
         await interaction.response.defer(thinking=True)
             
-        ref = db.reference(f"/Chat Minigames Rewards/{interaction.guild.id}/shop")
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         daily = ref.get() or []
         rewards = daily
 
@@ -440,7 +435,7 @@ class Buy(commands.Cog):
             f"<@&{item}>" if isinstance(item, int) or item.isdigit() else item
         )
         embed = discord.Embed(
-            title="<:Paimon_Think:1414561896299888700> Confirm Purchase",
+            title=f"{THINK_EMOTE} Confirm Purchase",
             description=f"Are you sure you want to purchase **{role_mention}** for {MORA_EMOTE} **{itemCost:,}**?",
             color=discord.Color.gold()
         )

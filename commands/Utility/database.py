@@ -15,7 +15,7 @@ class DatabaseCog(commands.Cog):
         description="Execute raw SQL queries"
     )
     @app_commands.describe(
-        query="Raw SQL query to execute (e.g., SELECT * FROM minigame_inventory LIMIT 5;)"
+        query="Raw SQL query to execute (SELECT * FROM minigame_inventory/mora/progression...;)"
     )
     async def database_query(
         self,

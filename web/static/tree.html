@@ -1,0 +1,1801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Support Tree Editor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1b1e;
+    --surface: #25262b;
+    --surface2: #2c2d33;
+    --surface3: #333540;
+    --border: #3a3b42;
+    --text: #e8e9ed;
+    --text-dim: #8b8fa8;
+    --text-dimmer: #555770;
+    --accent: #5865f2;
+    --accent-hover: #4752c4;
+    --green: #57f287;
+    --red: #ed4245;
+    --yellow: #fee75c;
+    --blurple: #5865f2;
+
+    --node-prompt: #5865f2;
+    --node-condition: #9b59b6;
+    --node-modal: #e67e22;
+    --node-close: #ed4245;
+    --node-final: #57f287;
+
+    --radius: 8px;
+    --panel-w: 340px;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── TOP BAR ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 100;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: .3px;
+  }
+  header .discord-logo { font-size: 20px; }
+  .spacer { flex: 1; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    font-size: 13px; font-weight: 600;
+    border: none; cursor: pointer;
+    transition: background .15s, transform .1s;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { background: var(--surface3); color: var(--text); }
+  .btn-ghost:hover { background: var(--border); }
+  .btn-green { background: #248046; color: #fff; }
+  .btn-green:hover { background: #1a6335; }
+  .btn-danger { background: #a12d2f; color: #fff; }
+  .btn-danger:hover { background: #872224; }
+
+  /* ── LEGEND ── */
+  .legend {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 7px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 3px;
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .workspace {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── CANVAS ── */
+  #canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background:
+      radial-gradient(circle at 0 0, #1e1f24 0, transparent 70%),
+      var(--bg);
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+  #canvas-wrap.grabbing { cursor: grabbing; }
+  #canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+
+  svg#edges {
+    position: absolute; top: 0; left: 0;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  /* ── NODES ── */
+  .node {
+    position: absolute;
+    width: 220px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    user-select: none;
+    transition: box-shadow .15s, border-color .15s;
+  }
+  .node:hover { border-color: #666; box-shadow: 0 4px 24px rgba(0,0,0,.4); }
+  .node.selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px rgba(88,101,242,.35); }
+
+  .node-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 11px 7px;
+    border-bottom: 1px solid var(--border);
+    border-radius: 9px 9px 0 0;
+  }
+  .node-type-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: .6px;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .node-id {
+    font-size: 11px; font-weight: 600;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1;
+  }
+  .node-body { padding: 8px 11px; }
+  .node-title {
+    font-size: 12px; font-weight: 700; color: var(--text);
+    margin-bottom: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node-desc {
+    font-size: 10.5px; color: var(--text-dim);
+    line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .node-buttons {
+    margin-top: 7px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .node-btn-pill {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 600;
+    padding: 3px 7px;
+    background: var(--surface3);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node-btn-pill.green { border-color: #248046; color: var(--green); background: rgba(87,242,135,.07); }
+  .node-btn-pill.red   { border-color: #a12d2f; color: var(--red); background: rgba(237,66,69,.07); }
+
+  /* type colors */
+  .type-prompt    { background: var(--node-prompt); }
+  .type-condition { background: var(--node-condition); }
+  .type-modal     { background: var(--node-modal); }
+  .type-close     { background: var(--node-close); }
+  .type-final     { background: var(--node-final); }
+
+  .node-border-prompt    { border-top: 3px solid var(--node-prompt); }
+  .node-border-condition { border-top: 3px solid var(--node-condition); }
+  .node-border-modal     { border-top: 3px solid var(--node-modal); }
+  .node-border-close     { border-top: 3px solid var(--node-close); }
+  .node-border-final     { border-top: 3px solid var(--node-final); }
+
+  /* ── PANEL ── */
+  #panel {
+    width: var(--panel-w);
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  #panel-inner {
+    flex: 1; overflow-y: auto; padding: 16px;
+  }
+  #panel-inner::-webkit-scrollbar { width: 6px; }
+  #panel-inner::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .panel-title {
+    font-size: 13px; font-weight: 700;
+    color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: .6px;
+    margin-bottom: 14px;
+  }
+  .panel-placeholder {
+    color: var(--text-dimmer); font-size: 13px; line-height: 1.6;
+    text-align: center; padding-top: 40px;
+  }
+  .panel-placeholder .icon { font-size: 32px; margin-bottom: 10px; }
+
+  .field { margin-bottom: 13px; }
+  .field label {
+    display: block; font-size: 11px; font-weight: 700;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px;
+    margin-bottom: 5px;
+  }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    padding: 8px 10px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s;
+    resize: vertical;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    border-color: var(--accent);
+  }
+  .field select option { background: var(--surface2); }
+
+  .color-row { display: flex; gap: 8px; align-items: center; }
+  .color-swatch {
+    width: 34px; height: 34px; border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer; flex-shrink: 0;
+  }
+
+  /* button list in panel */
+  .btn-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .btn-row {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 10px;
+  }
+  .btn-row-top { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .btn-row-top .handle { color: var(--text-dimmer); cursor: grab; font-size: 12px; }
+  .btn-label { flex: 1; font-size: 12px; font-weight: 600; }
+  .btn-row-fields { display: flex; flex-direction: column; gap: 5px; }
+  .btn-row-fields input, .btn-row-fields select {
+    background: var(--surface3); border: 1px solid var(--border);
+    border-radius: 5px; color: var(--text); font-size: 12px; padding: 5px 8px;
+    width: 100%; outline: none; font-family: inherit;
+  }
+  .btn-row-fields input:focus, .btn-row-fields select:focus { border-color: var(--accent); }
+  .delete-btn {
+    background: none; border: none; color: var(--text-dimmer);
+    cursor: pointer; font-size: 14px; padding: 2px 4px;
+    border-radius: 4px;
+    transition: color .15s, background .15s;
+  }
+  .delete-btn:hover { color: var(--red); background: rgba(237,66,69,.1); }
+
+  /* modal fields in panel */
+  .modal-field-row {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 9px 10px; margin-bottom: 7px;
+  }
+  .modal-field-row .mf-top { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .modal-field-row input {
+    background: var(--surface3); border: 1px solid var(--border);
+    border-radius: 5px; color: var(--text); font-size: 12px; padding: 5px 8px;
+    width: 100%; outline: none; font-family: inherit; margin-bottom: 4px;
+  }
+  .modal-field-row input:focus { border-color: var(--accent); }
+  .required-toggle {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--text-dim); cursor: pointer;
+  }
+  .required-toggle input[type=checkbox] { accent-color: var(--accent); }
+
+  .section-divider {
+    border: none; border-top: 1px solid var(--border);
+    margin: 14px 0;
+  }
+
+  /* ── MODAL/OVERLAY ── */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+  }
+  .overlay.hidden { display: none; }
+
+  .modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: min(600px, 95vw);
+    max-height: 85vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-header {
+    display: flex; align-items: center; padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 16px; font-weight: 700;
+    gap: 10px;
+  }
+  .modal-header .close-x {
+    margin-left: auto; background: none; border: none;
+    color: var(--text-dim); font-size: 18px; cursor: pointer;
+    border-radius: 4px; padding: 2px 6px;
+    transition: background .15s, color .15s;
+  }
+  .modal-header .close-x:hover { background: var(--surface3); color: var(--text); }
+  .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+  .modal-footer {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* JSON edit/export modal */
+  #json-out {
+    display: block;
+    width: 100%;
+    height: 55vh;
+    font-family: 'Consolas', 'Cascadia Code', monospace;
+    font-size: 12px; line-height: 1.55;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    color: #a8d8a8;
+    white-space: pre;
+    overflow: auto;
+    resize: vertical;
+    outline: none;
+  }
+  #json-out:focus { border-color: var(--accent); }
+  #json-out::placeholder { color: var(--text-dimmer); }
+
+  /* Zoom controls */
+  .zoom-controls {
+    position: absolute; bottom: 16px; right: 16px;
+    display: flex; gap: 4px; z-index: 50;
+  }
+  .zoom-btn {
+    width: 32px; height: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 16px; font-weight: 700;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .zoom-btn:hover { background: var(--surface3); }
+  .zoom-label {
+    height: 32px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px;
+    display: flex; align-items: center; padding: 0 10px;
+    font-size: 12px; color: var(--text-dim); font-weight: 600;
+    min-width: 52px; justify-content: center;
+  }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 10px 18px; border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    transition: transform .25s ease;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* Add node button on canvas */
+  #add-node-fab {
+    position: absolute; bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+  }
+
+  /* Discord embed preview in node */
+  .discord-preview {
+    display: none; /* shown only in panel */
+  }
+
+  /* Condition node special styling */
+  .condition-branches {
+    margin-top: 6px; display: flex; gap: 5px;
+  }
+  .branch-true, .branch-false {
+    flex: 1; font-size: 10px; font-weight: 700;
+    padding: 3px 6px; border-radius: 4px; text-align: center;
+  }
+  .branch-true  { background: rgba(87,242,135,.15); color: var(--green); border: 1px solid rgba(87,242,135,.3); }
+  .branch-false { background: rgba(237,66,69,.15); color: var(--red); border: 1px solid rgba(237,66,69,.3); }
+
+  .mini-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+  .mini-checkbox input { accent-color: var(--accent); }
+
+  /* help tooltip */
+  .help-tip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--surface3); color: var(--text-dimmer);
+    font-size: 9px; font-weight: 900; cursor: help;
+    margin-left: 4px;
+    position: relative;
+  }
+  .help-tip:hover::after {
+    content: attr(data-tip);
+    position: absolute; left: 100%; top: -4px; margin-left: 6px;
+    background: #111; border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 9px; font-size: 11px; line-height: 1.4;
+    width: 200px; color: var(--text-dim);
+    z-index: 999; pointer-events: none;
+    white-space: normal;
+  }
+
+  .panel-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+
+  input[type=color] { -webkit-appearance: none; border: none; background: none; padding: 0; width: 34px; height: 34px; cursor: pointer; border-radius: 6px; }
+
+  /* ── MOBILE RESPONSIVE ── */
+  @media (max-width: 700px) {
+    /* Header: wrap buttons, smaller text */
+    header {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 12px;
+    }
+    header h1 { font-size: 13px; }
+    .btn { padding: 6px 10px; font-size: 12px; }
+    /* Hide button text labels on small screens, keep icons */
+    .btn .btn-label-text { display: none; }
+    .btn i { margin: 0; }
+
+    /* Legend: scrollable single row */
+    .legend {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      gap: 12px;
+      padding: 6px 12px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .legend > span:last-child { display: none; } /* hide hint text */
+
+    /* Workspace stacks vertically: canvas on top, panel on bottom */
+    .workspace {
+      flex-direction: column;
+    }
+
+    /* Canvas takes top ~60% */
+    #canvas-wrap {
+      flex: none;
+      height: 60vh;
+      min-height: 200px;
+    }
+
+    /* Panel moves to bottom third */
+    #panel {
+      width: 100%;
+      border-left: none;
+      border-top: 1px solid var(--border);
+      flex: none;
+      height: 40vh;
+      min-height: 160px;
+      /* Allow user to resize panel by scrolling within it */
+    }
+
+    #panel-inner {
+      padding: 12px;
+    }
+
+    /* Zoom controls: move to bottom-left to avoid overlap with panel */
+    .zoom-controls {
+      bottom: 8px;
+      right: 8px;
+    }
+
+    /* Toast: stays above panel */
+    #toast {
+      bottom: calc(40vh + 10px);
+    }
+
+    /* Help tooltips: flip to left on mobile to stay on screen */
+    .help-tip:hover::after {
+      left: auto;
+      right: 100%;
+      margin-left: 0;
+      margin-right: 6px;
+    }
+
+    /* Modal boxes: full width on mobile */
+    .modal-box {
+      width: 98vw;
+      max-height: 90vh;
+    }
+
+    /* JSON textarea: shorter on mobile */
+    #json-out {
+      height: 35vh;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <i class="fa-brands fa-discord" style="font-size:20px;color:#5865f2;"></i>
+  <h1>Ticket Support Tree Visualizer</h1>
+  <div class="spacer"></div>
+  <button class="btn btn-ghost" id="btn-layout"><i class="fa-solid fa-rotate"></i><span class="btn-label-text"> Auto Layout</span></button>
+  <button class="btn btn-ghost" id="btn-add"><i class="fa-solid fa-plus"></i><span class="btn-label-text"> Add Node</span></button>
+  <button class="btn btn-primary" id="btn-json"><i class="fa-solid fa-code"></i><span class="btn-label-text"> Edit JSON</span></button>
+</header>
+
+<div class="legend">
+  <span class="legend-item"><span class="legend-dot" style="background:var(--node-prompt)"></span> Prompt (buttons)</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--node-condition)"></span> Condition (auto-branch)</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--node-modal)"></span> Modal (form)</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--node-close)"></span> Close (end, no staff)</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--node-final)"></span> Final (end, pings staff)</span>
+  <div class="spacer"></div>
+  <span style="color:var(--text-dimmer);font-size:10px;">Drag canvas to pan · Scroll to zoom · Click node to edit</span>
+</div>
+
+<div class="workspace">
+  <div id="canvas-wrap">
+    <div id="canvas">
+      <svg id="edges" width="4000" height="4000"></svg>
+    </div>
+    <div class="zoom-controls">
+      <button class="zoom-btn" id="zoom-out"><i class="fa-solid fa-minus"></i></button>
+      <div class="zoom-label" id="zoom-label">100%</div>
+      <button class="zoom-btn" id="zoom-in"><i class="fa-solid fa-plus"></i></button>
+      <button class="zoom-btn" id="zoom-fit" title="Fit all"><i class="fa-solid fa-expand"></i></button>
+    </div>
+  </div>
+
+  <div id="panel">
+    <div id="panel-inner">
+      <div id="panel-content">
+        <div class="panel-placeholder">
+          <div class="icon"><i class="fa-regular fa-hand-pointer" style="font-size:32px;color:var(--text-dimmer)"></i></div>
+          Click any node to edit it<br><br>
+          <small style="color:var(--text-dimmer)">Or click <strong>+ Add Node</strong> to create a new one</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JSON Modal (now doubles as Import/Export — i.e. "Edit JSON") -->
+<div class="overlay hidden" id="json-overlay">
+  <div class="modal-box" style="width:min(700px,95vw)">
+    <div class="modal-header">
+      <i class="fa-solid fa-file-code"></i> <span id="json-modal-title">Edit JSON</span>
+      <button class="close-x" id="json-close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p id="json-instructions" style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">Edit the tree directly as JSON below, then click <strong>Save &amp; Apply</strong>. This is also exactly what gets used in <a href="https://panel.mysticraft.xyz/server/25fe5a4d/files/edit#/commands/Tickets/tree.json" target="_blank"><code style="background:var(--bg);padding:2px 5px;border-radius:4px;color:var(--text)">tree.json</code></a>.</p>
+      <textarea id="json-out" spellcheck="false" autocomplete="off" placeholder='Paste your JSON here, e.g.
+
+{
+    &quot;my node&quot;: {
+        &quot;type&quot;: &quot;close&quot;,
+        &quot;title&quot;: &quot;Hello&quot;,
+        &quot;description&quot;: &quot;World&quot;
+    }
+}'></textarea>
+      <p id="json-error" style="display:none;font-size:12px;color:var(--red);margin-top:10px;line-height:1.5;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="json-start-empty" style="display:none;margin-right:auto;">Start with Empty Tree</button>
+      <button class="btn btn-ghost" id="json-copy"><i class="fa-solid fa-copy"></i> Copy to Clipboard</button>
+      <button class="btn btn-primary" id="json-apply"><i class="fa-solid fa-check"></i> Save &amp; Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Node Modal -->
+<div class="overlay hidden" id="add-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <i class="fa-solid fa-circle-plus"></i> <span id="add-modal-title">Add New Node</span>
+      <button class="close-x" id="add-close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Node ID <span class="help-tip" data-tip="Unique key used in the tree. Use lowercase with spaces, like: billing support">?</span></label>
+        <input type="text" id="new-node-id" placeholder="e.g. billing support">
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select id="new-node-type">
+          <option value="prompt">Prompt — Show message with buttons</option>
+          <option value="condition">Condition — Auto-branch based on is_linked check</option>
+          <option value="modal">Modal — Pop up a form for user to fill</option>
+          <option value="close">Close — End ticket, no staff ping</option>
+          <option value="final">Final — End ticket, ping staff</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="add-cancel">Cancel</button>
+      <button class="btn btn-primary" id="add-confirm">Create Node</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm -->
+<div class="overlay hidden" id="del-overlay">
+  <div class="modal-box" style="width:380px">
+    <div class="modal-header" style="color:var(--red)"><i class="fa-solid fa-triangle-exclamation"></i> Delete Node</div>
+    <div class="modal-body">
+      <p style="font-size:13px;line-height:1.6;">Are you sure you want to delete <strong id="del-node-name"></strong>? Any buttons pointing to it will lose their connection.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="del-cancel">Cancel</button>
+      <button class="btn btn-danger" id="del-confirm">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// PERSISTENCE (localStorage)
+// First-time visitors are prompted to paste/import their JSON; after
+// that, every change is autosaved here and reloaded next visit.
+// ═══════════════════════════════════════════════════════════════
+const STORAGE_KEY = 'supportTreeEditor.state.v1';
+
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.tree && typeof parsed.tree === 'object') {
+      return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load saved tree from localStorage:', e);
+  }
+  return null;
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ tree, positions }));
+  } catch (e) {
+    console.error('Failed to save tree to localStorage:', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let tree = {};
+let positions = {};
+let selectedId = null;
+let scale = 100;
+let panX = 20, panY = 20;
+let isPanning = false, panStart = {x:0, y:0}, panOrigin = {x:0, y:0};
+let isDragging = false, dragId = null, dragStart = {x:0,y:0}, dragNodeOrigin = {x:0,y:0};
+let firstRunPending = false; // true while the first-time "load your JSON" prompt is blocking
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO LAYOUT — Tree layout: each node's Y is centered on its
+// children, giving a readable branching structure (no global centering)
+// ═══════════════════════════════════════════════════════════════
+function autoLayout() {
+  const ids = Object.keys(tree);
+  if (!ids.length) return;
+  const NODE_W = 240, GAP_X = 70, GAP_Y = 44;
+
+  // ── Build directed edges ──
+  const children = {}, parents = {};
+  ids.forEach(id => { children[id] = []; parents[id] = []; });
+
+  function addEdge(from, to) {
+    if (!tree[to] || from === to) return;
+    if (!children[from].includes(to)) children[from].push(to);
+    if (!parents[to].includes(from)) parents[to].push(from);
+  }
+
+  ids.forEach(id => {
+    const n = tree[id];
+    if (n.type === 'prompt') (n.buttons||[]).forEach(b => { if (b.next) addEdge(id, b.next); });
+    if (n.type === 'condition') {
+      if (typeof n.if_false === 'string') addEdge(id, n.if_false);
+      if (n.if_true?.buttons) n.if_true.buttons.forEach(b => { if (b.next) addEdge(id, b.next); });
+      if (n.if_false?.buttons) n.if_false.buttons.forEach(b => { if (b.next) addEdge(id, b.next); });
+    }
+  });
+
+  // ── Assign column (rank) = longest path from any root ──
+  const rank = {};
+  ids.forEach(id => { rank[id] = 0; });
+  const inDeg = {};
+  ids.forEach(id => { inDeg[id] = parents[id].length; });
+  const queue = ids.filter(id => inDeg[id] === 0);
+  const topo = [];
+  while (queue.length) {
+    const u = queue.shift();
+    topo.push(u);
+    children[u].forEach(v => {
+      rank[v] = Math.max(rank[v], rank[u] + 1);
+      if (--inDeg[v] === 0) queue.push(v);
+    });
+  }
+  ids.forEach(id => { if (!topo.includes(id)) topo.push(id); });
+
+  // ── Per-node height ──
+  function nodeH(id) {
+    const n = tree[id];
+    let h = 90;
+    if (n.type === 'prompt') h += (n.buttons||[]).length * 24;
+    if (n.type === 'condition') h += 36;
+    return Math.max(h, 90);
+  }
+
+  // ── Assign x per column ──
+  const colGroups = {};
+  ids.forEach(id => {
+    const c = rank[id];
+    if (!colGroups[c]) colGroups[c] = [];
+    colGroups[c].push(id);
+  });
+  const maxCol = Math.max(...Object.keys(colGroups).map(Number));
+  const colX = {};
+  let curX = 40;
+  for (let c = 0; c <= maxCol; c++) { colX[c] = curX; curX += NODE_W + GAP_X; }
+
+  // ── Compute subtree height for each node (leaf-up pass) ──
+  // subtreeH(id) = total vertical space this node's subtree needs
+  const subtreeH = {};
+  function calcSubtreeH(id, visited = new Set()) {
+    if (subtreeH[id] !== undefined) return subtreeH[id];
+    if (visited.has(id)) { subtreeH[id] = nodeH(id); return subtreeH[id]; }
+    visited.add(id);
+    const ch = children[id];
+    if (!ch || ch.length === 0) {
+      subtreeH[id] = nodeH(id);
+    } else {
+      // Sum of children subtree heights + gaps
+      const total = ch.reduce((s, c) => s + calcSubtreeH(c, new Set(visited)) + GAP_Y, 0) - GAP_Y;
+      subtreeH[id] = Math.max(nodeH(id), total);
+    }
+    return subtreeH[id];
+  }
+  // Process in reverse topo order (leaves first)
+  [...topo].reverse().forEach(id => calcSubtreeH(id));
+
+  // ── Assign Y positions top-down, parent centers over children ──
+  const posY = {};
+  // Roots: stack them top-to-bottom
+  const roots = ids.filter(id => parents[id].length === 0);
+  // Also include cycle members that have no topo parents
+  let curY = 40;
+  roots.forEach(id => {
+    posY[id] = curY + subtreeH[id] / 2 - nodeH(id) / 2;
+    curY += subtreeH[id] + GAP_Y;
+  });
+
+  // BFS top-down to assign children Y
+  const visited = new Set();
+  const bfsQ = [...roots];
+  roots.forEach(id => visited.add(id));
+  while (bfsQ.length) {
+    const id = bfsQ.shift();
+    const ch = children[id];
+    if (!ch || ch.length === 0) continue;
+    // Center group of children around parent's center
+    const parentCenterY = posY[id] + nodeH(id) / 2;
+    const totalChildH = ch.reduce((s, c) => s + subtreeH[c] + GAP_Y, 0) - GAP_Y;
+    let startY = parentCenterY - totalChildH / 2;
+    ch.forEach(cid => {
+      if (!visited.has(cid)) {
+        posY[cid] = startY + subtreeH[cid] / 2 - nodeH(cid) / 2;
+        visited.add(cid);
+        bfsQ.push(cid);
+      }
+      startY += subtreeH[cid] + GAP_Y;
+    });
+  }
+  // Any orphans not yet placed
+  ids.forEach(id => {
+    if (posY[id] === undefined) { posY[id] = curY; curY += nodeH(id) + GAP_Y; }
+  });
+
+  ids.forEach(id => {
+    positions[id] = { x: colX[rank[id]] ?? 40, y: posY[id] ?? 40 };
+  });
+
+  render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════════════════════
+const canvasEl = document.getElementById('canvas');
+const edgesSvg = document.getElementById('edges');
+
+function typeColor(t) {
+  return { prompt:'#5865f2', condition:'#9b59b6', modal:'#e67e22', close:'#ed4245', final:'#57f287' }[t] || '#888';
+}
+
+function getNodeHeight(id) {
+  const n = tree[id];
+  let h = 90;
+  if (n.type === 'prompt') h += (n.buttons||[]).length * 24;
+  if (n.type === 'condition') h += 36;
+  return Math.max(h, 90);
+}
+
+function render() {
+  // Remove existing nodes
+  canvasEl.querySelectorAll('.node').forEach(e => e.remove());
+
+  const ids = Object.keys(tree);
+
+  // Draw nodes
+  ids.forEach(id => {
+    if (!positions[id]) positions[id] = { x: 50 + Math.random()*600, y: 50 + Math.random()*400 };
+    const n = tree[id];
+    const pos = positions[id];
+
+    const div = document.createElement('div');
+    div.className = `node node-border-${n.type}${selectedId===id ? ' selected' : ''}`;
+    div.id = `node-${CSS.escape(id)}`;
+    div.style.left = pos.x + 'px';
+    div.style.top = pos.y + 'px';
+    div.dataset.id = id;
+
+    const typeLabel = { prompt:'Prompt', condition:'Condition', modal:'Modal', close:'Close', final:'Final' }[n.type] || n.type;
+    const typeIcon  = { prompt:'fa-solid fa-list', condition:'fa-solid fa-code-branch', modal:'fa-solid fa-window-restore', close:'fa-solid fa-circle-xmark', final:'fa-solid fa-circle-check' }[n.type] || 'fa-solid fa-circle';
+
+    let buttonsHtml = '';
+    if (n.type === 'prompt' && n.buttons) {
+      buttonsHtml = '<div class="node-buttons">' +
+        n.buttons.map(b => {
+          let cls = '';
+          const l = (b.label||'').toLowerCase();
+          if (l==='yes'||l.startsWith('yes,')) cls='green';
+          else if (l==='no'||l.startsWith('no,')) cls='red';
+          return `<div class="node-btn-pill ${cls}"><i class="fa-solid fa-caret-right" style="font-size:9px"></i> ${b.label||'(empty)'}</div>`;
+        }).join('') + '</div>';
+    }
+    if (n.type === 'condition') {
+      const it = n.if_true;
+      const ifalse = n.if_false;
+      const trueLabel = typeof it === 'object' ? (it.title||'(inline result)') : (it||'—');
+      const falseLabel = typeof ifalse === 'string' ? ifalse : (ifalse?.title||'(inline result)');
+      const condLabel = n.run_condition === 'is_linked' ? 'Account linked?' : (n.run_condition||'check');
+      buttonsHtml = `
+        <div style="font-size:10px;color:var(--text-dimmer);margin-top:5px;margin-bottom:5px;font-style:italic;">
+          <i class="fa-solid fa-bolt" style="font-size:9px"></i> ${condLabel}
+        </div>
+        <div class="condition-branches">
+          <div class="branch-true"><i class="fa-solid fa-check" style="font-size:9px"></i> ${trueLabel}</div>
+          <div class="branch-false"><i class="fa-solid fa-xmark" style="font-size:9px"></i> ${falseLabel}</div>
+        </div>`;
+    }
+
+    // Title: condition nodes show the node ID as title since they have no .title field
+    const displayTitle = n.type === 'condition'
+      ? id
+      : (n.title || n.modal?.title || '(no title)');
+
+    div.innerHTML = `
+      <div class="node-header">
+        <span class="node-type-badge type-${n.type}"><i class="${typeIcon}" style="font-size:8px;margin-right:3px"></i>${typeLabel}</span>
+        <span class="node-id">${id}</span>
+      </div>
+      <div class="node-body">
+        <div class="node-title">${displayTitle}</div>
+        <div class="node-desc">${(n.description||n.modal?.result_description||'').replace(/\*\*/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').substring(0,100)}</div>
+        ${buttonsHtml}
+      </div>`;
+
+    div.addEventListener('mousedown', onNodeMouseDown);
+    div.addEventListener('click', e => { e.stopPropagation(); selectNode(id); });
+    canvasEl.appendChild(div);
+  });
+
+  drawEdges();
+  applyTransform();
+  saveState();
+}
+
+function drawEdges() {
+  edgesSvg.innerHTML = '';
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+
+  function makeMarker(color, id) {
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', id);
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '8');
+    marker.setAttribute('refX', '6');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('orient', 'auto');
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', 'M0,0 L0,6 L8,3 z');
+    p.setAttribute('fill', color);
+    marker.appendChild(p);
+    defs.appendChild(marker);
+  }
+
+  makeMarker('#555770', 'arrow-555770');
+  makeMarker('#57f287', 'arrow-57f287');
+  makeMarker('#ed4245', 'arrow-ed4245');
+  edgesSvg.appendChild(defs);
+
+  const NODE_W = 220;
+
+  function drawEdge(fromId, toId, color, label) {
+    if (!positions[fromId] || !positions[toId]) return;
+    const fp = positions[fromId], tp = positions[toId];
+    const fh = getNodeHeight(fromId);
+    const th = getNodeHeight(toId);
+    const strokeColor = color || '#555770';
+    const markerId = `arrow-${strokeColor.replace('#','')}`;
+
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', strokeColor);
+    p.setAttribute('stroke-width', '1.5');
+    p.setAttribute('marker-end', `url(#${markerId})`);
+
+    let mx, my; // midpoint for label
+
+    if (fromId === toId) {
+      // Self-loop: arc from right side, loop over top of node
+      const x = fp.x + NODE_W / 2;
+      const y = fp.y;
+      const r = 38;
+      p.setAttribute('d', `M${x - r*0.5},${y} C${x - r*1.5},${y - r*2.2} ${x + r*1.5},${y - r*2.2} ${x + r*0.5},${y}`);
+      mx = x; my = y - r * 1.8;
+    } else {
+      const x1 = fp.x + NODE_W;
+      const y1 = fp.y + fh/2;
+      const x2 = tp.x;
+      const y2 = tp.y + th/2;
+      // Back-edge (looping left): route below/above with a wide arc
+      if (x2 <= x1 + 10) {
+        const loopR = Math.max(60, Math.abs(y2 - y1) * 0.4 + 60);
+        p.setAttribute('d', `M${x1},${y1} C${x1 + loopR},${y1 + loopR} ${x2 - loopR},${y2 + loopR} ${x2},${y2}`);
+        mx = (x1 + x2)/2 + loopR*0.5; my = Math.max(y1, y2) + loopR*0.7;
+      } else {
+        const dist = Math.abs(x2 - x1);
+        const cx1 = x1 + dist*0.45, cy1 = y1, cx2 = x2 - dist*0.45, cy2 = y2;
+        p.setAttribute('d', `M${x1},${y1} C${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`);
+        mx = (x1+x2)/2; my = Math.min(y1,y2) + Math.abs(y2-y1)*0.3;
+      }
+    }
+
+    edgesSvg.appendChild(p);
+
+    if (label) {
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const tw = label.length * 5.5 + 8;
+      bg.setAttribute('x', mx - tw/2); bg.setAttribute('y', my - 10);
+      bg.setAttribute('width', tw); bg.setAttribute('height', 14);
+      bg.setAttribute('rx', '3'); bg.setAttribute('fill', '#1a1b1e');
+      bg.setAttribute('opacity', '0.85');
+      edgesSvg.appendChild(bg);
+
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', mx); t.setAttribute('y', my);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-size', '10'); t.setAttribute('font-weight', '700');
+      t.setAttribute('font-family', 'Segoe UI, system-ui, sans-serif');
+      t.setAttribute('fill', color||'#555770');
+      t.textContent = label;
+      edgesSvg.appendChild(t);
+    }
+  }
+
+  Object.keys(tree).forEach(id => {
+    const n = tree[id];
+    if (n.type === 'prompt') {
+      (n.buttons||[]).forEach(b => { if (b.next && tree[b.next]) drawEdge(id, b.next, '#444560'); });
+    }
+    if (n.type === 'condition') {
+      if (typeof n.if_false === 'string' && tree[n.if_false]) drawEdge(id, n.if_false, '#ed4245', 'false');
+      if (typeof n.if_true === 'object' && n.if_true?.buttons) n.if_true.buttons.forEach(b => { if (b.next && tree[b.next]) drawEdge(id, b.next, '#57f287', 'true'); });
+      if (typeof n.if_false === 'object' && n.if_false?.buttons) n.if_false.buttons.forEach(b => { if (b.next && tree[b.next]) drawEdge(id, b.next, '#ed4245', 'false'); });
+    }
+  });
+}
+
+function applyTransform() {
+  canvasEl.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+  document.getElementById('zoom-label').textContent = Math.round(scale*100)+'%';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PANEL
+// ═══════════════════════════════════════════════════════════════
+function selectNode(id) {
+  selectedId = id;
+  render();
+  buildPanel(id);
+}
+
+function buildPanel(id) {
+  const n = tree[id];
+  const pc = document.getElementById('panel-content');
+
+  const typeColor = { prompt:'#5865f2', condition:'#9b59b6', modal:'#e67e22', close:'#ed4245', final:'#57f287' };
+  const typeLabel = { prompt:'Prompt', condition:'Condition', modal:'Modal', close:'Close', final:'Final' };
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <span style="background:${typeColor[n.type]};color:#fff;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:3px 8px;border-radius:5px;">${typeLabel[n.type]}</span>
+      <span style="font-size:13px;font-weight:700;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${id}</span>
+    </div>
+    <div class="panel-actions">
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="renameNode('${id}')"><i class="fa-solid fa-pen-to-square"></i> Rename ID</button>
+      <button class="btn btn-danger" style="font-size:11px;padding:5px 10px" onclick="confirmDelete('${id}')"><i class="fa-solid fa-trash"></i> Delete</button>
+    </div>
+    <hr class="section-divider">
+  `;
+
+  // Common: type selector
+  html += `
+    <div class="field">
+      <label>Node Type <span class="help-tip" data-tip="Changes how this node behaves in Discord. Prompt shows buttons. Condition auto-branches. Modal pops a form. Close/Final end the ticket.">?</span></label>
+      <select onchange="changeNodeType('${id}',this.value)">
+        <option value="prompt" ${n.type==='prompt'?'selected':''}>Prompt — Show message with buttons</option>
+        <option value="condition" ${n.type==='condition'?'selected':''}>Condition — Auto-branch (is_linked check)</option>
+        <option value="modal" ${n.type==='modal'?'selected':''}>Modal — Pop up a form</option>
+        <option value="close" ${n.type==='close'?'selected':''}>Close — End ticket, no staff ping</option>
+        <option value="final" ${n.type==='final'?'selected':''}>Final — End ticket, ping staff</option>
+      </select>
+    </div>`;
+
+  if (n.type === 'prompt' || n.type === 'close' || n.type === 'final') {
+    html += `
+      <div class="field">
+        <label>Title <span class="help-tip" data-tip="Bold heading shown in the Discord embed.">?</span></label>
+        <input type="text" value="${esc(n.title||'')}" oninput="setField('${id}','title',this.value)" placeholder="e.g. Password Reset">
+      </div>
+      <div class="field">
+        <label>Description <span class="help-tip" data-tip="Supports Discord markdown: **bold**, *italic*, [text](url), \\n for newlines.">?</span></label>
+        <textarea rows="4" oninput="setField('${id}','description',this.value)" placeholder="Supports Discord markdown…">${esc(n.description||'')}</textarea>
+      </div>`;
+
+    if (n.type !== 'prompt') {
+      html += `
+        <div class="field">
+          <label>Embed Color <span class="help-tip" data-tip="Hex color for the left bar on the Discord embed. E.g. 0x57f287 for green.">?</span></label>
+          <div class="color-row">
+            <input type="color" class="color-swatch" value="${hexToInput(n.color||'0x4F9EF5')}" oninput="setField('${id}','color','0x'+this.value.slice(1).toUpperCase())">
+            <input type="text" value="${n.color||'0x4F9EF5'}" oninput="setField('${id}','color',this.value)" style="font-family:monospace;flex:1">
+          </div>
+        </div>`;
+    }
+
+    if (n.type === 'final') {
+      html += `
+        <div class="field">
+          <label>Data Fields <span class="help-tip" data-tip="Key-value pairs shown as embed fields. Each field is a [name, value] pair.">?</span></label>
+          <div id="data-fields-list">`;
+      const data = n.data || [];
+      data.forEach(([k,v], i) => {
+        html += `<div style="display:flex;gap:5px;margin-bottom:5px;">
+          <input type="text" value="${esc(k)}" placeholder="Field name" oninput="setDataField('${id}',${i},0,this.value)" style="flex:1;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;padding:5px 8px;font-family:inherit;">
+          <input type="text" value="${esc(v)}" placeholder="Value" oninput="setDataField('${id}',${i},1,this.value)" style="flex:1;background:var(--surface3);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;padding:5px 8px;font-family:inherit;">
+          <button class="delete-btn" onclick="removeDataField('${id}',${i})"><i class="fa-solid fa-xmark"></i></button>
+        </div>`;
+      });
+      html += `</div>
+          <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;margin-top:4px" onclick="addDataField('${id}')"><i class="fa-solid fa-plus"></i> Add Field</button>
+        </div>
+        <div class="field">
+          <label class="mini-checkbox"><input type="checkbox" ${n.ping_everyone?'checked':''} onchange="setField('${id}','ping_everyone',this.checked)"> Ping @everyone instead of staff</label>
+        </div>`;
+    }
+  }
+
+  // PROMPT: buttons
+  if (n.type === 'prompt') {
+    html += `<hr class="section-divider"><div class="panel-title">Buttons <span style="font-size:10px;color:var(--text-dimmer);text-transform:none;letter-spacing:0">(what users click)</span></div>`;
+    html += `<div class="btn-list" id="btn-list">`;
+    (n.buttons||[]).forEach((b, i) => {
+      html += `<div class="btn-row">
+        <div class="btn-row-top">
+          <span class="handle"><i class="fa-solid fa-grip-lines"></i></span>
+          <span class="btn-label">Button ${i+1}</span>
+          <button class="delete-btn" onclick="removeButton('${id}',${i})"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="btn-row-fields">
+          <input type="text" value="${esc(b.label)}" placeholder="Button label (what user sees)" oninput="setBtnField('${id}',${i},'label',this.value)">
+          <input type="text" value="${esc(b.next||'')}" placeholder="Goes to node ID" oninput="setBtnField('${id}',${i},'next',this.value)" list="node-ids-list">
+          <select onchange="setBtnField('${id}',${i},'opens_modal',this.value==='true')">
+            <option value="false" ${!b.opens_modal?'selected':''}>Normal button (goes to next node)</option>
+            <option value="true" ${b.opens_modal?'selected':''}>Opens modal directly (next must be a modal node)</option>
+          </select>
+        </div>
+      </div>`;
+    });
+    html += `</div>
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="addButton('${id}')"><i class="fa-solid fa-plus"></i> Add Button</button>
+      <datalist id="node-ids-list">${Object.keys(tree).map(k=>`<option value="${esc(k)}">`).join('')}</datalist>`;
+  }
+
+  // CONDITION
+  if (n.type === 'condition') {
+    html += `
+      <div class="field">
+        <label>Condition Check <span class="help-tip" data-tip="Currently only is_linked is supported — checks if the user's Discord is linked to an in-game account.">?</span></label>
+        <select onchange="setField('${id}','run_condition',this.value)">
+          <option value="is_linked" ${n.run_condition==='is_linked'?'selected':''}>is_linked — Is user's account linked?</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="mini-checkbox"><input type="checkbox" ${n.require_owner?'checked':''} onchange="setField('${id}','require_owner',this.checked)"> Only ticket owner can trigger</label>
+      </div>
+      <hr class="section-divider">
+      <div class="panel-title" style="color:var(--green)"><i class="fa-solid fa-check"></i> If TRUE (account is linked)</div>`;
+
+    const it = n.if_true || {};
+    if (typeof it === 'object' && it.node) {
+      html += `
+        <div class="field">
+          <label>Result Type</label>
+          <select onchange="setCondBranch('${id}','if_true','node',this.value)">
+            <option value="final" ${it.node==='final'?'selected':''}>Final (end + staff ping)</option>
+            <option value="instructions" ${it.node==='instructions'?'selected':''}>Instructions (show message + buttons)</option>
+          </select>
+        </div>
+        <div class="field"><label>Title</label><input type="text" value="${esc(it.title||'')}" oninput="setCondBranch('${id}','if_true','title',this.value)"></div>
+        <div class="field"><label>Description <span style="font-size:10px;color:var(--text-dimmer)">{ign} = in-game name</span></label><textarea rows="3" oninput="setCondBranch('${id}','if_true','description',this.value)">${esc(it.description||'')}</textarea></div>
+        <div class="field"><label>Color</label><div class="color-row"><input type="color" class="color-swatch" value="${hexToInput(it.color||'0x4F9EF5')}" oninput="setCondBranch('${id}','if_true','color','0x'+this.value.slice(1).toUpperCase())"><input type="text" value="${it.color||'0x4F9EF5'}" oninput="setCondBranch('${id}','if_true','color',this.value)" style="flex:1;font-family:monospace"></div></div>`;
+    }
+
+    html += `<hr class="section-divider"><div class="panel-title" style="color:var(--red)"><i class="fa-solid fa-xmark"></i> If FALSE (not linked)</div>`;
+    const ifalse = n.if_false;
+    if (typeof ifalse === 'string') {
+      html += `<div class="field"><label>Go to Node ID</label><input type="text" value="${esc(ifalse)}" oninput="setField('${id}','if_false',this.value)" list="node-ids-list2"><datalist id="node-ids-list2">${Object.keys(tree).map(k=>`<option value="${esc(k)}">`).join('')}</datalist></div>`;
+    } else if (ifalse && typeof ifalse === 'object') {
+      html += `
+        <div class="field"><label>Title</label><input type="text" value="${esc(ifalse.title||'')}" oninput="setCondBranchObj('${id}','if_false','title',this.value)"></div>
+        <div class="field"><label>Description</label><textarea rows="3" oninput="setCondBranchObj('${id}','if_false','description',this.value)">${esc(ifalse.description||'')}</textarea></div>`;
+    }
+  }
+
+  // MODAL
+  if (n.type === 'modal') {
+    const m = n.modal || {};
+    html += `
+      <div class="field"><label>Modal Title <span class="help-tip" data-tip="Title shown at the top of the Discord popup form.">?</span></label>
+        <input type="text" value="${esc(m.title||'')}" oninput="setModalField('${id}','title',this.value)">
+      </div>
+      <hr class="section-divider">
+      <div class="panel-title">Form Fields <span style="font-size:10px;color:var(--text-dimmer);text-transform:none;letter-spacing:0">(what user fills out)</span></div>
+      <div id="modal-fields-list">`;
+
+    (m.fields||[]).forEach((f, i) => {
+      html += `<div class="modal-field-row">
+        <div class="mf-top">
+          <span style="font-size:11px;font-weight:700;color:var(--text-dim)">Field ${i+1}</span>
+          <button class="delete-btn" style="margin-left:auto" onclick="removeModalField('${id}',${i})"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <input type="text" value="${esc(f.label||'')}" placeholder="Label (e.g. IGN)" oninput="setModalFieldItem('${id}',${i},'label',this.value)">
+        <input type="text" value="${esc(f.placeholder||'')}" placeholder="Placeholder hint text" oninput="setModalFieldItem('${id}',${i},'placeholder',this.value)">
+        <label class="required-toggle"><input type="checkbox" ${f.required?'checked':''} onchange="setModalFieldItem('${id}',${i},'required',this.checked)"> Required</label>
+      </div>`;
+    });
+
+    html += `</div>
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;margin-top:4px;margin-bottom:14px" onclick="addModalField('${id}')"><i class="fa-solid fa-plus"></i> Add Field</button>
+      <hr class="section-divider">
+      <div class="panel-title">After Submission</div>
+      <div class="field"><label>Result Title</label><input type="text" value="${esc(m.result_title||'')}" oninput="setModalField('${id}','result_title',this.value)"></div>
+      <div class="field"><label>Result Description</label><textarea rows="3" oninput="setModalField('${id}','result_description',this.value)">${esc(m.result_description||'')}</textarea></div>
+      <div class="field"><label class="mini-checkbox"><input type="checkbox" ${m.ping_everyone?'checked':''} onchange="setModalFieldBool('${id}','ping_everyone',this.checked)"> Ping @everyone on submit</label></div>
+      <div class="field"><label class="mini-checkbox"><input type="checkbox" ${m.use_appeal_close_button?'checked':''} onchange="setModalFieldBool('${id}','use_appeal_close_button',this.checked)"> Use Appeal close button</label></div>`;
+  }
+
+  pc.innerHTML = html;
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function hexToInput(hex) {
+  if (!hex) return '#4F9EF5';
+  const v = hex.replace('0x','').replace('#','').padStart(6,'0');
+  return '#' + v;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MUTATORS
+// ═══════════════════════════════════════════════════════════════
+function setField(id, key, val) {
+  tree[id][key] = val;
+  renderEdgesOnly();
+}
+function setCondBranch(id, branch, key, val) {
+  if (!tree[id][branch] || typeof tree[id][branch] !== 'object') tree[id][branch] = {};
+  tree[id][branch][key] = val;
+  renderEdgesOnly();
+}
+function setCondBranchObj(id, branch, key, val) { setCondBranch(id, branch, key, val); }
+function setModalField(id, key, val) {
+  if (!tree[id].modal) tree[id].modal = {};
+  tree[id].modal[key] = val;
+  saveState();
+}
+function setModalFieldBool(id, key, val) { setModalField(id, key, val); }
+function setModalFieldItem(id, i, key, val) {
+  if (!tree[id].modal) tree[id].modal = {};
+  if (!tree[id].modal.fields) tree[id].modal.fields = [];
+  tree[id].modal.fields[i][key] = val;
+  saveState();
+}
+function addModalField(id) {
+  if (!tree[id].modal) tree[id].modal = {};
+  if (!tree[id].modal.fields) tree[id].modal.fields = [];
+  tree[id].modal.fields.push({ label: 'New Field', placeholder: 'Enter...', required: true });
+  buildPanel(id);
+  saveState();
+}
+function removeModalField(id, i) {
+  tree[id].modal.fields.splice(i, 1);
+  buildPanel(id);
+  saveState();
+}
+function setBtnField(id, i, key, val) {
+  tree[id].buttons[i][key] = val;
+  if (key === 'next') renderEdgesOnly();
+  else saveState();
+}
+function addButton(id) {
+  if (!tree[id].buttons) tree[id].buttons = [];
+  tree[id].buttons.push({ label: 'New Button', next: '' });
+  buildPanel(id);
+  render();
+}
+function removeButton(id, i) {
+  tree[id].buttons.splice(i, 1);
+  buildPanel(id); render();
+}
+function addDataField(id) {
+  if (!tree[id].data) tree[id].data = [];
+  tree[id].data.push(['Field Name', 'Value']);
+  buildPanel(id);
+  saveState();
+}
+function removeDataField(id, i) {
+  tree[id].data.splice(i, 1);
+  buildPanel(id);
+  saveState();
+}
+function setDataField(id, i, pos, val) {
+  if (!tree[id].data) tree[id].data = [];
+  tree[id].data[i][pos] = val;
+  saveState();
+}
+function changeNodeType(id, newType) {
+  const defaults = {
+    prompt: { type:'prompt', title:'New Prompt', description:'Choose an option.', buttons:[] },
+    condition: { type:'condition', run_condition:'is_linked', if_true:{ node:'final', title:'Linked', description:'You are linked as {ign}.', color:'0x00FF00' }, if_false:'some-other-node' },
+    modal: { type:'modal', modal:{ title:'Form', fields:[{ label:'IGN', placeholder:'Your in-game name', required:true }], result_title:'Submitted', result_description:'Thanks! Staff will review shortly.' } },
+    close: { type:'close', title:'Closed', description:'This ticket has been closed.' },
+    final: { type:'final', title:'Done', description:'Staff have been notified.', color:'0x4F9EF5' }
+  };
+  tree[id] = { ...defaults[newType] };
+  buildPanel(id); render();
+}
+function renameNode(id) {
+  const newId = prompt('Enter new node ID:', id);
+  if (!newId || newId === id) return;
+  if (tree[newId]) { showToast('A node with that ID already exists!'); return; }
+  tree[newId] = tree[id];
+  positions[newId] = positions[id];
+  delete tree[id];
+  delete positions[id];
+
+  // Update all references
+  Object.keys(tree).forEach(k => {
+    const n = tree[k];
+    if (n.type === 'condition') {
+      if (n.if_false === id) n.if_false = newId;
+    }
+    if (n.buttons) n.buttons.forEach(b => { if (b.next === id) b.next = newId; });
+    if (n.if_true?.buttons) n.if_true.buttons.forEach(b => { if (b.next === id) b.next = newId; });
+    if (n.if_false?.buttons) n.if_false.buttons.forEach(b => { if (b.next === id) b.next = newId; });
+  });
+
+  selectedId = newId;
+  render(); buildPanel(newId);
+  showToast('Node renamed!');
+}
+function confirmDelete(id) {
+  document.getElementById('del-node-name').textContent = `"${id}"`;
+  document.getElementById('del-overlay').classList.remove('hidden');
+  document.getElementById('del-confirm').onclick = () => {
+    delete tree[id];
+    delete positions[id];
+    if (selectedId === id) {
+      selectedId = null;
+      document.getElementById('panel-content').innerHTML = `<div class="panel-placeholder"><div class="icon">🖱️</div>Click any node to edit it</div>`;
+    }
+    document.getElementById('del-overlay').classList.add('hidden');
+    render(); showToast('Node deleted');
+  };
+}
+
+function renderEdgesOnly() {
+  drawEdges();
+  // Also update node visuals that changed
+  Object.keys(tree).forEach(id => {
+    const el = document.querySelector(`[data-id="${id}"]`);
+    if (!el) return;
+    const n = tree[id];
+    const titleEl = el.querySelector('.node-title');
+    if (titleEl) titleEl.textContent = n.title||n.modal?.title||'(no title)';
+    const descEl = el.querySelector('.node-desc');
+    if (descEl) descEl.textContent = (n.description||n.modal?.result_description||'').replace(/\*\*/g,'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').substring(0,100);
+  });
+  saveState();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DRAG NODES
+// ═══════════════════════════════════════════════════════════════
+function onNodeMouseDown(e) {
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  const id = e.currentTarget.dataset.id;
+  isDragging = true;
+  dragId = id;
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragNodeOrigin = { ...positions[id] };
+  document.addEventListener('mousemove', onNodeDrag);
+  document.addEventListener('mouseup', onNodeUp);
+}
+function onNodeDrag(e) {
+  if (!isDragging) return;
+  const dx = (e.clientX - dragStart.x) / scale;
+  const dy = (e.clientY - dragStart.y) / scale;
+  positions[dragId] = { x: dragNodeOrigin.x + dx, y: dragNodeOrigin.y + dy };
+  const el = document.querySelector(`[data-id="${dragId}"]`);
+  if (el) { el.style.left = positions[dragId].x + 'px'; el.style.top = positions[dragId].y + 'px'; }
+  drawEdges();
+}
+function onNodeUp() {
+  isDragging = false;
+  document.removeEventListener('mousemove', onNodeDrag);
+  document.removeEventListener('mouseup', onNodeUp);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PAN + ZOOM
+// ═══════════════════════════════════════════════════════════════
+const wrap = document.getElementById('canvas-wrap');
+wrap.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  isPanning = true;
+  panStart = { x: e.clientX, y: e.clientY };
+  panOrigin = { x: panX, y: panY };
+  wrap.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  panX = panOrigin.x + (e.clientX - panStart.x);
+  panY = panOrigin.y + (e.clientY - panStart.y);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { isPanning = false; wrap.classList.remove('grabbing'); });
+
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  panX = mx - (mx - panX) * delta;
+  panY = my - (my - panY) * delta;
+  scale = Math.min(2.5, Math.max(0.2, scale * delta));
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('zoom-in').onclick = () => { scale = Math.min(2.5, scale * 1.15); applyTransform(); };
+document.getElementById('zoom-out').onclick = () => { scale = Math.max(0.2, scale / 1.15); applyTransform(); };
+document.getElementById('zoom-fit').onclick = fitAll;
+
+function fitAll() {
+  const ids = Object.keys(positions);
+  if (!ids.length) return;
+  const xs = ids.map(id => positions[id].x), ys = ids.map(id => positions[id].y);
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const maxX = Math.max(...xs) + 240, maxY = Math.max(...ys) + 130;
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  const s = Math.min(ww/(maxX-minX+80), wh/(maxY-minY+80), 1.2);
+  scale = s;
+  panX = (ww - (maxX-minX)*s)/2 - minX*s + 40;
+  panY = (wh - (maxY-minY)*s)/2 - minY*s + 40;
+  applyTransform();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// JSON EDIT / IMPORT / EXPORT
+// ═══════════════════════════════════════════════════════════════
+
+// Builds the clean tree object matching the Python format
+// (this is the canonical "export" shape — modal fields as tuples, etc).
+function buildExportTree() {
+  const out = {};
+  Object.keys(tree).forEach(id => {
+    const n = JSON.parse(JSON.stringify(tree[id]));
+    // Convert modal fields array format
+    if (n.modal && n.modal.fields) {
+      n.modal.fields = n.modal.fields.map(f => [f.label, f.placeholder, f.required]);
+    }
+    // Remove empty/falsy optional keys
+    ['ping_everyone','require_owner','use_appeal_close_button'].forEach(k => {
+      if (!n[k]) delete n[k];
+      if (n.modal && !n.modal[k]) delete n.modal?.[k];
+    });
+    out[id] = n;
+  });
+  return out;
+}
+
+function buildExportString() {
+  return JSON.stringify(buildExportTree(), null, 4);
+}
+
+// Converts a freshly-parsed JSON tree (Python/export shape) back into the
+// internal shape this editor uses (modal fields as objects, not tuples).
+function normalizeImportedTree(parsed) {
+  Object.keys(parsed).forEach(id => {
+    const n = parsed[id];
+    if (n && n.modal && Array.isArray(n.modal.fields)) {
+      n.modal.fields = n.modal.fields.map(f => {
+        if (Array.isArray(f)) {
+          return { label: f[0] ?? '', placeholder: f[1] ?? '', required: !!f[2] };
+        }
+        return f; // already in object form
+      });
+    }
+  });
+  return parsed;
+}
+
+function showJSONError(msg) {
+  const el = document.getElementById('json-error');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// Opens the modal. isFirstRun = true means there's no saved/local data yet,
+// so we block the rest of the UI until the person provides JSON (or
+// explicitly chooses to start with an empty tree).
+function openJSONEditor(isFirstRun) {
+  firstRunPending = !!isFirstRun;
+  showJSONError('');
+
+  const title = document.getElementById('json-modal-title');
+  const instructions = document.getElementById('json-instructions');
+  const textarea = document.getElementById('json-out');
+  const closeX = document.getElementById('json-close');
+  const startEmptyBtn = document.getElementById('json-start-empty');
+
+  if (firstRunPending) {
+    title.textContent = 'Load Your JSON';
+    instructions.innerHTML = 'No saved tree was found on this device. Paste your existing JSON below and click <strong>Save &amp; Apply</strong> to load it, or start with an empty tree.';
+    textarea.value = '';
+    closeX.style.display = 'none';
+    startEmptyBtn.style.display = '';
+  } else {
+    title.textContent = 'Edit JSON';
+    instructions.innerHTML = 'Edit the tree directly as JSON below, then click <strong>Save &amp; Apply</strong>. This is also exactly what gets used in <a href="https://panel.mysticraft.xyz/server/25fe5a4d/files/edit#/commands/Tickets/tree.json"><code style="background:var(--bg);padding:2px 5px;border-radius:4px;color:var(--text);border-bottom:1px solid var(--text)">tree.json</code></a>.';
+    textarea.value = buildExportString();
+    closeX.style.display = '';
+    startEmptyBtn.style.display = 'none';
+  }
+
+  document.getElementById('json-overlay').classList.remove('hidden');
+  if (firstRunPending) setTimeout(() => textarea.focus(), 50);
+}
+
+function closeJSONEditor() {
+  if (firstRunPending) return; // can't dismiss until they choose something
+  document.getElementById('json-overlay').classList.add('hidden');
+}
+
+function pythonToJSON(src) {
+  // Convert Python dict/list syntax to valid JSON so users can paste raw Python.
+  let s = src;
+
+  // Strip Python line comments (# outside of strings only)
+  s = s.replace(/"(?:[^"\\]|\\.)*"|#[^\n]*/g, m => m.startsWith('"') ? m : '');
+
+  // Handle Python multi-line string concatenation inside parens:
+  // ("line1\n" "line2\n") -> "line1\nline2\n"
+  function collapseStringParens(str) {
+    let result = '';
+    let i = 0;
+    while (i < str.length) {
+      if (str[i] === '(') {
+        let depth = 1, j = i + 1;
+        while (j < str.length && depth > 0) {
+          if (str[j] === '"') { j++; while (j < str.length && str[j] !== '"') { if (str[j] === '\\') j++; j++; } }
+          else if (str[j] === '(') depth++;
+          else if (str[j] === ')') depth--;
+          j++;
+        }
+        const inner = str.slice(i+1, j-1);
+        // Check if inner is purely string literals + whitespace (with optional trailing comma).
+        // Commas BETWEEN strings mean it's a tuple, not concatenation.
+        const isStringConcat = /^[\s\n]*("(?:[^"\\]|\\.)*"[\s\n]*)+,?[\s\n]*$/.test(inner);
+        if (isStringConcat) {
+          const strings = [];
+          const strRe = /"((?:[^"\\]|\\.)*)"/g;
+          let m;
+          while ((m = strRe.exec(inner)) !== null) strings.push(m[1]);
+          // Join pieces and re-escape literal newlines as \n
+          const joined = strings.join('').replace(/\n/g, '\\n');
+          result += '"' + joined + '"';
+          i = j;
+          continue;
+        }
+        result += str[i];
+      } else {
+        result += str[i];
+      }
+      i++;
+    }
+    return result;
+  }
+
+  s = collapseStringParens(s);
+
+  // Remove trailing commas before } or ]
+  s = s.replace(/,(\s*[}\]])/g, '$1');
+
+  // Python True/False/None -> JSON true/false/null
+  s = s.replace(/\bTrue\b/g, 'true');
+  s = s.replace(/\bFalse\b/g, 'false');
+  s = s.replace(/\bNone\b/g, 'null');
+
+  // Hex integer literals like 0x00FF00 -> decimal (65280)
+  s = s.replace(/\b0x([0-9a-fA-F]+)\b/g, (_, h) => parseInt(h, 16));
+
+  // Python tuples used as array elements: ("a", "b", True) -> ["a", "b", true]
+  // Must handle strings that contain parens, so we can't use a simple regex.
+  s = (function convertTuples(str) {
+    let result = '';
+    let i = 0;
+    while (i < str.length) {
+      // Skip strings verbatim
+      if (str[i] === '"') {
+        let j = i + 1;
+        while (j < str.length && str[j] !== '"') { if (str[j] === '\\') j++; j++; }
+        result += str.slice(i, j + 1);
+        i = j + 1;
+        continue;
+      }
+      if (str[i] === '(') {
+        // Scan to find matching ) tracking string boundaries
+        let depth = 1, j = i + 1;
+        while (j < str.length && depth > 0) {
+          if (str[j] === '"') { j++; while (j < str.length && str[j] !== '"') { if (str[j] === '\\') j++; j++; } }
+          else if (str[j] === '(') depth++;
+          else if (str[j] === ')') depth--;
+          j++;
+        }
+        const inner = str.slice(i+1, j-1);
+        // Check if it looks like a tuple: contains at least one comma outside strings,
+        // and starts with a string or identifier (not a complex expression)
+        let innerNoStr = inner.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+        // Has comma(s) and consists of: strings, true/false/null, whitespace, commas only
+        const looksLikeTuple = /,/.test(innerNoStr) &&
+          /^[\s\n]*(""|true|false|null)([\s\n]*,[\s\n]*(""|true|false|null))*[\s\n]*$/.test(innerNoStr);
+        if (looksLikeTuple) {
+          result += '[' + convertTuples(inner) + ']';
+          i = j;
+          continue;
+        }
+        result += str[i];
+      } else {
+        result += str[i];
+      }
+      i++;
+    }
+    return result;
+  })(s);
+
+  return s;
+}
+
+function applyJSONFromEditor() {
+  const raw = document.getElementById('json-out').value;
+  if (!raw.trim()) { showJSONError('Please paste some JSON, or click "Start with Empty Tree".'); return; }
+
+  // Try plain JSON first; if that fails, attempt Python→JSON conversion.
+  let parsed;
+  let converted = raw;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    try {
+      converted = pythonToJSON(raw);
+      parsed = JSON.parse(converted);
+    } catch (e2) {
+      showJSONError('Invalid JSON: ' + e2.message);
+      return;
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    showJSONError('The JSON must be an object mapping node IDs to node data, e.g. { "my node": { ... } }');
+    return;
+  }
+
+  parsed = normalizeImportedTree(parsed);
+
+  // Preserve existing node positions where IDs match; place any brand-new
+  // node IDs near the viewport center. If this is the very first load,
+  // just auto-layout the whole thing for a clean starting view.
+  const hadExistingLayout = Object.keys(positions).length > 0;
+  if (hadExistingLayout) {
+    const cx = (wrap.clientWidth/2 - panX)/scale;
+    const cy = (wrap.clientHeight/2 - panY)/scale;
+    const newPositions = {};
+    let offset = 0;
+    Object.keys(parsed).forEach(id => {
+      if (positions[id]) {
+        newPositions[id] = positions[id];
+      } else {
+        newPositions[id] = { x: cx - 110 + offset, y: cy - 60 + offset };
+        offset += 28;
+      }
+    });
+    positions = newPositions;
+    tree = parsed;
+  } else {
+    tree = parsed;
+    positions = {};
+    autoLayout();
+  }
+
+  selectedId = null;
+  document.getElementById('panel-content').innerHTML = `<div class="panel-placeholder"><div class="icon"><i class="fa-regular fa-hand-pointer" style="font-size:32px;color:var(--text-dimmer)"></i></div>Click any node to edit it<br><br><small style="color:var(--text-dimmer)">Or click <strong>+ Add Node</strong> to create a new one</small></div>`;
+
+  firstRunPending = false;
+  saveState();
+  document.getElementById('json-overlay').classList.add('hidden');
+  render();
+  fitAll();
+  showToast('JSON applied!');
+}
+
+function startWithEmptyTree() {
+  tree = {};
+  positions = {};
+  selectedId = null;
+  firstRunPending = false;
+  saveState();
+  document.getElementById('json-overlay').classList.add('hidden');
+  render();
+  showToast('Starting with an empty tree');
+}
+
+document.getElementById('btn-json').onclick = () => openJSONEditor(false);
+document.getElementById('json-close').onclick = closeJSONEditor;
+document.getElementById('json-apply').onclick = applyJSONFromEditor;
+document.getElementById('json-start-empty').onclick = startWithEmptyTree;
+document.getElementById('json-copy').onclick = () => {
+  navigator.clipboard.writeText(document.getElementById('json-out').value);
+  showToast('Copied to clipboard!');
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ADD NODE
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('btn-add').onclick = () => {
+  document.getElementById('new-node-id').value = '';
+  document.getElementById('add-overlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('new-node-id').focus(), 50);
+};
+document.getElementById('add-close').onclick = () => document.getElementById('add-overlay').classList.add('hidden');
+document.getElementById('add-cancel').onclick = () => document.getElementById('add-overlay').classList.add('hidden');
+document.getElementById('add-confirm').onclick = () => {
+  const id = document.getElementById('new-node-id').value.trim().toLowerCase();
+  const type = document.getElementById('new-node-type').value;
+  if (!id) { showToast('Please enter a node ID'); return; }
+  if (tree[id]) { showToast('A node with that ID already exists!'); return; }
+
+  const defaults = {
+    prompt: { type:'prompt', title:'New Prompt', description:'Choose an option.', buttons:[] },
+    condition: { type:'condition', run_condition:'is_linked', if_true:{ node:'final', title:'Linked', description:'Your account is linked ({ign}).', color:'0x00FF00' }, if_false:'some-node' },
+    modal: { type:'modal', modal:{ title:'New Form', fields:[{ label:'IGN', placeholder:'Your in-game name', required:true }], result_title:'Submitted', result_description:'Thanks! Staff will review shortly.' } },
+    close: { type:'close', title:'Closed', description:'Your ticket has been handled.' },
+    final: { type:'final', title:'Done', description:'Staff have been notified.', color:'0x4F9EF5' }
+  };
+  tree[id] = { ...defaults[type] };
+
+  // Place in center of viewport
+  const cx = (wrap.clientWidth/2 - panX)/scale;
+  const cy = (wrap.clientHeight/2 - panY)/scale;
+  positions[id] = { x: cx - 110, y: cy - 60 };
+
+  document.getElementById('add-overlay').classList.add('hidden');
+  render(); selectNode(id);
+  showToast(`Node "${id}" created!`);
+};
+
+document.getElementById('del-cancel').onclick = () => document.getElementById('del-overlay').classList.add('hidden');
+document.getElementById('btn-layout').onclick = () => { autoLayout(); fitAll(); };
+
+// Close overlays on bg click (the JSON overlay additionally respects firstRunPending)
+['add-overlay','del-overlay'].forEach(id => {
+  document.getElementById(id).addEventListener('click', function(e) {
+    if (e.target === this) this.classList.add('hidden');
+  });
+});
+document.getElementById('json-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeJSONEditor();
+});
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+const saved = loadSavedState();
+if (saved) {
+  tree = saved.tree || {};
+  positions = saved.positions || {};
+  render();
+  setTimeout(fitAll, 100);
+} else {
+  // First-time visitor: there's nothing in localStorage yet, so prompt
+  // for JSON input (or let them start empty) before showing the canvas.
+  render();
+  openJSONEditor(true);
+}
+
+// Safety-net autosave in case any future code path mutates `tree`/`positions`
+// without going through render()/renderEdgesOnly().
+window.addEventListener('beforeunload', saveState);
+setInterval(saveState, 3000);
+
+</script>
+</body>
+</html>

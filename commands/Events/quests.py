@@ -15,6 +15,12 @@ except ImportError:
         def __str__(self):
             return f"`/{self.name}`"
 
+try:
+    from commands.Events.config import YES_EMOTE, QUEST_DB
+except ImportError as e:
+    YES_EMOTE = "✅"
+    QUEST_DB = "/Chat Minigames Quests"
+
 QUEST_TYPES = ["participate_minigames", "win_minigames", "win_1v1_minigames", "earn_mora", "gift_mora", "collect_chests", "earn_big_mora", "gift_mora_unique", "summon_minigame", "customize_profile", "purchase_items", "unlock_drop_packs", "upgrade_buildings", "gift_mora_poorer", "hug_user", "win_minigames_under_5s"]
 QUEST_GOAL_PRESETS = {
     "participate_minigames": {
@@ -156,7 +162,7 @@ def generate_quests(duration: str) -> dict:
     return quests
 
 async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, client, refresh_only=False):
-    ref = db.reference(f"/Chat Minigames Quests/{guildID}/{userID}")
+    ref = db.reference(f"{QUEST_DB}/{guildID}/{userID}")
     quest_data = ref.get() or {}
     now = time.time()
     total_xp = 0
@@ -217,7 +223,7 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                             
                         total_xp += xp_reward
                         messages.append(
-                            f"<:yes:1036811164891480194> **{QUEST_DESCRIPTIONS[q_type]}** ({duration}): "
+                            f"{YES_EMOTE} **{QUEST_DESCRIPTIONS[q_type]}** ({duration}): "
                             f"`{quests[q_type]['goal']}` ‎ <:fastforward:1351972114433048719> ‎ `+{xp_reward}` XP"
                         )
 

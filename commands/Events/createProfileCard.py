@@ -3,27 +3,32 @@ import os
 
 from PIL import Image, ImageDraw, ImageFont, ImageSequence
 
+from commands.Events.config import FRAMES_DIRECTORY, DEFAULT_BG_PATH, FONT_PATH, PROFILE_CARD_PATH, CURRENCY_ICON_PATH
+
 async def createProfileCard(
     user,
     num: str,
     rank: str,
-    bg: str = "./assets/mora_bg.png",
-    filename: str = "./assets/mora.png",
+    bg: str = DEFAULT_BG_PATH,
+    filename: str = PROFILE_CARD_PATH,
     profile_frame: str = None
 ):
     # Avatar
-    avatar_bytes = await user.avatar.with_static_format("png").with_size(128).read()
-    im_avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+    if user.avatar is None:
+        im_avatar = Image.open("assets/DefaultIcon.png").convert("RGBA").resize((128, 128))
+    else:
+        avatar_bytes = await user.avatar.with_static_format("png").with_size(128).read()
+        im_avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
     mask = Image.new("L", im_avatar.size, 0)
     draw_mask = ImageDraw.Draw(mask)
     draw_mask.ellipse((0, 0) + im_avatar.size, fill=255)
     im_avatar.putalpha(mask)
 
     # Fonts
-    font_display = ImageFont.truetype("./assets/ja-jp.ttf", 45)
-    font_username = ImageFont.truetype("./assets/ja-jp.ttf", 25)
-    font_mora = ImageFont.truetype("./assets/ja-jp.ttf", 40)
-    font_rank = ImageFont.truetype("./assets/ja-jp.ttf", 35)
+    font_display = ImageFont.truetype(FONT_PATH, 45)
+    font_username = ImageFont.truetype(FONT_PATH, 25)
+    font_mora = ImageFont.truetype(FONT_PATH, 40)
+    font_rank = ImageFont.truetype(FONT_PATH, 35)
     
     # Helper function for animated images
     def load_image_frames(path):
@@ -47,12 +52,12 @@ async def createProfileCard(
             return None, None, None
 
     bg_animated = bg and bg.lower().endswith('.gif') and os.path.exists(bg)
-    frame_animated = profile_frame and profile_frame.lower().endswith('.gif') and os.path.exists(f"./assets/Profile Frame/{profile_frame}")
+    frame_animated = profile_frame and profile_frame.lower().endswith('.gif') and os.path.exists(f"{FRAMES_DIRECTORY}/{profile_frame}")
 
     # Create an animated profile card
     if bg_animated or frame_animated:  
         bg_frames, bg_durations, bg_disposals = load_image_frames(bg) or ([Image.new('RGBA', (720, 256), (0, 0, 0, 255))], [100], [2])
-        frame_path = f"./assets/Profile Frame/{profile_frame}" if profile_frame else None
+        frame_path = f"{FRAMES_DIRECTORY}/{profile_frame}" if profile_frame else None
         frame_frames, frame_durations, frame_disposals = load_image_frames(frame_path) or ([None], [100], [2])
         
         if len(bg_frames) > 1:
@@ -78,7 +83,7 @@ async def createProfileCard(
             
             # Mora icon
             try:
-                im_mora_icon = Image.open("./assets/mora_icon.png").convert("RGBA")
+                im_mora_icon = Image.open(CURRENCY_ICON_PATH).convert("RGBA")
                 icon_mask = Image.new("L", im_mora_icon.size, 0)
                 d_icon = ImageDraw.Draw(icon_mask)
                 d_icon.ellipse((0, 0) + im_mora_icon.size, fill=255)
@@ -123,15 +128,15 @@ async def createProfileCard(
     try:
         im_bg = Image.open(bg).convert("RGBA")
     except Exception:
-        im_bg = Image.open("./assets/mora_bg.png").convert("RGBA")
+        im_bg = Image.open(DEFAULT_BG_PATH).convert("RGBA")
 
     # Avatar
     im_bg.paste(im_avatar, (40, 30), im_avatar)
-    im_profile_frame = Image.open(f"./assets/Profile Frame/{profile_frame}").convert("RGBA") if profile_frame else None
+    im_profile_frame = Image.open(f"{FRAMES_DIRECTORY}/{profile_frame}").convert("RGBA") if profile_frame else None
 
     # Mora icon
     try:
-        im_mora_icon = Image.open("./assets/mora_icon.png").convert("RGBA")
+        im_mora_icon = Image.open(CURRENCY_ICON_PATH).convert("RGBA")
         icon_mask = Image.new("L", im_mora_icon.size, 0)
         d_icon = ImageDraw.Draw(icon_mask)
         d_icon.ellipse((0, 0) + im_mora_icon.size, fill=255)

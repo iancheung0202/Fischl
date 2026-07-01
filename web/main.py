@@ -43,6 +43,7 @@ def get_dm_channel_with_user(user_id, bot_token):
     )
     
     if response.status_code not in [200, 201]:
+        print(f"Failed to get DM channel with user {user_id}: {response.status_code} - {response.text}")
         return None
     
     channel = response.json()
@@ -52,20 +53,29 @@ def get_dm_channel_with_user(user_id, bot_token):
 def fetch_dm_messages(channel_id, bot_token):
     headers = {"Authorization": f"Bot {bot_token}"}
     messages = []
-    after = None
+    before = None 
     
     while True:
         params = {"limit": 100}
-        if after:
-            params["after"] = after
-        response = requests.get(f"{API_BASE}/channels/{channel_id}/messages", headers=headers, params=params,)
+        if before:
+            params["before"] = before
+        
+        response = requests.get(
+            f"{API_BASE}/channels/{channel_id}/messages", 
+            headers=headers, 
+            params=params
+        )
+        
         if response.status_code != 200:
+            print(f"Error fetching messages: {response.status_code} - {response.text}")
             break
+            
         batch = response.json()
         if not batch:
             break
+            
         messages.extend(batch)
-        after = batch[-1]["id"]
+        before = batch[-1]["id"]
     
     return messages
 
@@ -88,11 +98,14 @@ def extract_closed_tickets(messages):
         embeds = message.get("embeds", [])
         for embed in embeds:
             title = embed.get("title", "")
-            if "closed" in title.lower() and "ticket" in title.lower():
+            if title.startswith("Ticket closed"):
                 category = "Tickets"
+                closing_reason = None
                 fields = embed.get("fields", [])
                 if fields and len(fields) > 0:
                     category = fields[0].get("value", "Others")
+                if fields and len(fields) > 1:
+                    closing_reason = fields[1].get("value", None)
                 description = embed.get("description", "")
                 guild_name = extract_guild_name(description)
                 timestamp = embed.get("timestamp", "")
@@ -122,6 +135,7 @@ def extract_closed_tickets(messages):
                         "timestamp": timestamp_obj,
                         "date_str": timestamp_obj.isoformat() if timestamp_obj else "Unknown",
                         "transcript_link": transcript_link,
+                        "closing_reason": closing_reason,
                     })
     
     tickets.sort(key=lambda x: x["timestamp"] or datetime.min, reverse=True)
@@ -256,6 +270,12 @@ def variables():
     if request.host != "fischl.app":
         abort(404)
     return app.send_static_file("variables.html")
+
+@app.route("/tree")
+def tree():
+    if request.host != "ticket.mysticraft.xyz":
+        abort(404)
+    return app.send_static_file("tree.html")
 
 
 if __name__ == "__main__":

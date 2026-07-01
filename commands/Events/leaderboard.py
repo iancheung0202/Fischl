@@ -3,7 +3,6 @@ import time
 
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
 from commands.Events.domain import get_rank_title
 from commands.Events.helperFunctions import (
@@ -16,7 +15,7 @@ from commands.Events.helperFunctions import (
 )
 from utils.pagination import BasePaginationView
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import MORA_EMOTE, CURRENCY_NAME
         
 
 class Leaderboard(commands.Cog):
@@ -32,7 +31,7 @@ class Leaderboard(commands.Cog):
     )
     @app_commands.choices(
         type=[
-            app_commands.Choice(name="Mora", value="mora"),
+            app_commands.Choice(name=CURRENCY_NAME, value="mora"),
             app_commands.Choice(name="Inventory", value="inventory"),
             app_commands.Choice(name="Kingdom", value="kingdom"),
             app_commands.Choice(name="Minigame Wins", value="wins"),
@@ -93,8 +92,8 @@ class Leaderboard(commands.Cog):
                 "icon": MORA_EMOTE,
                 "color_global": 0xFFD700,
                 "color_server": 0x2A7E19,
-                "title": "Mora Leaderboard",
-                "metric": "their total mora",
+                "title": f"{CURRENCY_NAME} Leaderboard",
+                "metric": f"their total {CURRENCY_NAME.lower()}",
                 "has_rank_title": False,
             },
             "inventory": {

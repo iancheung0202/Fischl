@@ -8,9 +8,9 @@ from firebase_admin import db
 from PIL import Image, ImageEnhance
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.quests import update_quest
-from commands.Events.helperFunctions import get_user_inventory, pin_item, unpin_all_items
+from commands.Events.helperFunctions import get_user_inventory, unpin_all_items
 
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import FRAMES_DIRECTORY, INVENTORY_BG_PATH, ANIMATED_INVENTORY_BG_PATH, DEFAULT_BG_PATH, YES_EMOTE, NO_EMOTE, HMM_EMOTE, COSMETICS_DB
 
 async def pin_title_autocomplete(
     interaction: discord.Interaction,
@@ -30,49 +30,32 @@ async def pin_title_autocomplete(
         title = item[0]
         cost = item[2]
         
-        # Skip free items and filter to this guild
         if cost == 0:
-            continue
+            continue # Skip free items and filter to this guild
         
-        # Try to get role name if title is numeric (role ID)
         role = None
-        try:
+        try: # Try to get role name if title is numeric (role ID)
             role = interaction.guild.get_role(int(title))
         except Exception:
             pass
         
         # Check if title matches current search
-        if (
-            current.lower() in str(title).lower()
-            or (role and current.lower() in role.name.lower())
-        ):
+        if (current.lower() in str(title).lower() or (role and current.lower() in role.name.lower())):
             if title not in items_set:
                 items_set.add(title)
                 if isinstance(title, int) or str(title).isdigit():
-                    items_list.append(
-                        app_commands.Choice(
-                            name=f"Role: {role.name}" if role else f"Role: {title}", 
-                            value=str(title)
-                        )
-                    )
+                    items_list.append(app_commands.Choice(name=f"Role: {role.name}" if role else f"Role: {title}", value=str(title)))
                 else:
-                    items_list.append(
-                        app_commands.Choice(
-                            name=f"Title: {title}", 
-                            value=str(title)
-                        )
-                    )
+                    items_list.append(app_commands.Choice(name=f"Title: {title}", value=str(title)))
 
-    items_list.insert(
-        0, app_commands.Choice(name=f"Unpin my current item only", value="unpin")
-    )
+    items_list.insert(0, app_commands.Choice(name=f"Unpin my current item only", value="unpin"))
     return items_list[:25]
 
 async def title_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/titles")
+    ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles")
     titles = ref.get() or {}
     choices = []
     
@@ -93,17 +76,13 @@ async def title_autocomplete(
             display_name += " (Animated)"
         
         if current.lower() in display_name.lower():
-            choices.append(
-                app_commands.Choice(name=display_name, value=timestamp)
-            )
+            choices.append(app_commands.Choice(name=display_name, value=timestamp))
     
-    choices.insert(0, app_commands.Choice(
-        name="Unset title", value="unset"
-    ))
+    choices.insert(0, app_commands.Choice(name="Unset title", value="unset"))
     return choices[:25]
 
 async def animated_bg_autocomplete(interaction: discord.Interaction, current: str):
-    ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds")
+    ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds")
     bgs = ref.get() or []
     return [
         app_commands.Choice(name=bg, value=bg)
@@ -112,7 +91,7 @@ async def animated_bg_autocomplete(interaction: discord.Interaction, current: st
     ][:25]
 
 async def frame_autocomplete(interaction: discord.Interaction, current: str):
-    ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/profile_frames")
+    ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/profile_frames")
     frames = ref.get() or []
     choices = []
     for frame in frames:
@@ -123,7 +102,7 @@ async def frame_autocomplete(interaction: discord.Interaction, current: str):
     return choices[:25]
 
 async def all_frames_autocomplete(interaction: discord.Interaction, current: str):
-    frames_dir = "./assets/Profile Frame"
+    frames_dir = FRAMES_DIRECTORY
     choices = []
     
     if os.path.exists(frames_dir):
@@ -153,33 +132,33 @@ class ConfirmCustomizationView(discord.ui.View):
     async def on_timeout(self) -> None:
         if self.static_bg_provided:
             try:
-                os.remove(f"./assets/Mora Inventory Background/{self.user_id}-temp.png")
+                os.remove(f"{INVENTORY_BG_PATH}/{self.user_id}-temp.png")
             except Exception:
                 pass
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
     async def confirm_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("<:no:1036810470860013639> You can't confirm this customization!", ephemeral=True)
+            return await interaction.response.send_message(f"{NO_EMOTE} You can't confirm this customization!", ephemeral=True)
 
         # Static background
         if self.static_bg_provided:
             try:
                 try:
-                    os.remove(f"./assets/Mora Inventory Background/{interaction.user.id}.png")
+                    os.remove(f"{INVENTORY_BG_PATH}/{interaction.user.id}.png")
                 except Exception:
                     pass
                 
                 os.rename(
-                    f"./assets/Mora Inventory Background/{interaction.user.id}-temp.png",
-                    f"./assets/Mora Inventory Background/{interaction.user.id}.png"
+                    f"{INVENTORY_BG_PATH}/{interaction.user.id}-temp.png",
+                    f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
                 )
             except Exception as e:
                 return await interaction.response.send_message(
-                    f"<:no:1036810470860013639> Failed to save background: {e}", ephemeral=True
+                    f"{NO_EMOTE} Failed to save background: {e}", ephemeral=True
                 )
 
-        ref = db.reference(f"/Chat Minigames Cosmetics/{self.guild_id}/{interaction.user.id}/selected")
+        ref = db.reference(f"{COSMETICS_DB}/{self.guild_id}/{interaction.user.id}/selected")
         selected = ref.get() or {}
         
         # Animated background
@@ -188,7 +167,7 @@ class ConfirmCustomizationView(discord.ui.View):
         elif self.animated_bg:
             selected["animated_background"] = self.animated_bg
             try:
-                os.remove(f"./assets/Mora Inventory Background/{interaction.user.id}.png")
+                os.remove(f"{INVENTORY_BG_PATH}/{interaction.user.id}.png")
             except Exception:
                 pass
         
@@ -214,7 +193,7 @@ class ConfirmCustomizationView(discord.ui.View):
             desc += " (No visual changes were made)"
 
         embed = discord.Embed(
-            title="<:yes:1036811164891480194> Customization Complete",
+            title=f"{YES_EMOTE} Customization Complete",
             description=desc,
             color=discord.Color.green()
         )
@@ -224,16 +203,16 @@ class ConfirmCustomizationView(discord.ui.View):
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey)
     async def cancel_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("<:no:1036810470860013639> You can't cancel this customization!", ephemeral=True)
+            return await interaction.response.send_message(f"{NO_EMOTE} You can't cancel this customization!", ephemeral=True)
 
         if self.static_bg_provided:
             try:
-                os.remove(f"./assets/Mora Inventory Background/{interaction.user.id}-temp.png")
+                os.remove(f"{INVENTORY_BG_PATH}/{interaction.user.id}-temp.png")
             except Exception:
                 pass
 
         embed = discord.Embed(
-            title="<:no:1036810470860013639> Customization Cancelled",
+            title=f"{NO_EMOTE} Customization Cancelled",
             description=f"{interaction.user.mention}, no changes were applied.",
             color=discord.Color.red()
         )
@@ -275,12 +254,12 @@ class Customize(commands.Cog):
         
         if not any([background, pin_item, animated_background, profile_frame, custom_embed_color, title]):
             return await interaction.followup.send(
-                "<:no:1036810470860013639> Please specify at least one customization option!"
+                f"{NO_EMOTE} Please specify at least one customization option!"
             )
 
         if background and animated_background:
             return await interaction.followup.send(
-                "<:no:1036810470860013639> You can't set both a static and animated background at the same time!"
+                f"{NO_EMOTE} You can't set both a static and animated background at the same time!"
             )
         
         processed_pin = False
@@ -288,27 +267,27 @@ class Customize(commands.Cog):
 
         # Custom embed color
         if custom_embed_color:
-            ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/embed_color")
+            ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/embed_color")
             embed_color = ref.get() or False
             if not embed_color:
                 return await interaction.followup.send(
-                    "<:no:1036810470860013639> You have not unlocked **custom embed color** from the progression track!"
+                    f"{NO_EMOTE} You have not unlocked **custom embed color** from the progression track!"
                 )
 
             hex_color = custom_embed_color.strip().lstrip('#')
             if len(hex_color) != 6:
                 return await interaction.followup.send(
-                    "<:no:1036810470860013639> Invalid hex format! Use 6-digit hex code (e.g. #ff0000)"
+                    f"{NO_EMOTE} Invalid hex format! Use 6-digit hex code (e.g. #ff0000)"
                 )
 
             try:
                 int(hex_color, 16)
             except ValueError:
                 return await interaction.followup.send(
-                    "<:no:1036810470860013639> Invalid hex characters! Use 0-9 and A-F only"
+                    f"{NO_EMOTE} Invalid hex characters! Use 0-9 and A-F only"
                 )
 
-            ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected")
+            ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
             selected = ref_selected.get() or {}
             selected["embed_color_hex"] = hex_color
             ref_selected.set(selected)
@@ -316,7 +295,7 @@ class Customize(commands.Cog):
             color_int = int(hex_color, 16)
             await interaction.followup.send(
                 embed=discord.Embed(
-                    title="<:yes:1036811164891480194> Custom Embed Color Updated",
+                    title=f"{YES_EMOTE} Custom Embed Color Updated",
                     description=f"{interaction.user.mention}, your embed color has been set to `#{hex_color}`!",
                     color=color_int
                 )
@@ -325,7 +304,6 @@ class Customize(commands.Cog):
         # Server title
         if title:
             await self.process_title(interaction, title)
-            processed_global = True
             
         # Pin item
         if pin_item:
@@ -354,7 +332,7 @@ class Customize(commands.Cog):
             if unpinned is None:
                 await interaction.followup.send(
                     embed=discord.Embed(
-                        title="ℹ️ No Pinned Item",
+                        title=f"{HMM_EMOTE} No Pinned Item",
                         description=f"{interaction.user.mention}, you don't have any items pinned!",
                         color=discord.Color.blue()
                     )
@@ -380,7 +358,7 @@ class Customize(commands.Cog):
                 role_mention = f"<@&{pin_item}>" if str(pin_item).isdigit() else pin_item
                 await interaction.followup.send(
                     embed=discord.Embed(
-                        title="<:no:1036810470860013639> Invalid Item",
+                        title=f"{NO_EMOTE} Invalid Item",
                         description=f"**{role_mention}** isn't in your inventory!",
                         color=discord.Color.red()
                     )
@@ -402,7 +380,7 @@ class Customize(commands.Cog):
         
     async def process_title(self, interaction: discord.Interaction, title_timestamp: str):
         ref_selected = db.reference(
-            f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected"
+            f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected"
         )
         selected = ref_selected.get() or {}
 
@@ -410,7 +388,7 @@ class Customize(commands.Cog):
             selected.pop("title", None)
             message = "Your title has been unset."
         else:
-            title_ref = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/titles")
+            title_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles")
             titles = title_ref.get() or {}
             
             if title_timestamp in titles:
@@ -424,7 +402,7 @@ class Customize(commands.Cog):
                 message = f"Title set to: **{title_name}**"
             else:
                 return await interaction.followup.send(
-                    "<:no:1036810470860013639> You don't own this title!",
+                    f"{NO_EMOTE} You don't own this title!",
                     ephemeral=True
                 )
 
@@ -442,47 +420,47 @@ class Customize(commands.Cog):
         profile_frame: str,
         pin_processed: bool
     ):
-        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected")
+        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
         
         # Animated background
         if animated_background:
             owned_bgs = db.reference(
-                f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds"
+                f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds"
             ).get() or []
             if animated_background not in owned_bgs:
                 return await interaction.followup.send(
-                    f"<:no:1036810470860013639> You don't own **{animated_background}** animated background!",
+                    f"{NO_EMOTE} You don't own **{animated_background}** animated background!",
                     ephemeral=True
                 )
-            anim_path = f"assets/Animated Mora Inventory Background/{animated_background}.gif"
+            anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}.gif"
             if not os.path.exists(anim_path):
                 return await interaction.followup.send(
-                    f"<:no:1036810470860013639> File for **{animated_background}** not found!",
+                    f"{NO_EMOTE} File for **{animated_background}** not found!",
                     ephemeral=True
                 )
 
         # Profile frame
         if profile_frame:
             owned_frames = db.reference(
-                f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/profile_frames"
+                f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/profile_frames"
             ).get() or []
             if profile_frame not in owned_frames:
                 return await interaction.followup.send(
-                    f"<:no:1036810470860013639> You don't own **{profile_frame.split('.')[0]}** profile frame!",
+                    f"{NO_EMOTE} You don't own **{profile_frame.split('.')[0]}** profile frame!",
                     ephemeral=True
                 )
-            frame_path = f"assets/Profile Frame/{profile_frame}"
+            frame_path = f"{FRAMES_DIRECTORY}/{profile_frame}"
             if not os.path.exists(frame_path):
                 return await interaction.followup.send(
-                    f"<:no:1036810470860013639> File for **{profile_frame.split('.')[0]}** not found!",
+                    f"{NO_EMOTE} File for **{profile_frame.split('.')[0]}** not found!",
                     ephemeral=True
                 )
 
         # Static background
         temp_static_path = None
         if background:
-            temp_static_path = f"./assets/Mora Inventory Background/{interaction.user.id}-temp.png"
+            temp_static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}-temp.png"
             try:
                 await background.save(temp_static_path)
                 image = Image.open(temp_static_path)
@@ -507,7 +485,7 @@ class Customize(commands.Cog):
                 im_output = enhancer.enhance(0.4)
                 im_output.save(temp_static_path)
             except Exception as e:
-                return await interaction.followup.send(f"<:no:1036810470860013639> Background processing failed: {e}")
+                return await interaction.followup.send(f"{NO_EMOTE} Background processing failed: {e}")
 
         bg_path = None
         if background:
@@ -515,18 +493,18 @@ class Customize(commands.Cog):
         elif animated_background:
             bg_path = anim_path
         else:
-            static_path = f"./assets/Mora Inventory Background/{interaction.user.id}.png"
+            static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
             if os.path.exists(static_path):
                 bg_path = static_path
             else:
                 current_anim = current_selected.get("animated_background")
                 if current_anim:
-                    anim_path = f"assets/Animated Mora Inventory Background/{current_anim}.gif"
+                    anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{current_anim}.gif"
                     if os.path.exists(anim_path):
                         bg_path = anim_path
 
         if bg_path is None:
-            bg_path = "./assets/mora_bg.png"  # Default background
+            bg_path = DEFAULT_BG_PATH  # Default background
 
         frame_path = None
         if profile_frame:
@@ -584,28 +562,28 @@ class Customize(commands.Cog):
     ) -> None:
         await interaction.response.defer(thinking=True)
         
-        frame_path = f"./assets/Profile Frame/{profile_frame}"
+        frame_path = f"{FRAMES_DIRECTORY}/{profile_frame}"
         if not os.path.exists(frame_path):
             return await interaction.followup.send(
-                f"<:no:1036810470860013639> Profile frame **{profile_frame.split('.')[0]}** not found!"
+                f"{NO_EMOTE} Profile frame **{profile_frame.split('.')[0]}** not found!"
             )
         
-        ref_selected = db.reference(f"/Chat Minigames Cosmetics/{interaction.guild.id}/{interaction.user.id}/selected")
+        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
         bg_path = None
         
-        static_path = f"./assets/Mora Inventory Background/{interaction.user.id}.png"
+        static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
         if os.path.exists(static_path):
             bg_path = static_path
         else:
             current_anim = current_selected.get("animated_background")
             if current_anim:
-                anim_path = f"./assets/Animated Mora Inventory Background/{current_anim}.gif"
+                anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{current_anim}.gif"
                 if os.path.exists(anim_path):
                     bg_path = anim_path
         
         if bg_path is None:
-            bg_path = "./assets/mora_bg.png"
+            bg_path = DEFAULT_BG_PATH
         
         try:
             filename = await createProfileCard(
@@ -637,7 +615,7 @@ class Customize(commands.Cog):
                 await interaction.followup.send(embed=embed)
             else:
                 await interaction.followup.send(
-                    f"Preview of **{profile_frame.split('.')[0]}** frame:",
+                    f"{NO_EMOTE} Preview of **{profile_frame.split('.')[0]}** frame:",
                     file=discord.File(filename)
                 )
                 
@@ -648,7 +626,7 @@ class Customize(commands.Cog):
                 
         except Exception as e:
             await interaction.followup.send(
-                f"<:no:1036810470860013639> Failed to generate preview: {e}"
+                f"{NO_EMOTE} Failed to generate preview: {e}"
             )
 
 async def setup(bot: commands.Bot) -> None:

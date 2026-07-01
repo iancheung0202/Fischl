@@ -8,8 +8,7 @@ from typing import Optional
 from firebase_admin import db
 from utils.commands import SlashCommand
 
-
-MORA_EMOTE = "<:MORA:1364030973611610205>"
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, SYSTEM_DB, MORA_CHEST_UPGRADE_TIMES
 
 # Progression helper functions
 
@@ -125,7 +124,7 @@ async def get_chest_upgrades(pool: asyncpg.Pool, gid: int, uid: int) -> int:
             "SELECT chest_upgrades FROM minigame_progression WHERE gid = $1 AND uid = $2",
             gid, uid
         )
-    return val if val is not None else 4
+    return val if val is not None else MORA_CHEST_UPGRADE_TIMES
 
 async def get_chest_bonus_chance(pool: asyncpg.Pool, gid: int, uid: int) -> int:
     garten_level = await get_building_level(pool, gid, uid, "garten")
@@ -611,7 +610,7 @@ async def get_guild_prestige_leaderboard(pool: asyncpg.Pool, gid: int, limit: in
 
 def get_minigame_list(channel_id):
     """Get list of minigames enabled in a channel."""
-    ref = db.reference(f"/Chat Minigames System/{channel_id}")
+    ref = db.reference(f"{SYSTEM_DB}/{channel_id}")
     data = ref.get() or {}
     return data.get("events", [])
 
@@ -630,7 +629,7 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
     
     total_mora = await get_guild_mora(pool, user_id, guild_id)
 
-    milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+    milestones_ref = db.reference(f"{REWARDS_DB}/{guild_id}/milestones")
     milestones = milestones_ref.get() or []
     
     user_inventory = await get_user_inventory(pool, user_id, guild_id)
@@ -723,7 +722,7 @@ class PersistentXPQuestInfoView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if str(interaction.user.id) not in interaction.message.content and str(interaction.user.id) not in interaction.message.embeds[0].description:
-            await interaction.response.send_message("❌ This isn't your notification!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This isn't your notification!", ephemeral=True)
         else:
             await interaction.message.delete()
         
@@ -786,7 +785,7 @@ class TierRewardsView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if str(interaction.user.id) not in interaction.message.content and str(interaction.user.id) not in interaction.message.embeds[0].description:
-            await interaction.response.send_message("❌ This isn't your notification!", ephemeral=True)
+            await interaction.response.send_message(f"{NO_EMOTE} This isn't your notification!", ephemeral=True)
         else:
             await interaction.message.delete()
             
