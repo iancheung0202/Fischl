@@ -94,7 +94,7 @@ class Select(discord.ui.Select):
                 "condition": lambda cmd: (
                     "customize" in cmd.name
                     or "mora" in cmd.name
-                    or "lb" in cmd.name
+                    or "leaderboard" in cmd.name
                     or "buy" in cmd.name
                     or "shop" in cmd.name
                     or "milestones" in cmd.name
@@ -117,6 +117,16 @@ class Select(discord.ui.Select):
                 "condition": lambda cmd: "boosterrole" in cmd.name,
                 "formatter": formatter
             },
+            "vanity": {
+                "title": "Vanity/Tag Roles",
+                "emoji": "👤",
+                "description": f"We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
+                "condition": lambda cmd: (
+                    "vanity" in cmd.name
+                    or "tag" in cmd.name
+                ),
+                "formatter": formatter
+            },
             "utility": {
                 "title": "Utility Commands",
                 "emoji": "🛠️",
@@ -132,13 +142,6 @@ class Select(discord.ui.Select):
                 ),
                 "formatter": utility_formatter
             },
-            "vanity": {
-                "title": "Vanity/Tag Roles",
-                "emoji": "👤",
-                "description": f"We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
-                "condition": lambda cmd: False,  # Static entry
-                "formatter": lambda cmd: ""
-            },
         }
 
         content = {cat: "" for cat in categories}
@@ -147,8 +150,6 @@ class Select(discord.ui.Select):
                 if cat_info["condition"](command):
                     content[cat_name] += cat_info["formatter"](command)
                     break
-
-        content["vanity"] = "-# <:LuckySad:1344057325341642862> We’d like to inform you that the vanity feature will **no longer be available through the main Fischl bot** due to the requirement for special Discord intents. Fortunately, this functionality has been moved to a separate bot.\n\n> **To use these awesome features, kindly invite our extension bot using [this link](https://discord.com/oauth2/authorize?client_id=1033190899229929542&permissions=8&integration_type=0&scope=bot+applications.commands)**. <:PinkCelebrate:1204614140044386314>\n\n*After inviting the bot, you can use `/vanity enable` or `/tag enable` to setup the system(s)!*"
 
         self.lyst = [
             [content[cat], categories[cat]["title"], categories[cat]["emoji"], categories[cat]["description"]]

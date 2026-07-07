@@ -5,4 +5,5 @@ web/config/
 __pycache__/
 .env
 *enabledChannels.py
-
+*tagEnabledGuilds.py
+*enabledGuilds.py

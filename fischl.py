@@ -1,3 +1,6 @@
+import sys
+sys.dont_write_bytecode = True
+
 import discord
 import os
 import firebase_admin
@@ -18,7 +21,6 @@ default_app = firebase_admin.initialize_app(cred, {"databaseURL": DATABASE_URL})
 class Fischl(commands.AutoShardedBot):
     def __init__(self):
         intents = discord.Intents.all()
-        intents.presences = False
         super().__init__(
             command_prefix="-",
             intents=intents,
@@ -39,7 +41,7 @@ class Fischl(commands.AutoShardedBot):
         for directory in ["cogs", "commands", "shared"]:
             for path, _, files in os.walk(directory):
                 for name in files:
-                    if name.endswith(".py"):
+                    if name.endswith(".py") and "tagEnabledGuilds" not in name:
                         try:
                             extension = os.path.join(path, name).replace("/", ".")[:-3]
                             await self.load_extension(extension)
