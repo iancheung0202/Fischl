@@ -88,7 +88,7 @@ async def process_pending_stock_edits(guild_id: int):
                 break
         
         if item_found:
-            guild_ref.child(guild_key).update({"Rewards": rewards_list})
+            guild_ref.set(rewards_list) 
             processed_count += 1
         else:
             continue
@@ -102,14 +102,22 @@ async def purchase_autocomplete(
     current: str,
 ):
     ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-    rewards = ref.get() or []
+    rewards_data = ref.get() or []
     choices = []
 
+    if isinstance(rewards_data, dict):
+        rewards = list(rewards_data.values())
+    else:
+        rewards = rewards_data
+
     for reward in rewards:
+        if not isinstance(reward, (list, tuple)) or len(reward) < 3:
+            continue
+
         reward_name = reward[0]
         reward_cost = reward[2]
 
-        if isinstance(reward_name, int) or reward_name.isdigit():
+        if isinstance(reward_name, int) or str(reward_name).isdigit():
             role = interaction.guild.get_role(int(reward_name))
             display_name = f"Role: {role.name}" if role else "Unknown Role"
         else:
@@ -117,13 +125,12 @@ async def purchase_autocomplete(
 
         choice_name = f"{display_name} (Cost: {reward_cost})"
 
-        if current.lower() in reward_name.lower() or (
-            isinstance(reward_name, int)
-            or reward_name.isdigit()
+        if current.lower() in str(reward_name).lower() or (
+            (isinstance(reward_name, int) or str(reward_name).isdigit())
             and role
             and current.lower() in role.name.lower()
         ):
-            choices.append(app_commands.Choice(name=choice_name, value=reward_name))
+            choices.append(app_commands.Choice(name=choice_name[:100], value=str(reward_name)))
 
     return choices[:25]
 
@@ -209,14 +216,28 @@ class ConfirmPurchaseView(discord.ui.View):
             return
 
         ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        daily = ref.get() or []
-        rewards = daily
+        rewards_data = ref.get() or []
+        
+        if isinstance(rewards_data, dict):
+            rewards = list(rewards_data.values())
+        else:
+            rewards = rewards_data
 
-        x = 0
-        for i in rewards:
-            if i[0] == roleName:
+        x = None
+        for idx, i in enumerate(rewards):
+            if isinstance(i, (list, tuple)) and i[0] == roleName:
+                x = idx
                 break
-            x += 1
+                
+        if x == None:
+            embed = discord.Embed(
+                title="Error",
+                description="This item could not be found in the shop anymore.",
+                color=discord.Color.red()
+            )
+            await interaction.edit_original_response(embed=embed, view=None)
+            return
+
         itemCost = int(rewards[x][2])
         import copy
         ogRewards = copy.deepcopy(rewards)

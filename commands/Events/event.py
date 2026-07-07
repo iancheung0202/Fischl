@@ -2159,43 +2159,114 @@ async def matchThePFP(channel, client):
     asyncio.create_task(cleanup())
 
 
-### --- WHO SAID IT --- ###
+### --- WHO SAID THAT --- ###
+
+WHO_SAID_THAT_MAX_SUBMISSIONS = 5
+WHO_SAID_THAT_SUBMISSION_WINDOW = 60
 
 class WhoSaidItState:
-    def __init__(self, correct_author, jump_url, start_time=None):
-        self.correct_author = correct_author
-        self.jump_url = jump_url
-        self.participants = []
+    def __init__(self, reward, start_time=None):
+        self.reward = reward
+        self.submissions = {}  # user_id -> phrase
+        self.guessers = []
+        self.phase = "submission"  # "submission" -> "guessing"
+        self.finalized = False
+        self.correct_user_id = None
         self.start_time = start_time
 
-class WhoSaidItButton(discord.ui.Button):
-    def __init__(self, display_name, target_author):
-        super().__init__(label=display_name, style=discord.ButtonStyle.grey)
-        self.target_author = target_author
+def whoSaidThatSubmissionEmbed(reward, count):
+    return discord.Embed(
+        title="Who Said That?",
+        description=(
+            f"Click below to submit a phrase! Once **{WHO_SAID_THAT_MAX_SUBMISSIONS} submissions** "
+            f"come in or after **1 minute** passes with 2+ entries, a random phrase gets revealed and the "
+            f"first to guess who said it wins {MORA_EMOTE} `{reward}`!\n\n**Submissions:** `{count}`"
+        ),
+        color=0x27F5B4
+    )
 
-    async def callback(self, interaction: discord.Interaction):
-        game_state = active_who_said_it_games.get(interaction.message.id)
-        if not game_state:
+class WhoSaidThatModal(discord.ui.Modal, title="Who Said That?"):
+    phrase_input = discord.ui.TextInput(
+        label="Enter a phrase about yourself",
+        style=discord.TextStyle.short,
+        placeholder="e.g. I've never broken a bone in my life",
+        max_length=200
+    )
+
+    def __init__(self, game_message, game_state):
+        super().__init__()
+        self.game_message = game_message
+        self.game_state = game_state
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.game_state.finalized or self.game_state.phase != "submission":
             await interaction.response.send_message(f"{NO_EMOTE} This game session has expired!", ephemeral=True)
             return
 
-        if interaction.user.id in game_state.participants:
-            await interaction.response.send_message(f"{NO_EMOTE} You already guessed!", ephemeral=True)
+        if interaction.user.id in self.game_state.submissions:
+            await interaction.response.send_message(f"{NO_EMOTE} You've already submitted a phrase!", ephemeral=True)
             return
 
-        game_state.participants.append(interaction.user.id)
+        self.game_state.submissions[interaction.user.id] = str(self.phrase_input)
+
+        await interaction.response.send_message(f"{YES_EMOTE} Your phrase has been recorded!", ephemeral=True)
+        await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
+
+        count = len(self.game_state.submissions)
+        try:
+            await self.game_message.edit(embed=whoSaidThatSubmissionEmbed(self.game_state.reward, count))
+        except discord.NotFound:
+            return
+
+        if count >= WHO_SAID_THAT_MAX_SUBMISSIONS and not self.game_state.finalized:
+            self.game_state.finalized = True
+            await startWhoSaidThatGuessing(self.game_message, interaction.client, self.game_state)
+
+class WhoSaidThatSubmitButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="Submit a Phrase", emoji="✍️", style=discord.ButtonStyle.blurple)
+
+    async def callback(self, interaction: discord.Interaction):
+        game_state = active_who_said_it_games.get(interaction.message.id)
+        if not game_state or game_state.finalized or game_state.phase != "submission":
+            await interaction.response.send_message(f"{NO_EMOTE} This game session has expired!", ephemeral=True)
+            return
+
+        if interaction.user.id in game_state.submissions:
+            await interaction.response.send_message(f"{NO_EMOTE} You've already submitted a phrase!", ephemeral=True)
+            return
+
+        await interaction.response.send_modal(WhoSaidThatModal(interaction.message, game_state))
+
+class WhoSaidThatGuessButton(discord.ui.Button):
+    def __init__(self, display_name, target_user_id):
+        super().__init__(label=display_name, style=discord.ButtonStyle.grey)
+        self.target_user_id = target_user_id
+
+    async def callback(self, interaction: discord.Interaction):
+        game_state = active_who_said_it_games.get(interaction.message.id)
+        if not game_state or game_state.phase != "guessing":
+            await interaction.response.send_message(f"{NO_EMOTE} This game session has expired!", ephemeral=True)
+            return
+
+        if interaction.user.id in game_state.guessers:
+            await interaction.response.send_message(f"{NO_EMOTE} You already guessed!", ephemeral=True)
+            return
         
-        if self.target_author == game_state.correct_author:
-            reward = int(interaction.message.embeds[0].description.split("`")[1])
-            
-            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, reward, interaction.channel.id, interaction.guild.id, interaction.client)
+        if interaction.user.id == game_state.correct_user_id:
+            await interaction.response.send_message(f"{NO_EMOTE} Unfortunately, your phrase is chosen, so you are not allowed to guess! Don't spoil the fun!", ephemeral=True)
+            return
+
+        game_state.guessers.append(interaction.user.id)
+
+        if self.target_user_id == game_state.correct_user_id:
+            text, addedMora = await addMora(interaction.client.pool, interaction.user.id, game_state.reward, interaction.channel.id, interaction.guild.id, interaction.client)
             user_display = await userAndTitle(interaction.user.id, interaction.guild.id, interaction.client.pool)
-            embed = discord.Embed(
-                title="Who Said That?",
-                description=f"{user_display} guessed **{self.label}** correctly and earned {MORA_EMOTE} `{text}`.\n\n[Message Jump URL]({game_state.jump_url})",
-                color=discord.Color.green()
-            )
-            
+
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            embed.description += f"\n\n🏆 {user_display} guessed **{self.label}** correctly and earned {MORA_EMOTE} `{text}`!"
+
             for child in self.view.children:
                 child.disabled = True
                 if child.label == self.label:
@@ -2210,49 +2281,32 @@ class WhoSaidItButton(discord.ui.Button):
             await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
-async def whoSaidIt(channel, client):
-    selected_messages = []
-    unique_authors = set()
-    
-    async for message in channel.history(limit=100):
-        if (message.author != client.user and
-            not message.author.bot and
-            message.content.strip() and
-            message.author.id not in unique_authors):
-            
-            selected_messages.append(message)
-            unique_authors.add(message.author.id)
-            if len(selected_messages) == 3:
-                break
+async def startWhoSaidThatGuessing(game_message, client, game_state):
+    game_state.phase = "guessing"
+    chosen_user_id, chosen_phrase = random.choice(list(game_state.submissions.items()))
+    game_state.correct_user_id = chosen_user_id
 
-    if len(selected_messages) < 3:
-        return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique messages for the game."))
-
-    target_message = random.choice(selected_messages)
-    options = selected_messages
+    user_ids = list(game_state.submissions.keys())
+    random.shuffle(user_ids)
 
     view = View()
-    for msg in options:
-        view.add_item(WhoSaidItButton(
-            display_name=msg.author.display_name,
-            target_author=msg.author.id
-        ))
+    for uid in user_ids:
+        member = game_message.guild.get_member(uid)
+        if member is None:
+            try:
+                member = await game_message.guild.fetch_member(uid)
+            except discord.NotFound:
+                member = None
+        display_name = member.display_name if member else "Unknown User"
+        view.add_item(WhoSaidThatGuessButton(display_name=display_name, target_user_id=uid))
 
-    reward = random.randint(3000, 5000)
     embed = discord.Embed(
         title="Who Said That?",
-        description=f"The first to guess wins {MORA_EMOTE} `{reward}`. **You can only guess once!**",
+        description=f"Someone submitted this phrase:\n\n> {chosen_phrase}\n\nFirst to guess who said it wins {MORA_EMOTE} `{game_state.reward}`!",
         color=discord.Color.light_grey()
     )
-    embed.add_field(name="Message Content", value=target_message.content, inline=False)
 
-    game_message = await channel.send(embed=embed, view=view)
-
-    active_who_said_it_games[game_message.id] = WhoSaidItState(
-        correct_author=target_message.author.id,
-        jump_url=target_message.jump_url,
-        start_time=time.time()
-    )
+    await game_message.edit(embed=embed, view=view)
 
     async def cleanup():
         await asyncio.sleep(300)
@@ -2264,6 +2318,59 @@ async def whoSaidIt(channel, client):
             ), view=None)
 
     asyncio.create_task(cleanup())
+
+async def whoSaidIt(channel, client):
+    reward = random.randint(3000, 5000)
+
+    view = View()
+    view.add_item(WhoSaidThatSubmitButton())
+
+    game_message = await channel.send(embed=whoSaidThatSubmissionEmbed(reward, 0), view=view)
+
+    game_state = WhoSaidItState(reward=reward, start_time=time.time())
+    active_who_said_it_games[game_message.id] = game_state
+
+    async def resolve_submission_window():
+        await asyncio.sleep(WHO_SAID_THAT_SUBMISSION_WINDOW)
+
+        if game_message.id not in active_who_said_it_games:
+            return
+
+        state = active_who_said_it_games[game_message.id]
+        if state.finalized or state.phase != "submission":
+            return
+
+        count = len(state.submissions)
+
+        if count >= 2:
+            state.finalized = True
+            await startWhoSaidThatGuessing(game_message, client, state)
+        elif count == 1:
+            state.finalized = True
+            uid, _ = next(iter(state.submissions.items()))
+
+            text, addedMora = await addMora(client.pool, uid, state.reward, channel.id, channel.guild.id, client)
+            user_display = await userAndTitle(uid, channel.guild.id, client.pool)
+
+            embed = discord.Embed(
+                title="Who Said That?",
+                description=(
+                    f"Not enough players joined in time! Since {user_display} was the only one who submitted "
+                    f"a phrase, they win {MORA_EMOTE} `{text}` by default."
+                ),
+                color=discord.Color.green()
+            )
+            await game_message.edit(embed=embed, view=None)
+            await update_quest(uid, channel.guild.id, channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, client)
+            del active_who_said_it_games[game_message.id]
+        else:
+            del active_who_said_it_games[game_message.id]
+            await game_message.edit(embed=discord.Embed(
+                description="⌛ This game session has timed out",
+                color=discord.Color.dark_grey()
+            ), view=None)
+
+    asyncio.create_task(resolve_submission_window())
 
 
 ### --- KNOW YOUR MEMBERS --- ###
@@ -2691,9 +2798,11 @@ async def twoTruthsAndALie(channel, client):
         if not user.bot: break
 
     view = View()
+    view.add_item(TwoTruthAndALieButton())
     user_display = await userAndTitle(user.id, channel.guild.id, client.pool)
     
     await channel.send(
+        content=f"{user.mention}, you have been put in the hot seat!",
         embed=discord.Embed(
             title="Two Truths, One Lie",
             description=f"{user_display} will be entering their **three statements**. First to determine which statement is a lie wins {MORA_EMOTE} `{reward}`!",

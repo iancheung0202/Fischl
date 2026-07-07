@@ -441,7 +441,6 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
     async def on_submit(self, interaction: discord.Interaction):
         ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
         originalList = ref.get() or []
-        found_key = None
             
         item_found = False
         multiplier_map = {"k": 10**3, "m": 10**6, "b": 10**9, "t": 10**12}
@@ -451,6 +450,9 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
                 item_found = True
                 try:
                     cost_str = str(self.cost).lower().strip()
+                    
+                    if not cost_str:
+                        raise ValueError("Cost cannot be empty")
                     
                     if cost_str[-1] in multiplier_map:
                         new_cost = float(cost_str[:-1]) * multiplier_map[cost_str[-1]]
@@ -478,8 +480,9 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
                 color=discord.Color.red(),
             )
             
-        if found_key and item_found and "Updated" in self.update.description:
+        if item_found and "Updated" in getattr(self.update, "description", ""):
             ref.set(originalList)
+
         self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
         self.on_submit_interaction = interaction
         self.stop()
@@ -674,7 +677,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                     color=discord.Color.red(),
                 )
             
-            if found_key and item_found:
+            if item_found and "Updated" in getattr(self.update, "description", ""):
                 ref.set(originalList)
             
         self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
