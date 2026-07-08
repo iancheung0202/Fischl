@@ -8,41 +8,9 @@ from firebase_admin import db
 from PIL import Image, ImageEnhance, ImageSequence
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, SYSTEM_DB
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, SYSTEM_DB, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES
 
-letter_emojis = [ "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿" ] 
-letterList = [ "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z" ]
-letterString = "".join(letterList)
-
-minigame_titles = [
-    "Boss Battle Blitz",
-    "Quicktype Racer",
-    "Egg Walk",
-    "Match The Profile Picture",
-    "Split or Steal",
-    "Reverse Number Quicktype",
-    "Pick Up Ice Cream",
-    "Snatch The Watermelon",
-    "Guess The Mystery Number",
-    "Memory Game",
-    "Who Said That",
-    "Unscramble Words",
-    "Two Truths, One Lie",
-    "Currency Counting",
-    "Rock Paper Scissors Duel",
-    "Roll A Dice",
-    "Group Blackjack",
-    "Teyvat Emoji Riddles",
-    "Galaxy Emoji Riddles",
-    "Double or Keep",
-    "Know Your Members",
-    "Hangman",
-    "Mora Auction House",
-    "Mora Heist",
-    "Simple Math Game",
-    "Tik Tac Tok"
-]
-
+letterString = "".join(LETTER_LIST)
 
 class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
 
@@ -65,7 +33,7 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
         for letter in list(str(self.letter)):
             self.toggleLetter = str(letter).upper()
 
-            if self.toggleLetter in letterList:
+            if self.toggleLetter in LETTER_LIST:
                 if self.toggleLetter in originalList:
                     originalList.remove(self.toggleLetter)
                 else:
@@ -88,7 +56,7 @@ class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
                     if self.toggleLetter in originalList
                     else f"{emoji} - {title} {NO_EMOTE}"
                     for self.toggleLetter, emoji, title in zip(
-                        letterString, letter_emojis, minigame_titles
+                        letterString, LETTER_EMOTES, MINIGAME_TITLES
                     )
                 ]
             )
@@ -154,7 +122,7 @@ class EnableEventButton(discord.ui.Button):
         ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
         data = {
             "frequency": frequency_value,
-            "events": letterList,  # All enabled by default
+            "events": LETTER_LIST,  # All enabled by default
         }
         ref.set(data)
 
@@ -175,10 +143,10 @@ class EnableEventButton(discord.ui.Button):
         string = "\n> ".join(
             [
                 f"{emoji} - {title} {YES_EMOTE}"
-                if letter in letterList
+                if letter in LETTER_LIST
                 else f"{emoji} - {title} {NO_EMOTE}"
                 for letter, emoji, title in zip(
-                    letterString, letter_emojis, minigame_titles
+                    letterString, LETTER_EMOTES, MINIGAME_TITLES
                 )
             ]
         )
@@ -296,7 +264,7 @@ class FrequencySelect(discord.ui.Select):
                 if letter in events
                 else f"{emoji} - {title} {NO_EMOTE}"
                 for letter, emoji, title in zip(
-                    letterString, letter_emojis, minigame_titles
+                    letterString, LETTER_EMOTES, MINIGAME_TITLES
                 )
             ]
         )
@@ -381,7 +349,7 @@ class EventSystem(commands.GroupCog, name="events"):
                     if letter in events
                     else f"{emoji} - {title} {NO_EMOTE}"
                     for letter, emoji, title in zip(
-                        letterString, letter_emojis, minigame_titles
+                        letterString, LETTER_EMOTES, MINIGAME_TITLES
                     )
                 ]
             )

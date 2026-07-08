@@ -9,7 +9,7 @@ from commands.CoOp.coOpWuwaJinhsi import CoOpButtonViewWuwa
 from commands.CoOp.coOpWuwaJinhsi import CoOpViewWuwa
 
 from commands.Events.event import UserSelectView, PersistentChestInfoView, FeedbackView
-from commands.Events.helperFunctions import PersistentXPQuestInfoView, TierRewardsView
+from commands.Events.helperFunctions import TierRewardsView
 
 from commands.Custom.celestial import RefreshStaffViewCelestial, LeaksAccessCelestial
 from commands.Custom.levelUp import ShowPerksBulletin
@@ -33,7 +33,6 @@ views = [
     FeedbackView,
     AutoResponseApprovalView,
     RoleApprovalView,
-    PersistentXPQuestInfoView,
     TierRewardsView,
     CloseTicketButton,
     TicketAdminButtons,

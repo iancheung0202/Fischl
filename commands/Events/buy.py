@@ -9,7 +9,7 @@ from firebase_admin import db
 from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, HISTORY_DB, SHOP_EDITS_PENDING_DB
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, HISTORY_DB, SHOP_EDITS_PENDING_DB, BALANCE_COMMAND, CONFUSED_EMOTE
 
 global_purchase_queue = asyncio.Queue()
 
@@ -266,7 +266,7 @@ class ConfirmPurchaseView(discord.ui.View):
         if itemCost > total_available:
             embed = discord.Embed(
                 title=f"{SHRUG_EMOTE} Insufficient Balance",
-                description=f"We couldn't assign you **{role_mention}**. Please check your {MORA_EMOTE} balance using {SlashCommand('mora')} to confirm if you have enough for this purchase.",
+                description=f"We couldn't assign you **{role_mention}**. Please check your {MORA_EMOTE} balance using {SlashCommand(BALANCE_COMMAND)} to confirm if you have enough for this purchase.",
                 color=discord.Color.red(),
             )
             await interaction.edit_original_response(embed=embed, view=None)
@@ -305,7 +305,7 @@ class ConfirmPurchaseView(discord.ui.View):
             await add_inventory_item(interaction.client.pool, interaction.user.id, interaction.guild.id, title, desc, cost, timestamp, pinned=False)
             await subtractGuildMora(interaction.client.pool, interaction.user.id, itemCost, interaction.channel.id, interaction.guild.id)
             
-            xp_earned = f"\n> <:PinkConfused:1204614149628498010> You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"
+            xp_earned = f"\n> {CONFUSED_EMOTE} You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"
                 
             embed = discord.Embed(
                 title=f"{HAPPY_EMOTE} Successful Purchase",

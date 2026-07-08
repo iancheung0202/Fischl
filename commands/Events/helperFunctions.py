@@ -8,7 +8,7 @@ from typing import Optional
 from firebase_admin import db
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, SYSTEM_DB, MORA_CHEST_UPGRADE_TIMES
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, SYSTEM_DB, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
 
 # Progression helper functions
 
@@ -678,56 +678,9 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
                     color=discord.Color.gold()
                 )
             )
-
-class PersistentXPQuestInfoView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="What is this?",
-        style=discord.ButtonStyle.grey,
-        custom_id="persistent_xp_quest_info_view",
-        emoji="<:PinkConfused:1204614149628498010>",
-    )
-    async def persistentXPQuestInfoView(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        embed = discord.Embed(
-            title="What Are XP & Quests? <:AlbedoQuestion:1191574408544923799>",
-            color=discord.Color.random()
-        )
-        embed.add_field(
-            name="<:NingguangStonks:1265470501707321344> Quests ➜ XP",
-            value="-# Complete daily, weekly, and monthly quests to **earn XP** just by playing, winning, or gifting!",
-            inline=True
-        )
-        embed.add_field(
-            name="<:CharlotteHeart:1191594476263702528> XP ➜ Rewards",
-            value="-# Earning XP moves you up the Progression Track to **unlock Mora boosts, chest upgrades, animated backgrounds**, and more!",
-            inline=True
-        )
-        embed.add_field(
-            name="<:MelonBread_KeqingNote:1342924552392671254> Track in One Place",
-            value=f"-# Use {SlashCommand('mora')} to view **quests, XP, and rewards**. Each season's track lasts **3 months**!",
-            inline=True
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(
-        style=discord.ButtonStyle.grey,
-        custom_id="persistent_info_delete",
-        emoji="<a:delete:1372423674640207882>",
-    )
-    async def persistent_info_delete(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if str(interaction.user.id) not in interaction.message.content and str(interaction.user.id) not in interaction.message.embeds[0].description:
-            await interaction.response.send_message(f"{NO_EMOTE} This isn't your notification!", ephemeral=True)
-        else:
-            await interaction.message.delete()
         
 class TierRewardsView(discord.ui.View):
-    def __init__(self, free_embed=discord.Embed(title="This button has timed out.", color=discord.Color.red()), elite_embed=discord.Embed(color=0xFF0000)):
+    def __init__(self, free_embed=discord.Embed(title="Button expired", color=discord.Color.red()), elite_embed=discord.Embed(color=0xFF0000)):
         super().__init__(timeout=None)
         self.free_embed = free_embed
         self.elite_embed = elite_embed
@@ -745,36 +698,17 @@ class TierRewardsView(discord.ui.View):
         elif self.free_embed.title is not None:
             await interaction.response.send_message(embeds=[self.free_embed], ephemeral=True)
         else:
-            await interaction.response.send_message("You did not earn any tiers from this XP gain.", ephemeral=True)
+            await interaction.response.send_message(embed=discord.Embed(description=f"{CONFUSED_EMOTE} You did not earn any tiers from this XP gain."), ephemeral=True)
             
     @discord.ui.button(
         style=discord.ButtonStyle.grey,
         custom_id="persistent_xp_quest_info_view_new",
-        emoji="<:PinkConfused:1204614149628498010>",
+        emoji=CONFUSED_EMOTE
     )
     async def persistentXPQuestInfoViewNew(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        embed = discord.Embed(
-            title="What Are XP & Quests? <:AlbedoQuestion:1191574408544923799>",
-            color=discord.Color.random()
-        )
-        embed.add_field(
-            name="<:NingguangStonks:1265470501707321344> Quests ➜ XP",
-            value="-# Complete daily, weekly, and monthly quests to **earn XP** just by playing, winning, or gifting!",
-            inline=True
-        )
-        embed.add_field(
-            name="<:CharlotteHeart:1191594476263702528> XP ➜ Rewards",
-            value="-# Earning XP moves you up the Progression Track to **unlock Mora boosts, chest upgrades, animated backgrounds**, and more!",
-            inline=True
-        )
-        embed.add_field(
-            name="<:MelonBread_KeqingNote:1342924552392671254> Track in One Place",
-            value=f"-# Use {SlashCommand('mora')} to view **quests, XP, and rewards**. Each season's track lasts **3 months**!",
-            inline=True
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=XP_QUEST_EMBED, ephemeral=True)
 
     @discord.ui.button(
         style=discord.ButtonStyle.grey,
@@ -785,7 +719,7 @@ class TierRewardsView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if str(interaction.user.id) not in interaction.message.content and str(interaction.user.id) not in interaction.message.embeds[0].description:
-            await interaction.response.send_message(f"{NO_EMOTE} This isn't your notification!", ephemeral=True)
+            await interaction.response.send_message(embed=discord.Embed(description=f"{NO_EMOTE} This isn't your notification!", color=discord.Color.red()), ephemeral=True)
         else:
             await interaction.message.delete()
             

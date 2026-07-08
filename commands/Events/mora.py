@@ -21,7 +21,8 @@ from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, QUEST_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, QUEST_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
+from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
     history = await get_user_mora_history(pool, user_id, guild_id)
@@ -65,7 +66,7 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
         f"`📦` {MORA_CHEST_NAME}s": chest_info,
         "`📅` First Played": f"<t:{first_played}:D>",
         "`💰` Largest Day Earning": f"<t:{largest_daily_date}:D>\n({MORA_EMOTE} `{largest_daily:,}`)",
-        "`📈` Average Daily Mora": f"{MORA_EMOTE} `{average_daily:,}`",
+        f"`📈` Average Daily {CURRENCY_NAME}": f"{MORA_EMOTE} `{average_daily:,}`",
         "`✌️` Minigame Wins": f"`{entry_count - total_chests}` total wins",
         "`😎` Active Days": f"`{days_active}` different day(s)",
     }
@@ -93,8 +94,8 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     
     ax.yaxis.set_major_formatter(plt.FuncFormatter(format_mora))
     
-    ax.set_title(f"{display_name}'s Mora Earnings History", fontsize=20, pad=20, fontweight='bold', color='#f5d8ff')
-    ax.set_ylabel("Total Mora", fontsize=14, labelpad=16, color='white')
+    ax.set_title(f"{display_name}'s {CURRENCY_NAME} Earnings History", fontsize=20, pad=20, fontweight='bold', color='#f5d8ff')
+    ax.set_ylabel(f"Total {CURRENCY_NAME}", fontsize=14, labelpad=16, color='white')
     ax.xaxis.set_major_formatter(DateFormatter('%b %d'))
     ax.tick_params(axis='both', which='major', labelsize=15, colors='white')
     ax.grid(True, alpha=1, linestyle='--')
@@ -109,51 +110,6 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     
     return (path, stats)
 
-class ThanksEliteTrack(discord.ui.Button):
-    def __init__(self, is_active=False):
-        super().__init__(
-            label="Elite Track Subscriber",
-            style=discord.ButtonStyle.green,
-            disabled=True,
-            emoji="❤️", 
-            row=1
-        )
-    async def callback(self, interaction: discord.Interaction):
-        pass
-    
-class PurchaseEliteTrack(discord.ui.Button):
-    def __init__(self):
-        super().__init__(
-            label="Elite Track",
-            style=discord.ButtonStyle.green,
-            emoji=MONEYDANCE_EMOTE,
-            row=1
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-        elite_button = Button(
-            label="Purchase on Website",
-            style=discord.ButtonStyle.link,
-            url="https://fischl.app/profile",
-        )
-        embed = discord.Embed(
-            title=f"{MONEYDANCE_EMOTE} Less than USD $1/month. More than worth it. {MONEYDANCE_EMOTE}",
-            description=(
-                f"> -# *\"Cheaper than a single Genshin wish, plus you always get value.\"*\n\n"
-                f"**Elite Track** unlocks a premium reward tier alongside every free tier while supporting development work:\n\n"
-                f"-# {DOT_EMOTE}**Animated Cosmetics**: exclusive animated backgrounds, frames, and badge titles <:KokoWow:1191868161851666583>\n"
-                f"-# {DOT_EMOTE}**Enhanced Boosts**: extra Mora gains, reduced gifting tax, more chest upgrades, and more <:PinkCelebrate:1204614140044386314>\n"
-                f"-# {DOT_EMOTE}**Flexing Perks**: earn **+1 additional Prestige** at the final tier <:LynetteSip:1335609206988079169>\n\n"
-                f"**Elite rewards are server-specific, and a season lasts for 3 months.**\n"
-                f"<:reply:1036792837821435976> <:YanfeiNote:1335644122253623458> ***[View Full Track Comparison](https://fischl.app/profile)***"
-            ),
-            color=0xfa0af6
-        )
-        embed.set_footer(text="Login with Discord on the website and select a server to purchase.")
-        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1106727534479032341/1381827880488669327/elite_track.png?ex=6848eeff&is=68479d7f&hm=079b87a3cac4fdcc8c3fd3fbe615bbf1380651da2e5119c748c5e78ffaa2e752&=&format=webp&quality=lossless&width=840&height=840")
-        view = View()
-        view.add_item(elite_button)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         
 class ToggleView(discord.ui.View):
     def __init__(self, original_embed, user_id, command_user_id, message=None, guild_id=None, custom_color=None):
@@ -170,7 +126,7 @@ class ToggleView(discord.ui.View):
         self.upgrade_select = None
         self.settings_select = None
 
-        self.profile_button = Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1)
+        self.profile_button = PROFILE_LINK_BUTTON
         self.add_item(self.profile_button)
 
         is_elite = is_elite_active(self.user_id, self.guild_id)
@@ -205,7 +161,7 @@ class ToggleView(discord.ui.View):
         
         result = await generate_mora_graph(interaction.client.pool, self.user_id, interaction.guild.id, (await interaction.guild.fetch_member(self.user_id)).display_name)
         if not result:
-            await interaction.response.send_message("No mora data available!", ephemeral=True)
+            await interaction.response.send_message("No data available! Start playing to see your stats.", ephemeral=True)
             return
         
         graph_path, stats = result
@@ -268,7 +224,7 @@ class ToggleView(discord.ui.View):
         else:
             next_tier_xp = 0
 
-        track_table = "```ansi\n[2;34mTier    Free Track[0m              [2;33mElite Track (Paid)[0m\n"
+        track_table = "```ansi\n[2;34mTier    Free Track[0m              [2;33mElite Track (Patrons)[0m\n"
         track_table += "------------------------------------------------------\n"
 
         max_tier_to_show = min(len(TRACK_DATA), current_tier + 2)
@@ -341,7 +297,7 @@ class ToggleView(discord.ui.View):
         embed = discord.Embed(
             title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Progression Track",
             description=(
-                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) <:PaiHype:1194817285748183140>\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* | **[View Full Track](https://fischl.app/profile)**\n-# <:reply:1036792837821435976> **Earn XP** by purchasing in the shop and completing quests.\n"
+                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) <:PaiHype:1194817285748183140>\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# <:reply:1036792837821435976> **Earn XP** by purchasing in the shop and completing quests.\n"
                 f"```diff\n"
                 f"+ Current Tier: {current_tier_display} ({user_xp} total XP)\n"
                 + f"- Status: {'Elite Track Activated' if is_elite_active(self.user_id, self.guild_id) else 'Free Track Only'}\n"
@@ -355,10 +311,10 @@ class ToggleView(discord.ui.View):
         )
         from commands.Events.helperFunctions import get_user_stats
         stats = await get_user_stats(interaction.client.pool, interaction.guild.id, self.user_id)
-        embed.add_field(name=f"{MORA_EMOTE} Mora Boost", value=f"`+{stats.get('mora_boost', 0)}%`", inline=True)
+        embed.add_field(name=f"{MORA_EMOTE} {CURRENCY_NAME} Boost", value=f"`+{stats.get('mora_boost', 0)}%`", inline=True)
         embed.add_field(name=":arrow_up_small: Daily Chest Upgrades", value=f"`{stats.get('chest_upgrades', 4)}`", inline=True)
         gift_tax = stats.get('gift_tax', 'Not unlocked')
-        embed.add_field(name=":gift: Gift Tax", value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' else ''}`", inline=True)
+        embed.add_field(name=":gift: Gift Tax", value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' and gift_tax is not None else ''}`", inline=True)
         embed.add_field(name="🧲 Minigame Summons", value=f"`{stats.get('minigame_summons', 0)}`", inline=True)
 
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{self.user_id}/selected")
@@ -423,7 +379,7 @@ class ToggleView(discord.ui.View):
         await self.update_buttons(interaction.client.pool)
         await interaction.response.edit_message(embed=quests_embed, view=self)
 
-    @discord.ui.button(label="Kingdom", style=discord.ButtonStyle.grey, custom_id="domain", emoji="🏰")
+    @discord.ui.button(label=KINGDOM_NAME, style=discord.ButtonStyle.grey, custom_id="domain")
     async def domain_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.command_user_id:
             await interaction.response.send_message("You can't use this button!", ephemeral=True)
@@ -593,7 +549,7 @@ class ToggleView(discord.ui.View):
         for child in self.children:
             cid = getattr(child, "custom_id", "")
             if cid:
-                if cid.startswith("upgrade_") or cid in ["kingdom_upgrade_select", "kingdom_upgrade_select_disabled", "settings_select"]:
+                if cid.startswith("upgrade_") or cid in ["kingdom_upgrade_select", "kingdom_upgrade_select_disabled", "settings_select", "settings_select_disabled"]:
                     items_to_remove.append(child)
                     
         for item in items_to_remove:
@@ -610,7 +566,7 @@ class ToggleView(discord.ui.View):
 
             if is_viewer:
                  self.upgrade_select = Select(
-                    placeholder=f"Viewing Kingdom (Read Only)",
+                    placeholder=f"Viewing {KINGDOM_NAME} (Read Only)",
                     options=[discord.SelectOption(label="Only the owner can upgrade", value="dummy")], 
                     disabled=True, 
                     custom_id="kingdom_upgrade_select_disabled",
@@ -657,30 +613,42 @@ class ToggleView(discord.ui.View):
             minigame_flag_ref = db.reference(f"{CHEST_DB}/{self.guild_id}/{self.user_id}/minigame_flag")
             minigame_disabled = minigame_flag_ref.get() or False
             minigame_status = "Disabled" if minigame_disabled else "Enabled"
-            
-            self.settings_select = Select(
-                placeholder="Select a setting to modify...",
-                options=[
-                    discord.SelectOption(
-                        label="Daily Chest Spawning",
-                        value="toggle_chest_spawn",
-                    ),
-                    discord.SelectOption(
-                        label="Minigame Spawning",
-                        value="toggle_minigame_spawn",
-                    )
-                ],
-                custom_id="settings_select",
-                row=2
-            )
-            self.settings_select.callback = self.settings_select_callback
-            self.add_item(self.settings_select)
+
+            is_viewer = (self.user_id != self.command_user_id)
+
+            if is_viewer:
+                 self.settings_select = Select(
+                    placeholder=f"Viewing Settings (Read Only)",
+                    options=[discord.SelectOption(label="Only the owner can edit", value="dummy")], 
+                    disabled=True, 
+                    custom_id="settings_select_disabled",
+                    row=2
+                 )
+                 self.add_item(self.settings_select)
+            else:
+                self.settings_select = Select(
+                    placeholder="Select a setting to modify...",
+                    options=[
+                        discord.SelectOption(
+                            label="Daily Chest Spawning",
+                            value="toggle_chest_spawn",
+                        ),
+                        discord.SelectOption(
+                            label="Minigame Spawning",
+                            value="toggle_minigame_spawn",
+                        )
+                    ],
+                    custom_id="settings_select",
+                    row=2
+                )
+                self.settings_select.callback = self.settings_select_callback
+                self.add_item(self.settings_select)
 
 class Mora(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="mora", description="Check a user's mora inventory")
+    @app_commands.command(name=BALANCE_COMMAND, description=f"Check a user's {CURRENCY_NAME} inventory")
     @app_commands.describe(user="Specify any user other than yourself if needed")
     async def mora(self, interaction: discord.Interaction, user: discord.Member = None):
         start_time = time.perf_counter()
@@ -789,14 +757,14 @@ class Mora(commands.Cog):
         if guild_rank != "N/A":
             embed.add_field(
                 name=interaction.guild.name,
-                value=f"Mora: {MORA_EMOTE} `{int(guild_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(guild_rank)}**",
+                value=f"{CURRENCY_NAME}: {MORA_EMOTE} `{int(guild_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(guild_rank)}**",
                 inline=True,
             )
 
         if global_rank != "N/A":
             embed.add_field(
                 name="Global",
-                value=f"Mora: {MORA_EMOTE} `{int(global_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(global_rank)}**",
+                value=f"{CURRENCY_NAME}: {MORA_EMOTE} `{int(global_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(global_rank)}**",
                 inline=True,
             )
 
@@ -895,7 +863,7 @@ class Mora(commands.Cog):
             rank_title = get_rank_title(k_level)
             
             current_footer = f"| {embed.footer.text}" if embed.footer else ""
-            embed.set_footer(text=f"Kingdom Rank: {rank_title} (Lv. {k_level}) {current_footer}")
+            embed.set_footer(text=f"{KINGDOM_NAME} Rank: {rank_title} (Lv. {k_level}) {current_footer}")
 
         msg_obj = await chn.send(file=discord.File(filename))
         url = msg_obj.attachments[0].proxy_url
@@ -907,12 +875,12 @@ class Mora(commands.Cog):
         if followup:
             await interaction.followup.send(f"💡 Tip: Customize your inventory however you like (custom background, profile frame, titles) with {SlashCommand('customize')}!", ephemeral=True)
         end_time = time.perf_counter()
-        print(f"Total /mora execution time: {end_time - start_time} seconds")
+        print(f"Total /{BALANCE_COMMAND} execution time: {end_time - start_time} seconds")
 
-    @app_commands.command(name="gift", description="Gift mora to another user")
+    @app_commands.command(name="gift", description=f"Gift {CURRENCY_NAME} to another user")
     @app_commands.describe(
-        user="User to gift mora to",
-        amount="Amount of mora to gift"
+        user="User to gift {CURRENCY_NAME} to",
+        amount="Amount of {CURRENCY_NAME} to gift"
     )
     async def gift(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         await interaction.response.defer()
@@ -921,7 +889,7 @@ class Mora(commands.Cog):
         stats = await get_user_stats(interaction.client.pool, interaction.guild.id, interaction.user.id)
 
         if "gift_tax" not in stats or stats["gift_tax"] is None:
-            return await interaction.followup.send("⏳ You haven't unlocked Mora gifting for this season yet. Unlock it at Tier `5` in the free track!")
+            return await interaction.followup.send(f"⏳ You haven't unlocked gifting for this season yet. Unlock it at Tier `5` in the free track!")
 
         if amount <= 0:
             return await interaction.followup.send(f"{NO_EMOTE} Amount must be positive and non-zero!")

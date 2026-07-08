@@ -224,7 +224,7 @@ class Customize(commands.Cog):
         self.bot = bot
         
     @app_commands.command(
-        name="customize", description="Customize your mora inventory and profile"
+        name="customize", description="Customize your inventory and profile"
     )
     @app_commands.describe(
         background="Your desired inventory background (auto cropped and scaled to 720x256px)",

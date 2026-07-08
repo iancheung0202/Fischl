@@ -19,12 +19,12 @@ from PIL import Image, ImageDraw, ImageFont
 from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
 
-from commands.Events.trackData import get_current_track, check_tier_rewards
+from commands.Events.trackData import get_current_track, check_tier_rewards, is_elite_active
 from commands.Events.helperFunctions import addMora, get_minigame_list, get_guild_mora
 from commands.Events.quests import update_quest
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_UPGRADE_TIMES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_TIMEOUT, MORA_TIER_MAP, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, EMOTE_CHESTS, MORA_CHEST_ICONS, MORA_CHEST_DESCRIPTION
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_UPGRADE_TIMES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_TIMEOUT, MORA_TIER_MAP, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, EMOTE_CHESTS, MORA_CHEST_ICONS, MORA_CHEST_DESCRIPTION, LETTER_LIST
 
 
 def get_next_reset_unix():
@@ -117,8 +117,8 @@ async def userAndTitle(userID, guildID, pool):
             if isinstance(pinned_title, int) or str(pinned_title).isdigit()
             else pinned_title
         )
-        return f"<@{userID}> **({role_mention})**"
-    return f"<@{userID}>"
+        return f"<@{userID}> **({role_mention})** {MONEYDANCE_EMOTE if is_elite_active(userID, guildID) else ''}"
+    return f"<@{userID}> {MONEYDANCE_EMOTE if is_elite_active(userID, guildID) else ''}"
 
 
 ### --- DEFEAT THE BOSS --- ###
@@ -3378,7 +3378,7 @@ async def doubleOrKeep(channel: discord.TextChannel, client: discord.Client):
     )
 
     
-### MORA AUCTION HOUSE ###
+### GRAND AUCTION HOUSE ###
 
 class BidModal(discord.ui.Modal):
     def __init__(self, auction_view):
@@ -3493,13 +3493,13 @@ async def get_accurate_time(client) -> float:
         print(f"Time sync failed: {e}")
         return time.time()
     
-async def moraAuctionHouse(channel, client):
+async def grandAuctionHouse(channel, client):
     start_time_init = time.time()
     start_time = await get_accurate_time(client)
     end_time = int(start_time) + 90
     
     embed = discord.Embed(
-        title="Mora Auction House 🏛️",
+        title="Grand Auction House 🏛️",
         description=(
             f"A mysterious box worth anywhere **between {MORA_EMOTE} `5000` and `15000`** spawned! "
             f"**Closest bid UNDER the value of the box wins!** Auction ends <t:{end_time}:R>"
@@ -3575,12 +3575,12 @@ async def moraAuctionHouse(channel, client):
         await update_quest(uid, channel.guild.id, channel.id, quest_data, client)
 
 
-### --- MORA HEIST --- ###
+### --- BANK HEIST --- ###
 
-async def moraHeist(channel, client):
+async def bankHeist(channel, client):
     start_time = time.time()
     embed = discord.Embed(
-        title=":new: Mora Heist! 💰 ",
+        title="Bank Heist! 💰 ",
         description=(
             "Click the button below as many times as you can in 20 seconds!\n"
             f"Each click earns you {MORA_EMOTE} `500-600` Mora!\n\n"
@@ -3599,7 +3599,7 @@ async def moraHeist(channel, client):
     view.user_data = {} 
     view.game_over = False 
     view.start_time = start_time
-    view.add_item(MoraHeistButton())
+    view.add_item(BankHeistButton())
     message = await channel.send(embed=embed, view=view)
     
     async def end_game():
@@ -3607,7 +3607,7 @@ async def moraHeist(channel, client):
         view.game_over = True 
         
         embed = message.embeds[0]
-        embed.title = "⏳ Mora Heist - Finished!"
+        embed.title = "⏳ Bank Heist - Finished!"
         embed.description = "Time's up! Rewards distributed below."
         embed.color = discord.Color.green()
         embed.set_footer(text="")
@@ -3663,7 +3663,7 @@ async def moraHeist(channel, client):
 
     asyncio.create_task(end_game())
 
-class MoraHeistButton(discord.ui.Button):
+class BankHeistButton(discord.ui.Button):
     def __init__(self):
         super().__init__(style=discord.ButtonStyle.grey, emoji="💰", label="Click to Steal")
         
@@ -4676,13 +4676,12 @@ class TheEventItself(commands.Cog):
                         doubleOrKeep,
                         knowYourMembers,
                         hangmanGame,
-                        moraAuctionHouse,
-                        moraHeist,
+                        grandAuctionHouse,
+                        bankHeist,
                         simpleMathGame,
                         ticTacTok
                     ]
-                    letters = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-                    letter_to_event = dict(zip(letters, events))
+                    letter_to_event = dict(zip(LETTER_LIST, events))
                     eligible_events = [
                         letter_to_event[letter]
                         for letter in originalList
@@ -4735,8 +4734,8 @@ class Summon(commands.Cog):
             "doubleOrKeep": doubleOrKeep,
             "knowYourMembers": knowYourMembers,
             "hangmanGame": hangmanGame,
-            "moraAuctionHouse": moraAuctionHouse,
-            "moraHeist": moraHeist,
+            "grandAuctionHouse": grandAuctionHouse,
+            "bankHeist": bankHeist,
             "simpleMathGame": simpleMathGame,
             "ticTacTok": ticTacTok
         }

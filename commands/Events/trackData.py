@@ -7,29 +7,11 @@ from commands.Events.dropPack import create_drop_pack
 from commands.Events.seasons import get_current_season
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, COSMETICS_DB
+from commands.Events.config import MORA_EMOTE, COSMETICS_DB, REWARD_TYPES, CURRENCY_NAME
 
 def get_current_track():
     season = get_current_season()
     return season.track_data if season else []
-
-REWARD_TYPES = {
-    "Drop Pack": "drop_pack",
-    "Animated Background": "animated_background",
-    "Static Frame": "static_frame",
-    "Animated Frame": "animated_frame",
-    "Prestige +1": "prestige",
-    "Mora Gain Boost +5%": "mora_boost",
-    "Mora Gain Boost +67%": "mora_boost_67",
-    "+1 Chest Upgrade Limit": "chest_upgrade",
-    "+69 Chest Upgrade Limit": "chest_upgrade_69",
-    "Unlocks Mora Gifting": "unlock_gifting",
-    "Mora Gift Tax -5%": "gift_tax",
-    "+3 Minigames Summon": "minigame_summon",
-    "Custom Embed Color": "embed_color",
-    "Server Title": "title",
-    "Animated Title": "title"
-}
 
 async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False, client=None, pool=None):
     if is_elite:
@@ -121,8 +103,8 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         current_boost = await get_mora_boost(pool, guild_id, user_id)
         new_boost = current_boost + boost_amount
         await update_mora_boost(pool, guild_id, user_id, new_boost)
-        title = f"{'Elite Reward: ' if is_elite else ''}Mora Gain Boost +{boost_amount}% {MORA_EMOTE}"
-        description = f"**Tier `{tier}`:** Your mora gain from all sources will now be **increased by `{new_boost}%`**!"
+        title = f"{'Elite Reward: ' if is_elite else ''}{CURRENCY_NAME} Gain Boost +{boost_amount}% {MORA_EMOTE}"
+        description = f"**Tier `{tier}`:** Your {CURRENCY_NAME} gain from all sources will now be **increased by `{new_boost}%`**!"
     
     elif reward_type == "chest_upgrade" or reward_type == "chest_upgrade_69":
         upgrade_amount = 1 if reward_type == "chest_upgrade" else 69
@@ -135,7 +117,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                 guild_id, user_id, new_upgrades
             )
         title = f"{'Elite Reward: ' if is_elite else ''}+{upgrade_amount} Chest Upgrades :arrow_up_small:"
-        description = f"**Tier `{tier}`:** Your daily Mora chest now has a total of **`{new_upgrades}` upgrade chances**!"
+        description = f"**Tier `{tier}`:** Your daily chest now has a total of **`{new_upgrades}` upgrade chances**!"
     
     elif reward_type == "unlock_gifting":
         if stats.get("gift_tax") is None:
@@ -144,8 +126,8 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                     "UPDATE minigame_progression SET gift_tax = 30, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
                     guild_id, user_id
                 )
-            title = "Mora Gifting Unlocked! :gift:"
-            description = f"**Tier `{tier}`:** You can now {SlashCommand('gift')} mora to others with an initial tax rate of `30%`!"
+            title = f"{CURRENCY_NAME} Gifting Unlocked! :gift:"
+            description = f"**Tier `{tier}`:** You can now {SlashCommand('gift')} {CURRENCY_NAME} to others with an initial tax rate of `30%`!"
     
     elif reward_type == "gift_tax":
         tax_reduction = 5
