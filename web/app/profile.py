@@ -1,4 +1,3 @@
-
 import requests
 import os
 import time
@@ -13,6 +12,7 @@ import io
 import random
 import asyncio
 import psycopg2
+import json
 
 from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageSequence
 from firebase_admin import db
@@ -82,6 +82,43 @@ async def grant_summon(guild_id, user_id):
     except Exception as e:
         print(f"Error granting summon: {e}")
         return 0
+
+def get_quest_data_sync(guild_id, user_id):
+    """
+    Sync (Flask-route friendly) equivalent of quests.get_quest_data, reading
+    quest progress from the PostgreSQL minigame_quests table instead of the
+    old Firebase tree. Returns the same nested shape the rest of this file
+    already expects: {duration: {"quests": {...}, "completed": {...}, "end_time": int, "bonus_awarded": bool}}
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT cycle_type, end_time, quest_name, current_progress, goal_progress, completed, bonus_awarded, extra_data "
+            "FROM minigame_quests WHERE guild_id = %s AND user_id = %s",
+            (str(guild_id), str(user_id))
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+    finally:
+        conn.close()
+
+    quest_data = {}
+    for cycle_type, end_time, quest_name, current_progress, goal_progress, completed, bonus_awarded, extra_data in rows:
+        dur_data = quest_data.setdefault(cycle_type, {"quests": {}, "completed": {}, "end_time": end_time, "bonus_awarded": False})
+        q_entry = {"current": current_progress, "goal": goal_progress}
+        if extra_data:
+            try:
+                q_entry.update(json.loads(extra_data))
+            except (TypeError, ValueError):
+                pass
+        dur_data["quests"][quest_name] = q_entry
+        if completed:
+            dur_data["completed"][quest_name] = True
+        if bonus_awarded:
+            dur_data["bonus_awarded"] = True
+
+    return quest_data
 
 def get_daily_games_status(user_id, guild_id):
     """Get user's daily games status for a specific guild"""
@@ -1685,9 +1722,7 @@ def profile_quests(guild_id):
     
     user_id = session['user_id']
     
-    # Get quest data using the same structure as mora.py
-    ref = db.reference(f"/Chat Minigames Quests/{guild_id}/{user_id}")
-    quest_data = ref.get() or {}
+    quest_data = get_quest_data_sync(guild_id, user_id)
     
     quest_html = ""
 

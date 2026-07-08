@@ -17,12 +17,12 @@ from commands.Events.trackData import get_current_track
 from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
-from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
+from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from commands.Events.trackData import is_elite_active
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, QUEST_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -342,8 +342,7 @@ class ToggleView(discord.ui.View):
         
         await update_quest(self.user_id, interaction.guild.id, interaction.channel.id, 0, interaction.client, refresh_only=True)
         
-        ref = db.reference(f"{QUEST_DB}/{self.guild_id}/{self.user_id}")
-        quest_data = ref.get() or {}
+        quest_data = await get_quest_data(interaction.client.pool, self.guild_id, self.user_id)
         
         quest_text = []
         for duration in ["daily", "weekly", "monthly"]:
