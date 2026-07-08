@@ -1,9 +1,29 @@
 import io
 import os
 
-from PIL import Image, ImageDraw, ImageFont, ImageSequence
+from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageSequence
 
-from commands.Events.config import FRAMES_DIRECTORY, DEFAULT_BG_PATH, FONT_PATH, PROFILE_CARD_PATH, CURRENCY_ICON_PATH
+from commands.Events.config import FRAMES_DIRECTORY, DEFAULT_BG_PATH, FONT_PATH, FONT_PRESETS, PROFILE_CARD_PATH, CURRENCY_ICON_PATH
+
+def resolve_font_path(font_name: str | None) -> str:
+    if not font_name:
+        return FONT_PATH
+    font_path = FONT_PRESETS.get(font_name, FONT_PATH)
+    return font_path if os.path.exists(font_path) else FONT_PATH
+
+def resolve_text_color(base_color, accent_color, strength: float):
+    if not accent_color:
+        return base_color
+
+    blended = tuple(
+        int(base_color[index] * (1 - strength) + accent_color[index] * strength)
+        for index in range(3)
+    )
+
+    if sum(blended) / 3 < 110:
+        blended = tuple(int(blended[index] * 0.75 + 255 * 0.25) for index in range(3))
+
+    return blended
 
 async def createProfileCard(
     user,
@@ -11,7 +31,9 @@ async def createProfileCard(
     rank: str,
     bg: str = DEFAULT_BG_PATH,
     filename: str = PROFILE_CARD_PATH,
-    profile_frame: str = None
+    profile_frame: str = None,
+    accent_color_hex: str = None,
+    font_name: str = None
 ):
     # Avatar
     if user.avatar is None:
@@ -25,10 +47,18 @@ async def createProfileCard(
     im_avatar.putalpha(mask)
 
     # Fonts
-    font_display = ImageFont.truetype(FONT_PATH, 45)
-    font_username = ImageFont.truetype(FONT_PATH, 25)
-    font_mora = ImageFont.truetype(FONT_PATH, 40)
-    font_rank = ImageFont.truetype(FONT_PATH, 35)
+    resolved_font = resolve_font_path(font_name)
+    font_display = ImageFont.truetype(resolved_font, 45)
+    font_username = ImageFont.truetype(resolved_font, 25)
+    font_mora = ImageFont.truetype(resolved_font, 40)
+    font_rank = ImageFont.truetype(resolved_font, 35)
+
+    accent_color = None
+    if accent_color_hex:
+        try:
+            accent_color = ImageColor.getrgb(f"#{accent_color_hex.lstrip('#')}")
+        except ValueError:
+            accent_color = None
     
     # Helper function for animated images
     def load_image_frames(path):
@@ -101,11 +131,11 @@ async def createProfileCard(
 
             # Draw text
             draw = ImageDraw.Draw(frame)
-            draw.text((200, 45), user.display_name, font=font_display, fill=(255, 255, 255))
-            draw.text((200, 100), user.name, font=font_username, fill=(225, 225, 225))
-            draw.text((89, 185), num.split(".")[0], font=font_mora, fill=(233, 253, 255))
+            draw.text((200, 45), user.display_name, font=font_display, fill=accent_color or (255, 255, 255))
+            draw.text((200, 100), user.name, font=font_username, fill=resolve_text_color((225, 225, 225), accent_color, 0.5))
+            draw.text((89, 185), num.split(".")[0], font=font_mora, fill=resolve_text_color((233, 253, 255), accent_color, 0.4))
             if rank != "N/A":
-                draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=(203, 254, 196))
+                draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=resolve_text_color((203, 254, 196), accent_color, 0.4))
             
             output_frames.append(frame)
         
@@ -157,11 +187,11 @@ async def createProfileCard(
         
     # Draw text
     draw = ImageDraw.Draw(im_bg)
-    draw.text((200, 45), user.display_name, font=font_display, fill=(255, 255, 255))
-    draw.text((200, 100), user.name, font=font_username, fill=(225, 225, 225))
-    draw.text((89, 185), num.split(".")[0], font=font_mora, fill=(233, 253, 255))
+    draw.text((200, 45), user.display_name, font=font_display, fill=accent_color or (255, 255, 255))
+    draw.text((200, 100), user.name, font=font_username, fill=resolve_text_color((225, 225, 225), accent_color, 0.5))
+    draw.text((89, 185), num.split(".")[0], font=font_mora, fill=resolve_text_color((233, 253, 255), accent_color, 0.4))
     if rank != "N/A":
-        draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=(203, 254, 196))
+        draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=resolve_text_color((203, 254, 196), accent_color, 0.4))
 
     # Save static image
     im_bg.save(filename)

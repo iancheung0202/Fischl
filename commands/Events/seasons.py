@@ -69,14 +69,17 @@ class SeasonCog(commands.Cog):
         
         async with pool.acquire() as conn:
             try:
+                await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS shop_discount INTEGER DEFAULT 0")
+                await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS domain_discount INTEGER DEFAULT 0")
+                await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS express_daily_chests BOOLEAN DEFAULT FALSE")
                 # Reset XP and bonus_tier. Keep prestige
                 await conn.execute(
                     "UPDATE minigame_progression SET xp = 0, bonus_tier = 0, updated_at = CURRENT_TIMESTAMP"
                 )
                 
-                # Reset mora_boost, chest_upgrades, and gift_tax to default values. Keep summon
+                # Reset mora_boost, chest_upgrades, gift_tax, and discounts to default values. Keep summon
                 await conn.execute(
-                    "UPDATE minigame_progression SET mora_boost = 0, chest_upgrades = 4, gift_tax = NULL, updated_at = CURRENT_TIMESTAMP"
+                    "UPDATE minigame_progression SET mora_boost = 0, chest_upgrades = 4, gift_tax = NULL, shop_discount = 0, domain_discount = 0, express_daily_chests = FALSE, updated_at = CURRENT_TIMESTAMP"
                 )
                 
                 print("Season user data reset successfully!")

@@ -5,12 +5,79 @@ import re
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageOps, ImageSequence
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.quests import update_quest
 from commands.Events.helperFunctions import get_user_inventory, unpin_all_items
+from commands.Events.trackData import is_elite_active
 
-from commands.Events.config import FRAMES_DIRECTORY, INVENTORY_BG_PATH, ANIMATED_INVENTORY_BG_PATH, DEFAULT_BG_PATH, YES_EMOTE, NO_EMOTE, HMM_EMOTE, COSMETICS_DB
+from commands.Events.config import FRAMES_DIRECTORY, INVENTORY_BG_PATH, ANIMATED_INVENTORY_BG_PATH, DEFAULT_BG_PATH, YES_EMOTE, NO_EMOTE, HMM_EMOTE, COSMETICS_DB, FONT_PRESETS, FONT_PATH
+
+def resolve_font_path(font_name: str | None) -> str:
+    if not font_name:
+        return FONT_PATH
+    font_path = FONT_PRESETS.get(font_name, FONT_PATH)
+    return font_path if os.path.exists(font_path) else FONT_PATH
+
+def resolve_animated_background_path(animated_background: str | None) -> str | None:
+    if not animated_background:
+        return None
+    if os.path.exists(animated_background):
+        return animated_background
+
+    candidate = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}"
+    if os.path.exists(candidate):
+        return candidate
+
+    if not animated_background.lower().endswith(".gif"):
+        candidate = f"{candidate}.gif"
+        if os.path.exists(candidate):
+            return candidate
+
+    return None
+
+def resolve_active_cosmetic_values(selected: dict, elite_active: bool) -> dict:
+    return {
+        "animated_background": selected.get("animated_background") if elite_active else None,
+        "embed_color_hex": selected.get("embed_color_hex") if elite_active else None,
+        "font": selected.get("font") if elite_active else None,
+    }
+
+async def process_animated_background_upload(attachment: discord.Attachment, output_path: str):
+    temp_path = f"{output_path}.upload"
+    await attachment.save(temp_path)
+
+    with Image.open(temp_path) as image:
+        frames = []
+        durations = []
+        disposals = []
+
+        for frame in ImageSequence.Iterator(image):
+            frame_rgba = frame.convert("RGBA")
+            fitted = ImageOps.fit(frame_rgba, (720, 256), method=Image.LANCZOS, centering=(0.5, 0.5))
+            dimmed = ImageEnhance.Brightness(fitted).enhance(0.4)
+            frames.append(fitted)
+            frames[-1] = dimmed
+            durations.append(frame.info.get("duration", 100))
+            disposals.append(frame.info.get("disposal", 2))
+
+    if not frames:
+        raise ValueError("Animated background must contain at least one frame")
+
+    frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=durations,
+        loop=0,
+        disposal=disposals,
+        optimize=False,
+    )
+
+    try:
+        os.remove(temp_path)
+    except Exception:
+        pass
 
 async def pin_title_autocomplete(
     interaction: discord.Interaction,
@@ -81,6 +148,14 @@ async def title_autocomplete(
     choices.insert(0, app_commands.Choice(name="Unset title", value="unset"))
     return choices[:25]
 
+async def font_autocomplete(interaction: discord.Interaction, current: str):
+    choices = []
+    for font_name in FONT_PRESETS:
+        if current.lower() in font_name.lower():
+            display_name = font_name if font_name == "Default" else f"{font_name} (Elite Track)"
+            choices.append(app_commands.Choice(name=display_name, value=font_name))
+    return choices[:25]
+
 async def animated_bg_autocomplete(interaction: discord.Interaction, current: str):
     ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds")
     bgs = ref.get() or []
@@ -121,18 +196,24 @@ async def all_frames_autocomplete(interaction: discord.Interaction, current: str
     return choices[:25]
 
 class ConfirmCustomizationView(discord.ui.View):
-    def __init__(self, user_id, guild_id, static_bg_provided=False, animated_bg=None, profile_frame=None):
+    def __init__(self, user_id, guild_id, static_bg_provided=False, animated_bg_path=None, profile_frame=None, font_name=None):
         super().__init__(timeout=600)
         self.user_id = user_id
         self.guild_id = guild_id
         self.static_bg_provided = static_bg_provided
-        self.animated_bg = animated_bg
+        self.animated_bg_path = animated_bg_path
         self.profile_frame = profile_frame
+        self.font_name = font_name
 
     async def on_timeout(self) -> None:
         if self.static_bg_provided:
             try:
                 os.remove(f"{INVENTORY_BG_PATH}/{self.user_id}-temp.png")
+            except Exception:
+                pass
+        if self.animated_bg_path:
+            try:
+                os.remove(self.animated_bg_path)
             except Exception:
                 pass
 
@@ -164,27 +245,38 @@ class ConfirmCustomizationView(discord.ui.View):
         # Animated background
         if self.static_bg_provided:
             selected["animated_background"] = None
-        elif self.animated_bg:
-            selected["animated_background"] = self.animated_bg
+        elif self.animated_bg_path:
+            selected["animated_background"] = f"{interaction.user.id}.gif"
             try:
-                os.remove(f"{INVENTORY_BG_PATH}/{interaction.user.id}.png")
+                os.remove(f"{ANIMATED_INVENTORY_BG_PATH}/{interaction.user.id}.gif")
             except Exception:
                 pass
+            try:
+                os.rename(self.animated_bg_path, f"{ANIMATED_INVENTORY_BG_PATH}/{interaction.user.id}.gif")
+            except Exception as e:
+                return await interaction.response.send_message(
+                    f"{NO_EMOTE} Failed to save animated background: {e}", ephemeral=True
+                )
         
         # Profile frame
         if self.profile_frame:
             selected["profile_frame"] = self.profile_frame
+
+        if self.font_name:
+            selected["font"] = self.font_name
 
         ref.set(selected)
 
         changes = []
         if self.static_bg_provided:
             changes.append("static background")
-        if self.animated_bg:
-            changes.append(f"animated background to **{self.animated_bg}**")
+        if self.animated_bg_path:
+            changes.append("animated background upload")
         if self.profile_frame:
             frame_name = self.profile_frame.split('.')[0]
             changes.append(f"profile frame to **{frame_name}**")
+        if self.font_name:
+            changes.append(f"font to **{self.font_name}**")
         
         desc = f"{interaction.user.mention}, your customization has been confirmed!"
         if changes:
@@ -210,6 +302,11 @@ class ConfirmCustomizationView(discord.ui.View):
                 os.remove(f"{INVENTORY_BG_PATH}/{interaction.user.id}-temp.png")
             except Exception:
                 pass
+        if self.animated_bg_path:
+            try:
+                os.remove(self.animated_bg_path)
+            except Exception:
+                pass
 
         embed = discord.Embed(
             title=f"{NO_EMOTE} Customization Cancelled",
@@ -229,14 +326,15 @@ class Customize(commands.Cog):
     @app_commands.describe(
         background="Your desired inventory background (auto cropped and scaled to 720x256px)",
         pin_item="Title/role name to pin (displayed next to your name in mini-games)",
-        animated_background="Your desired animated inventory background",
+        animated_background="Elite Track only: upload a GIF to use as your animated inventory background",
         profile_frame="Your desried inventory profile frame (static or animated)",
-        custom_embed_color="Your desired custom embed color in hex code (e.g. #ff0000)",
-        title="Your desired server title (static or animated) to display on your inventory"
+        custom_accent_color="Elite Track only: your custom accent color in hex code (e.g. #ff0000)",
+        font="Elite Track only: your profile card font preset",
+        title="Elite Track only for freeform text; owned titles can still be selected from autocomplete"
     )
     @app_commands.autocomplete(
         pin_item=pin_title_autocomplete,
-        animated_background=animated_bg_autocomplete,
+        font=font_autocomplete,
         profile_frame=frame_autocomplete,
         title=title_autocomplete
     )
@@ -245,14 +343,15 @@ class Customize(commands.Cog):
         interaction: discord.Interaction,
         background: discord.Attachment = None,
         pin_item: str = None,
-        animated_background: str = None,
+        animated_background: discord.Attachment = None,
         profile_frame: str = None,
-        custom_embed_color: str = None,
+        custom_accent_color: str = None,
+        font: str = None,
         title: str = None
     ) -> None:
         await interaction.response.defer(thinking=True)
         
-        if not any([background, pin_item, animated_background, profile_frame, custom_embed_color, title]):
+        if not any([background, pin_item, animated_background, profile_frame, custom_accent_color, font, title]):
             return await interaction.followup.send(
                 f"{NO_EMOTE} Please specify at least one customization option!"
             )
@@ -263,18 +362,32 @@ class Customize(commands.Cog):
             )
         
         processed_pin = False
-        preview_needed = any([background, animated_background, profile_frame])
+        preview_needed = any([background, animated_background, profile_frame, font])
+        selected_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
+        current_selected = selected_ref.get() or {}
+        pending_font = None
+
+        if font:
+            if font not in FONT_PRESETS:
+                return await interaction.followup.send(
+                    f"{NO_EMOTE} Invalid font preset. Choose one of the available presets."
+                )
+            if font != "Default" and not (is_elite_active(interaction.user.id, interaction.guild.id) and current_selected.get("font_unlocked")):
+                return await interaction.followup.send(
+                    f"{NO_EMOTE} You have not unlocked **custom font preset** on the Elite Track!"
+                )
+            pending_font = font
 
         # Custom embed color
-        if custom_embed_color:
+        if custom_accent_color:
             ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/embed_color")
             embed_color = ref.get() or False
             if not embed_color:
                 return await interaction.followup.send(
-                    f"{NO_EMOTE} You have not unlocked **custom embed color** from the progression track!"
+                    f"{NO_EMOTE} You have not unlocked **custom accent color** on the Elite Track!"
                 )
 
-            hex_color = custom_embed_color.strip().lstrip('#')
+            hex_color = custom_accent_color.strip().lstrip('#')
             if len(hex_color) != 6:
                 return await interaction.followup.send(
                     f"{NO_EMOTE} Invalid hex format! Use 6-digit hex code (e.g. #ff0000)"
@@ -287,16 +400,14 @@ class Customize(commands.Cog):
                     f"{NO_EMOTE} Invalid hex characters! Use 0-9 and A-F only"
                 )
 
-            ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
-            selected = ref_selected.get() or {}
-            selected["embed_color_hex"] = hex_color
-            ref_selected.set(selected)
+            current_selected["embed_color_hex"] = hex_color
+            selected_ref.set(current_selected)
 
             color_int = int(hex_color, 16)
             await interaction.followup.send(
                 embed=discord.Embed(
-                    title=f"{YES_EMOTE} Custom Embed Color Updated",
-                    description=f"{interaction.user.mention}, your embed color has been set to `#{hex_color}`!",
+                    title=f"{YES_EMOTE} Custom Accent Color Updated",
+                    description=f"{interaction.user.mention}, your accent color has been set to `#{hex_color}`!",
                     color=color_int
                 )
             )
@@ -316,11 +427,25 @@ class Customize(commands.Cog):
                 background,
                 animated_background,
                 profile_frame,
-                processed_pin
+                processed_pin,
+                pending_font
             )
         
-        if custom_embed_color or title or pin_item:
+        if custom_accent_color or title or pin_item or font:
              await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"customize_profile": 1}, interaction.client)
+
+    async def process_animated_background(self, interaction: discord.Interaction, animated_background: discord.Attachment) -> str:
+        if not animated_background.filename.lower().endswith(".gif"):
+            raise ValueError("Animated background must be a GIF upload")
+
+        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
+        selected = ref_selected.get() or {}
+        if not (is_elite_active(interaction.user.id, interaction.guild.id) and selected.get("animated_background_unlocked")):
+            raise ValueError("You have not unlocked **custom animated GIF background** on the Elite Track!")
+
+        output_path = f"{ANIMATED_INVENTORY_BG_PATH}/{interaction.user.id}-temp.gif"
+        await process_animated_background_upload(animated_background, output_path)
+        return output_path
 
     async def process_pin_item(self, interaction: discord.Interaction, pin_item: str):
         pool = interaction.client.pool
@@ -378,29 +503,46 @@ class Customize(commands.Cog):
             )
             return True
         
-    async def process_title(self, interaction: discord.Interaction, title_timestamp: str):
+    async def process_title(self, interaction: discord.Interaction, title_value: str):
         ref_selected = db.reference(
             f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected"
         )
         selected = ref_selected.get() or {}
 
-        if title_timestamp == "unset":
+        if title_value == "unset":
             selected.pop("title", None)
+            selected.pop("custom_title", None)
             message = "Your title has been unset."
         else:
             title_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles")
             titles = title_ref.get() or {}
             
-            if title_timestamp in titles:
-                selected["title"] = title_timestamp
-                title_data = titles[title_timestamp]
+            if title_value in titles:
+                selected["title"] = title_value
+                selected.pop("custom_title", None)
+                title_data = titles[title_value]
                 # Title data is just the name or a simple dict with name
                 if isinstance(title_data, dict):
                     title_name = title_data.get("name", "Unknown")
                 else:
                     title_name = str(title_data)
                 message = f"Title set to: **{title_name}**"
+            elif selected.get("custom_title_unlocked") and is_elite_active(interaction.user.id, interaction.guild.id):
+                custom_title = title_value.strip()
+                if not custom_title:
+                    return await interaction.followup.send(
+                        f"{NO_EMOTE} Custom title cannot be empty!",
+                        ephemeral=True
+                    )
+                selected.pop("title", None)
+                selected["custom_title"] = custom_title
+                message = f"Custom title set to: **{custom_title}**"
             else:
+                if title_value and title_value not in (db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles").get() or {}):
+                    return await interaction.followup.send(
+                        f"{NO_EMOTE} You cannot use custom titles, as you haven't unlocked them on the Elite Track. You can still select owned titles from the autocomplete.",
+                        ephemeral=True
+                    )
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You don't own this title!",
                     ephemeral=True
@@ -418,25 +560,36 @@ class Customize(commands.Cog):
         background: discord.Attachment,
         animated_background: str,
         profile_frame: str,
-        pin_processed: bool
+        pin_processed: bool,
+        font: str = None
     ):
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
+        elite_active = is_elite_active(interaction.user.id, interaction.guild.id)
+        active_selected = resolve_active_cosmetic_values(current_selected, elite_active)
+        accent_color_hex = active_selected["embed_color_hex"]
+        font_name = font if font else active_selected["font"]
         
         # Animated background
         if animated_background:
-            owned_bgs = db.reference(
-                f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds"
-            ).get() or []
-            if animated_background not in owned_bgs:
+            if not (elite_active and current_selected.get("animated_background_unlocked")):
                 return await interaction.followup.send(
-                    f"{NO_EMOTE} You don't own **{animated_background}** animated background!",
+                    f"{NO_EMOTE} You have not unlocked **custom animated GIF background** on the Elite Track!",
                     ephemeral=True
                 )
-            anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}.gif"
-            if not os.path.exists(anim_path):
+            if animated_background.filename.lower().endswith(".gif"):
+                anim_path = await self.process_animated_background(interaction, animated_background)
+            else:
                 return await interaction.followup.send(
-                    f"{NO_EMOTE} File for **{animated_background}** not found!",
+                    f"{NO_EMOTE} Animated backgrounds must be uploaded as GIF files!",
+                    ephemeral=True
+                )
+        else:
+            current_anim = resolve_animated_background_path(active_selected["animated_background"])
+            anim_path = current_anim
+            if current_anim is None and active_selected["animated_background"]:
+                return await interaction.followup.send(
+                    f"{NO_EMOTE} Animated background file not found!",
                     ephemeral=True
                 )
 
@@ -493,15 +646,12 @@ class Customize(commands.Cog):
         elif animated_background:
             bg_path = anim_path
         else:
-            static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
-            if os.path.exists(static_path):
-                bg_path = static_path
+            if elite_active and anim_path:
+                bg_path = anim_path
             else:
-                current_anim = current_selected.get("animated_background")
-                if current_anim:
-                    anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{current_anim}.gif"
-                    if os.path.exists(anim_path):
-                        bg_path = anim_path
+                static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
+                if os.path.exists(static_path):
+                    bg_path = static_path
 
         if bg_path is None:
             bg_path = DEFAULT_BG_PATH  # Default background
@@ -519,7 +669,9 @@ class Customize(commands.Cog):
             "69,420", 
             "69", 
             bg=bg_path, 
-            profile_frame=frame_path
+            profile_frame=frame_path,
+            accent_color_hex=accent_color_hex,
+            font_name=font_name
         )
 
         preview_channel = self.bot.get_channel(1026968305208131645)
@@ -540,8 +692,9 @@ class Customize(commands.Cog):
             user_id=interaction.user.id,
             guild_id=interaction.guild.id,
             static_bg_provided=bool(background),
-            animated_bg=animated_background,
-            profile_frame=profile_frame
+            animated_bg_path=bg_path if animated_background else None,
+            profile_frame=profile_frame,
+            font_name=font
         )
         
         await interaction.followup.send(embed=embed, view=view)
@@ -571,12 +724,13 @@ class Customize(commands.Cog):
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
         bg_path = None
+        elite_active = is_elite_active(interaction.user.id, interaction.guild.id)
         
         static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
         if os.path.exists(static_path):
             bg_path = static_path
         else:
-            current_anim = current_selected.get("animated_background")
+            current_anim = current_selected.get("animated_background") if elite_active else None
             if current_anim:
                 anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{current_anim}.gif"
                 if os.path.exists(anim_path):

@@ -14,11 +14,12 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
+from commands.Events.trackData import is_elite_active
 from utils.commands import SlashCommand
 
 from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, QUEST_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
@@ -246,7 +247,7 @@ class ToggleView(discord.ui.View):
 
             def format_reward(text: str) -> str:
                 lower = text.lower()
-                if any(k in lower for k in ["title", "frame", "background"]):
+                if any(k in lower for k in ["title", "frame", "background", "custom", "express"]):
                     return f"\u001b[1;2m\u001b[1;36m{text}\u001b[0m\u001b[0m"
                 if "prestige" in lower:
                     return f"\u001b[1;2m\u001b[1;31m{text}\u001b[0m\u001b[0m"
@@ -316,6 +317,8 @@ class ToggleView(discord.ui.View):
         gift_tax = stats.get('gift_tax', 'Not unlocked')
         embed.add_field(name=":gift: Gift Tax", value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' and gift_tax is not None else ''}`", inline=True)
         embed.add_field(name="🧲 Minigame Summons", value=f"`{stats.get('minigame_summons', 0)}`", inline=True)
+        embed.add_field(name="🏷️ Shop Discount", value=f"`{stats.get('shop_discount', 0)}%`", inline=True)
+        embed.add_field(name="🏰 Domain Discount", value=f"`{stats.get('domain_discount', 0)}%`", inline=True)
 
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{self.user_id}/selected")
         selected = ref_selected.get() or {}
@@ -325,7 +328,7 @@ class ToggleView(discord.ui.View):
         if color_unlocked:
             custom_color = selected.get("embed_color_hex")
             color_status = f"`{custom_color}`" if custom_color else "`Unlocked but not set`"
-        embed.add_field(name="🎨 Custom Embed Color", value=color_status, inline=True)
+        embed.add_field(name="🎨 Custom Accent Color", value=color_status, inline=True)
         embed.add_field(name="<:PRIMOGEM:1364031230357540894> Prestige", value=f"`{prestige}`")
         
         embed.set_footer(text="Tip: XP Progression is tracked separately per server.")
@@ -575,18 +578,26 @@ class ToggleView(discord.ui.View):
                  self.add_item(self.upgrade_select)
             else:
                 from commands.Events.helperFunctions import get_kingdom_buildings
+                from commands.Events.helperFunctions import get_domain_discount
                 
                 kb_data = {}
                 if pool:
                     kb_data = await get_kingdom_buildings(pool, self.guild_id, self.command_user_id)
+                    domain_discount = await get_domain_discount(pool, self.guild_id, self.command_user_id)
+                else:
+                    domain_discount = 0
                 
                 options = []
                 for key, info in BUILDINGS.items():
                     lvl = kb_data.get(key, 0)
                     cost = calculate_cost(lvl)
+                    discounted_cost = apply_discount(cost, domain_discount)
                     
                     label = f"{info['emoji']} {info['name']}"
-                    desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {cost:,}"
+                    if domain_discount > 0 and discounted_cost < cost:
+                        desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {discounted_cost:,} (discounted)"
+                    else:
+                        desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {cost:,}"
                     
                     options.append(discord.SelectOption(
                         label=label,
@@ -745,7 +756,8 @@ class Mora(commands.Cog):
             
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/selected")
         selected = ref_selected.get() or {}
-        custom_color_hex = selected.get("embed_color_hex")
+        elite_active = is_elite_active(user.id, interaction.guild.id)
+        custom_color_hex = selected.get("embed_color_hex") if elite_active else None
         custom_color = discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
         
         embed = discord.Embed(
@@ -808,14 +820,17 @@ class Mora(commands.Cog):
 
         embed.add_field(name="Guild Milestones", value=milestones_text, inline=False)
 
-        animated_background = selected.get("animated_background")
+        animated_background = selected.get("animated_background") if elite_active else None
         profile_frame = selected.get("profile_frame")
         
         customized = os.path.isfile(f"{INVENTORY_BG_PATH}/{user.id}.png") or bool(profile_frame) or bool(animated_background)
             
+        custom_title = selected.get("custom_title")
         title_key = selected.get("title")
         title_display = None
-        if title_key:
+        if custom_title:
+            title_display = f"### {custom_title}"
+        elif title_key:
             title_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/titles")
             titles = title_ref.get() or {}
             
@@ -837,7 +852,9 @@ class Mora(commands.Cog):
 
         if customized:
             if animated_background:
-                bg_path = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}.gif"
+                bg_path = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}"
+                if not os.path.exists(bg_path) and not animated_background.lower().endswith(".gif"):
+                    bg_path = f"{bg_path}.gif"
             else:
                 bg_path = f"{INVENTORY_BG_PATH}/{user.id}.png"
 
@@ -846,11 +863,19 @@ class Mora(commands.Cog):
                 f"{int(guild_total):,}",
                 guild_rank,
                 bg=bg_path,
-                profile_frame=profile_frame if profile_frame else None
+                profile_frame=profile_frame if profile_frame else None,
+                accent_color_hex=custom_color_hex,
+                font_name=selected.get("font") if elite_active else None
             )
             followup = False
         else:
-            filename = await createProfileCard(user, f"{guild_total:,}", guild_rank)
+            filename = await createProfileCard(
+                user,
+                f"{guild_total:,}",
+                guild_rank,
+                accent_color_hex=custom_color_hex,
+                font_name=selected.get("font") if elite_active else None
+            )
             followup = True
 
         chn = interaction.client.get_channel(1026968305208131645)

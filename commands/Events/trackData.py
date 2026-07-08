@@ -1,4 +1,5 @@
 import discord
+import os
 import time
 
 from firebase_admin import db
@@ -59,6 +60,22 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
             ref.set(backgrounds)
             title = f"{'Elite Reward: ' if is_elite else ''} Animated Inventory Background Unlocked 🖼️"
             description = f"**Tier `{tier}`:** You have unlocked **{background_name}**! Use {SlashCommand('customize')} to equip it in this server!"
+
+    elif reward_type == "custom_gif_background":
+        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/selected")
+        selected = ref.get() or {}
+        selected["animated_background_unlocked"] = True
+        ref.set(selected)
+        title = f"{'Elite Reward: ' if is_elite else ''} Custom GIF Background Unlocked 🖼️"
+        description = f"**Tier `{tier}`:** You can now upload and use a custom animated GIF background with {SlashCommand('customize')}!"
+
+    elif reward_type == "font_unlock":
+        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/selected")
+        selected = ref.get() or {}
+        selected["font_unlocked"] = True
+        ref.set(selected)
+        title = f"{'Elite Reward: ' if is_elite else ''} Custom Card Font Unlocked 🔤"
+        description = f"**Tier `{tier}`:** You can now select an Elite Track font preset with {SlashCommand('customize')}!"
         
     elif reward_type == "title":
         title_parts = reward_str.split('|')
@@ -75,18 +92,32 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/profile_frames")
         profile_frames = ref.get() or []
         reward_file_name = reward_str.split('|')[1].strip()
-        frame_name = f"{reward_file_name.split('/')[2].strip()}"
+        frame_name = os.path.basename(reward_file_name)
         if frame_name not in profile_frames:
             profile_frames.append(frame_name)
             ref.set(profile_frames)
             title = f"{'Elite Reward: ' if is_elite else ''} {'Static' if 'static' in reward_type else '**Animated**'} Profile Frame Unlocked 👤"
             description = f"**Tier `{tier}`:** You have unlocked **{frame_name.split('.')[0]}**! Use {SlashCommand('customize')} to equip it in this server!"
             
-    elif reward_type == "embed_color":
+    elif reward_type == "accent_color" or reward_type == "embed_color":
         ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/embed_color")
         ref.set(True)
-        title = f"{'Elite Reward: ' if is_elite else ''} Custom Embed Color Unlocked 🎨"
-        description = f"**Tier `{tier}`:** You can have a custom color on your inventory! Use {SlashCommand('customize')} to edit your favorite color!"
+        title = f"{'Elite Reward: ' if is_elite else ''} Custom Accent Color Unlocked 🎨"
+        description = f"**Tier `{tier}`:** You can have a custom accent color on your inventory and profile card! Use {SlashCommand('customize')} to edit your favorite color!"
+
+    elif reward_type == "custom_title":
+        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/selected")
+        selected = ref.get() or {}
+        selected["custom_title_unlocked"] = True
+        ref.set(selected)
+        title = f"{'Elite Reward: ' if is_elite else ''} Custom Title Unlocked 📍"
+        description = f"**Tier `{tier}`:** You can now set a custom text title with {SlashCommand('customize')}!"
+
+    elif reward_type == "express_daily_chests":
+        from commands.Events.helperFunctions import update_express_daily_chests
+        await update_express_daily_chests(pool, guild_id, user_id, True)
+        title = f"{'Elite Reward: ' if is_elite else ''} Express Daily Chests ⚡"
+        description = f"**Tier `{tier}`:** Your daily chest will now spawn after **1 effortful message** in minigame channels."
             
     elif reward_type == "prestige":
         async with pool.acquire() as conn:
@@ -141,8 +172,8 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         title = f"{'Elite Reward: ' if is_elite else ''}Gift Tax Reduced -{tax_reduction}% :chart_with_downwards_trend:"
         description = f"**Tier `{tier}`:** Your gifting tax rate is now **`{new_tax}%`**! Use {SlashCommand('gift')} to send some love!"
     
-    elif reward_type == "minigame_summon":
-        summon_amount = int(reward_str.split()[0].replace('+', '')) # Extract summon amount (e.g., "+3" from "+3 Minigames Summon")
+    elif reward_type == "minigame_summon" or reward_type == "minigame_summon_30":
+        summon_amount = 30 if reward_type == "minigame_summon_30" else int(reward_str.split()[0].replace('+', '')) # Extract summon amount (e.g., "+3" from "+3 Minigames Summon")
         async with pool.acquire() as conn:
             new_summons = await conn.fetchval(
                 "UPDATE minigame_progression SET minigame_summons = minigame_summons + $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2 RETURNING minigame_summons",
@@ -150,6 +181,22 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
             )
         title = f"{'Elite Reward: ' if is_elite else ''}+{summon_amount} Minigame Summons 🧲"
         description = f"**Tier `{tier}`:** You have a total of **{new_summons} minigame summons** available! Use {SlashCommand('summon')} to immediately start a minigame in a channel!"
+
+    elif reward_type == "shop_discount":
+        from commands.Events.helperFunctions import get_shop_discount, update_shop_discount
+        current_discount = await get_shop_discount(pool, guild_id, user_id)
+        new_discount = min(50, current_discount + 10)
+        await update_shop_discount(pool, guild_id, user_id, new_discount)
+        title = f"{'Elite Reward: ' if is_elite else ''} Shop Discount +10% 🏷️"
+        description = f"**Tier `{tier}`:** Your shop purchases now get a **{new_discount}% discount**."
+
+    elif reward_type == "domain_discount":
+        from commands.Events.helperFunctions import get_domain_discount, update_domain_discount
+        current_discount = await get_domain_discount(pool, guild_id, user_id)
+        new_discount = min(50, current_discount + 10)
+        await update_domain_discount(pool, guild_id, user_id, new_discount)
+        title = f"{'Elite Reward: ' if is_elite else ''} Domain Discount +10% 🏰"
+        description = f"**Tier `{tier}`:** Your domain upgrades now get a **{new_discount}% discount**."
 
     return (title, description)
 

@@ -6,12 +6,18 @@ import asyncio
 from discord import app_commands
 from discord.ext import commands
 from firebase_admin import db
-from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory
+from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory, apply_discount, get_shop_discount
 from utils.commands import SlashCommand
 
 from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, HISTORY_DB, SHOP_EDITS_PENDING_DB, BALANCE_COMMAND, CONFUSED_EMOTE
 
 global_purchase_queue = asyncio.Queue()
+
+def format_discounted_price(original_cost: int, discounted_cost: int, discount_percent: int) -> str:
+    if discount_percent <= 0 or discounted_cost >= original_cost:
+        return f"{MORA_EMOTE} **{original_cost:,}**"
+
+    return f"{MORA_EMOTE} ~~**{original_cost:,}**~~ ➜ **{discounted_cost:,}** (-{discount_percent}%)"
 
 async def purchase_worker():
     while True:
@@ -239,6 +245,8 @@ class ConfirmPurchaseView(discord.ui.View):
             return
 
         itemCost = int(rewards[x][2])
+        shop_discount = await get_shop_discount(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        discountedCost = apply_discount(itemCost, shop_discount)
         import copy
         ogRewards = copy.deepcopy(rewards)
 
@@ -253,6 +261,7 @@ class ConfirmPurchaseView(discord.ui.View):
             if isinstance(roleName, int) or roleName.isdigit()
             else roleName
         )
+        purchase_price_text = format_discounted_price(itemCost, discountedCost, shop_discount)
                 
         if len(rewards[x]) > 4 and rewards[x][4] == 0:
             embed = discord.Embed(
@@ -263,7 +272,7 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=None)
             return
         
-        if itemCost > total_available:
+        if discountedCost > total_available:
             embed = discord.Embed(
                 title=f"{SHRUG_EMOTE} Insufficient Balance",
                 description=f"We couldn't assign you **{role_mention}**. Please check your {MORA_EMOTE} balance using {SlashCommand(BALANCE_COMMAND)} to confirm if you have enough for this purchase.",
@@ -302,14 +311,19 @@ class ConfirmPurchaseView(discord.ui.View):
             cost = int(rewards[x][2])   # cost
             timestamp = int(time.mktime(datetime.datetime.now().timetuple()))
             
-            await add_inventory_item(interaction.client.pool, interaction.user.id, interaction.guild.id, title, desc, cost, timestamp, pinned=False)
-            await subtractGuildMora(interaction.client.pool, interaction.user.id, itemCost, interaction.channel.id, interaction.guild.id)
+            await add_inventory_item(interaction.client.pool, interaction.user.id, interaction.guild.id, title, desc, discountedCost, timestamp, pinned=False)
+            await subtractGuildMora(interaction.client.pool, interaction.user.id, discountedCost, interaction.channel.id, interaction.guild.id)
             
-            xp_earned = f"\n> {CONFUSED_EMOTE} You have also earned **`{int(itemCost/100):,}` XP** from this purchase!"
+            xp_earned = f"\n> {CONFUSED_EMOTE} You have also earned **`{int(discountedCost/100):,}` XP** from this purchase!"
                 
             embed = discord.Embed(
                 title=f"{HAPPY_EMOTE} Successful Purchase",
-                description=f"Congratulations! You have paid {MORA_EMOTE} **{itemCost:,}** and now own **{role_mention}**. {xp_earned}",
+                description=(
+                    f"Congratulations! You have paid {purchase_price_text} and now own **{role_mention}**. "
+                    f"{xp_earned}"
+                    if shop_discount > 0
+                    else f"Congratulations! You have paid {MORA_EMOTE} **{discountedCost:,}** and now own **{role_mention}**. {xp_earned}"
+                ),
                 color=discord.Color.green(),
             )
 
@@ -318,8 +332,8 @@ class ConfirmPurchaseView(discord.ui.View):
             from commands.Events.quests import update_quest
 
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"purchase_items": 1}, interaction.client)
-            tier, old_xp, new_xp = await add_xp(interaction.user.id, interaction.guild.id, int(itemCost / 100), interaction.client)
-            print(f"Added {int(itemCost/100)} XP from purchase.")
+            tier, old_xp, new_xp = await add_xp(interaction.user.id, interaction.guild.id, int(discountedCost / 100), interaction.client)
+            print(f"Added {int(discountedCost/100)} XP from purchase.")
             free_embed, elite_embed = await check_tier_rewards(
                 guild_id=interaction.guild.id,
                 user_id=interaction.user.id,
@@ -337,7 +351,7 @@ class ConfirmPurchaseView(discord.ui.View):
                 ref.set(ogRewards)
                 
             link = (await interaction.original_response()).jump_url
-            print(f"{interaction.user.name} ({interaction.user.id}) have paid {itemCost:,} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
+            print(f"{interaction.user.name} ({interaction.user.id}) have paid {discountedCost:,} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
 
             try:
                 purchase_timestamp = int(time.time())
@@ -350,7 +364,7 @@ class ConfirmPurchaseView(discord.ui.View):
                 purchase_data = {
                     "item_name": item_name,
                     "item_description": item_description,
-                    "cost": itemCost,
+                    "cost": discountedCost,
                     "timestamp": purchase_timestamp,
                     "link": link
                 }
@@ -455,9 +469,19 @@ class Buy(commands.Cog):
         role_mention = (
             f"<@&{item}>" if isinstance(item, int) or item.isdigit() else item
         )
+        shop_discount = await get_shop_discount(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        discounted_cost = apply_discount(itemCost, shop_discount)
+        if shop_discount > 0:
+            purchase_price_text = format_discounted_price(itemCost, discounted_cost, shop_discount)
+            purchase_description = (
+                f"Are you sure you want to purchase **{role_mention}** for {purchase_price_text}?"
+            )
+        else:
+            purchase_description = f"Are you sure you want to purchase **{role_mention}** for {MORA_EMOTE} **{itemCost:,}**?"
+
         embed = discord.Embed(
             title=f"{THINK_EMOTE} Confirm Purchase",
-            description=f"Are you sure you want to purchase **{role_mention}** for {MORA_EMOTE} **{itemCost:,}**?",
+            description=purchase_description,
             color=discord.Color.gold()
         )
         embed.set_footer(text="Purchase buttons will timeout in 30 seconds")

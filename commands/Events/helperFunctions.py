@@ -2,6 +2,7 @@ import discord
 import asyncio
 import time
 import datetime
+import math
 import asyncpg
 
 from typing import Optional
@@ -14,11 +15,15 @@ from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, SYSTEM_DB, 
 
 async def ensure_progression_user(pool: asyncpg.Pool, gid: int, uid: int) -> None:
     async with pool.acquire() as conn:
+        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS shop_discount INTEGER DEFAULT 0")
+        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS domain_discount INTEGER DEFAULT 0")
+        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS express_daily_chests BOOLEAN DEFAULT FALSE")
         await conn.execute("""
             INSERT INTO minigame_progression 
             (gid, uid, kingdom_schloss, kingdom_theater, kingdom_bibliothek, kingdom_garten,
-             xp, prestige, bonus_tier, mora_boost, chest_upgrades, gift_tax, minigame_summons)
-            VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0, 4, NULL, 0)
+             xp, prestige, bonus_tier, mora_boost, chest_upgrades, gift_tax, minigame_summons,
+             shop_discount, domain_discount, express_daily_chests)
+            VALUES ($1, $2, 0, 0, 0, 0, 0, 0, 0, 0, 4, NULL, 0, 0, 0, FALSE)
             ON CONFLICT (gid, uid) DO NOTHING
         """, gid, uid)
 
@@ -93,14 +98,71 @@ async def increment_building_level(pool: asyncpg.Pool, gid: int, uid: int, build
     return new_val or 0
 
 async def get_user_stats(pool: asyncpg.Pool, gid: int, uid: int) -> dict:
+    await ensure_progression_user(pool, gid, uid)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT mora_boost, chest_upgrades, gift_tax, minigame_summons FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            "SELECT mora_boost, chest_upgrades, gift_tax, minigame_summons, shop_discount, domain_discount, express_daily_chests FROM minigame_progression WHERE gid = $1 AND uid = $2",
             gid, uid
         )
     if not row:
-        return {"mora_boost": 0, "chest_upgrades": 4, "gift_tax": None, "minigame_summons": 0}
+        return {"mora_boost": 0, "chest_upgrades": 4, "gift_tax": None, "minigame_summons": 0, "shop_discount": 0, "domain_discount": 0, "express_daily_chests": False}
     return dict(row)
+
+def apply_discount(amount: int, discount_percent: int) -> int:
+    discount_percent = max(0, min(50, int(discount_percent or 0)))
+    discounted = amount * (100 - discount_percent) / 100
+    return max(0, math.ceil(discounted))
+
+async def get_shop_discount(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT shop_discount FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return min(50, val or 0)
+
+async def update_shop_discount(pool: asyncpg.Pool, gid: int, uid: int, value: int) -> None:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_progression SET shop_discount = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+            gid, uid, min(50, max(0, value))
+        )
+
+async def get_domain_discount(pool: asyncpg.Pool, gid: int, uid: int) -> int:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT domain_discount FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return min(50, val or 0)
+
+async def update_domain_discount(pool: asyncpg.Pool, gid: int, uid: int, value: int) -> None:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_progression SET domain_discount = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+            gid, uid, min(50, max(0, value))
+        )
+
+async def get_express_daily_chests(pool: asyncpg.Pool, gid: int, uid: int) -> bool:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT express_daily_chests FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return bool(val)
+
+async def update_express_daily_chests(pool: asyncpg.Pool, gid: int, uid: int, value: bool) -> None:
+    await ensure_progression_user(pool, gid, uid)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_progression SET express_daily_chests = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+            gid, uid, bool(value)
+        )
 
 async def get_mora_boost(pool: asyncpg.Pool, gid: int, uid: int) -> int:
     async with pool.acquire() as conn:

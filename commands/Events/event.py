@@ -4386,6 +4386,8 @@ class DailyChestSystem:
         if key in self.claimed_today:
             return
             
+        from commands.Events.helperFunctions import get_express_daily_chests
+
         if key not in self.user_states or self.user_states[key]['current_date'] != today:
             db_state = self.load_from_db(guild_id, user_id)
             if db_state and db_state['current_date'] == today:
@@ -4394,16 +4396,21 @@ class DailyChestSystem:
                     self.claimed_today.add(key)
                     return
             else:
+                express_daily_chests = await get_express_daily_chests(cog.client.pool, guild_id, user_id)
                 self.user_states[key] = {
                     'message_count': 0,
                     'last_time': 0,
                     'last_content': '',
                     'current_date': today,
-                    'threshold': random.randint(4, 6),
+                    'threshold': 1 if express_daily_chests else random.randint(4, 6),
                     'chest_triggered': False
                 }
         
         state = self.user_states[key]
+        if await get_express_daily_chests(cog.client.pool, guild_id, user_id):
+            state['threshold'] = 1
+        elif state.get('threshold') is None:
+            state['threshold'] = random.randint(4, 6)
         current_time = time.time()
         
         if current_time - state['last_time'] < self.cooldown:
@@ -4497,7 +4504,7 @@ class DailyChestSystem:
             color=discord.Color.random()
         )
         embed.set_thumbnail(url=MORA_CHEST_ICONS[MORA_CHEST_TIERS[0]])
-        embed.set_footer(text=f"A chest spawns after sending {MORA_CHEST_SPAWN_REQ[0]}-{MORA_CHEST_SPAWN_REQ[1]} effortful messages in minigame channels each day")
+        embed.set_footer(text=f"A chest spawns after sending {self.user_states[(guild_id, user_id)]['threshold']} effortful message{'s' if self.user_states[(guild_id, user_id)]['threshold'] != 1 else ''} in minigame channels each day")
         chest_msg = await message.channel.send(
             content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + MORA_CHEST_TIMEOUT}:R>!",
             embed=embed,

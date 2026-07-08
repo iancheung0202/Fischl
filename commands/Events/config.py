@@ -1,5 +1,13 @@
 import discord
-from utils.commands import SlashCommand
+try:
+    from utils.commands import SlashCommand
+except ImportError:
+    class SlashCommand:
+        def __init__(self, name):
+            self.name = name
+
+        def __str__(self):
+            return f"`/{self.name}`"
 
 CURRENCY_NAME = "Mora"
 
@@ -26,6 +34,18 @@ INVENTORY_BG_PATH = "./assets/Mora Inventory Background"
 ANIMATED_INVENTORY_BG_PATH = "./assets/Animated Mora Inventory Background"
 DEFAULT_BG_PATH = "./assets/mora_bg.png"
 FONT_PATH = "./assets/ja-jp.ttf"
+FONT_PRESETS = {
+    "Default": FONT_PATH,
+    "Arimo": "/usr/share/fonts/truetype/croscore/Arimo-Bold.ttf",
+    "Cousine": "/usr/share/fonts/truetype/croscore/Cousine-Bold.ttf",
+    "Tinos": "/usr/share/fonts/truetype/croscore/Tinos-Bold.ttf",
+    "DejaVu Sans": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "DejaVu Serif": "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "DejaVu Sans Mono": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "FreeMono": "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
+    "FreeSans": "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    "FreeSerif": "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+}
 PROFILE_CARD_PATH = "./assets/mora.png"
 TYPERACER_BG_PATH = "./assets/F7E8BE.png"
 TYPERACER_PATH = "./assets/typeracer.png"
@@ -154,26 +174,29 @@ class PurchaseEliteTrack(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         elite_button = discord.ui.Button(
-            label="Purchase on Website",
+            label="Buy on Website",
             style=discord.ButtonStyle.link,
             url="https://fischl.app/profile",
         )
+        
         embed = discord.Embed(
-            title=f"{MONEYDANCE_EMOTE} Less than USD $1/month. More than worth it. {MONEYDANCE_EMOTE}",
+            title=f"{MONEYDANCE_EMOTE} Less than USD $1/month. MASSIVE Upgrades Inside! {MONEYDANCE_EMOTE}",
             description=(
-                f"> -# *\"Cheaper than a single Genshin wish, plus you always get value.\"*\n\n"
+                f"> -# *\"Cheaper than a single Genshin wish, now packed with even more value.\"*\n\n"
                 f"**Elite Track** unlocks a premium reward tier alongside every free tier while supporting development work:\n\n"
-                f"-# {DOT_EMOTE}**Animated Cosmetics**: exclusive animated backgrounds, frames, and badge titles <:KokoWow:1191868161851666583>\n"
-                f"-# {DOT_EMOTE}**Enhanced Boosts**: extra Mora gains, reduced gifting tax, more chest upgrades, and more <:PinkCelebrate:1204614140044386314>\n"
-                f"-# {DOT_EMOTE}**Flexing Perks**: earn **+1 additional Prestige** at the final tier <:LynetteSip:1335609206988079169>\n\n"
+                f"-# {DOT_EMOTE}**Ultimate Customization**: Unlock **Custom GIF Backgrounds**, **Fonts**, **Accent Colors**, and **Titles** to make your profile uniquely yours! <:CharlotteHeart:1191594476263702528>\n"
+                f"-# {DOT_EMOTE}**Animated Cosmetics**: Exclusive animated profile frames to allow you to stand out from the crowd! <:KokoWow:1191868161851666583>\n"
+                f"-# {DOT_EMOTE}**Economic Boosts**: Shop & Domain discounts, extra Mora gains, reduced gifting tax, and immediate spawns for daily chests <:PinkCelebrate:1204614140044386314>\n"
+                f"-# {DOT_EMOTE}**Flexing Perks**: Earn **+1 additional Prestige** at the final tier <:LynetteSip:1335609206988079169>\n\n"
                 f"**Elite rewards are server-specific, and a season lasts for 3 months.**\n"
                 f"<:reply:1036792837821435976> <:YanfeiNote:1335644122253623458> ***[View Full Track Comparison](https://fischl.app/profile)***"
             ),
             color=0xfa0af6
         )
-        embed.set_footer(text="Login with Discord on the website and select a server to purchase.")
+        embed.set_footer(text="Login with Discord on the website and select a server to get started.")
         embed.set_thumbnail(url="https://media.discordapp.net/attachments/1106727534479032341/1381827880488669327/elite_track.png?ex=6848eeff&is=68479d7f&hm=079b87a3cac4fdcc8c3fd3fbe615bbf1380651da2e5119c748c5e78ffaa2e752&=&format=webp&quality=lossless&width=840&height=840")
-        view = View()
+        
+        view = discord.ui.View()
         view.add_item(elite_button)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -468,75 +491,36 @@ SEASONS = [
         start_ts=1782864001,   # July 1, 2026
         end_ts=1790812800,     # October 1, 2026
         track_data = [
-            {'tier': 1,  'xp_req': 1000, 'cumulative_xp': 1000,    'free': 'Drop Pack',                                                      'elite': 'Custom Embed Color'},
-            {'tier': 2,  'xp_req': 1000, 'cumulative_xp': 2000,    'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 3,  'xp_req': 1000, 'cumulative_xp': 3000,    'free': '+3 Minigames Summon',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 4,  'xp_req': 1000, 'cumulative_xp': 4000,    'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
-            {'tier': 5,  'xp_req': 1000, 'cumulative_xp': 5000,    'free': 'Unlocks Mora Gifting',                                            'elite': 'Mora Gift Tax -5%'},
-            {'tier': 6,  'xp_req': 1000, 'cumulative_xp': 6000,    'free': 'Server Title | The Golden Apple Vacation Returns!',                                'elite': '+10 Minigames Summon'},
-            {'tier': 7,  'xp_req': 1000, 'cumulative_xp': 7000,   'free': 'Drop Pack',                                            'elite': '+1 Chest Upgrade Limit'},
-            {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gift Tax -5%'},
-            {'tier': 9,  'xp_req': 1000, 'cumulative_xp': 9000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 10, 'xp_req': 1000, 'cumulative_xp': 10000,   'free': 'Drop Pack',                                                      'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Jade Stone.gif'},
-            {'tier': 11, 'xp_req': 1000, 'cumulative_xp': 11000,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Mora Gain Boost +5%'},
-            {'tier': 12, 'xp_req': 1000, 'cumulative_xp': 12000,   'free': '+1 Chest Upgrade Limit',                                         'elite': '+10 Minigames Summon'},
-            {'tier': 13, 'xp_req': 1000, 'cumulative_xp': 13000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 14, 'xp_req': 1000, 'cumulative_xp': 14000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Snowglobe.png',             'elite': 'Animated Title | <a:dragon_gif:1422382705307291770> A Curtain Call for a Colorful Summer Night!'},
-            {'tier': 15, 'xp_req': 1000, 'cumulative_xp': 15000,   'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
-            {'tier': 16, 'xp_req': 2500, 'cumulative_xp': 17500,   'free': 'Mora Gift Tax -5%',                                              'elite': '+10 Minigames Summon'},
-            {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
-            {'tier': 18, 'xp_req': 2500, 'cumulative_xp': 22500,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 19, 'xp_req': 2500, 'cumulative_xp': 25000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gain Boost +5%'},
-            {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | Immernachtreich Apokalypse',                            'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Dragon Mouth.gif'},
-            {'tier': 21, 'xp_req': 2500, 'cumulative_xp': 30000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
-            {'tier': 22, 'xp_req': 2500, 'cumulative_xp': 32500,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 23, 'xp_req': 2500, 'cumulative_xp': 35000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 24, 'xp_req': 2500, 'cumulative_xp': 37500,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Mora Gain Boost +5%'},
-            {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Drop Pack',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 26, 'xp_req': 5000, 'cumulative_xp': 45000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Mountains.png',        'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Holodragon.gif'},
-            {'tier': 27, 'xp_req': 5000, 'cumulative_xp': 50000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -5%'},
-            {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Drop Pack',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | What a beautiful day!',        'elite': 'Animated Title | <a:dragon1:1422382712043339836> As the Courtyard in Spring Once Appeared'},
-            {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
-        ]
-    ),
-    Season(
-        id=6,
-        name="Autumn Harvest Festival",
-        start_ts=1790812801,   # October 1, 2026
-        end_ts=1798765200,     # January 1, 2027
-        track_data = [
-            {'tier': 1,  'xp_req': 1000, 'cumulative_xp': 1000,    'free': 'Drop Pack',                                                      'elite': 'Custom Embed Color'},
-            {'tier': 2,  'xp_req': 1000, 'cumulative_xp': 2000,    'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 3,  'xp_req': 1000, 'cumulative_xp': 3000,    'free': '+3 Minigames Summon',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 4,  'xp_req': 1000, 'cumulative_xp': 4000,    'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
-            {'tier': 5,  'xp_req': 1000, 'cumulative_xp': 5000,    'free': 'Unlocks Mora Gifting',                                            'elite': 'Mora Gift Tax -5%'},
-            {'tier': 6,  'xp_req': 1000, 'cumulative_xp': 6000,    'free': 'Server Title | Moonlight Merriment',                                'elite': '+10 Minigames Summon'},
-            {'tier': 7,  'xp_req': 1000, 'cumulative_xp': 7000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
-            {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gift Tax -5%'},
-            {'tier': 9,  'xp_req': 1000, 'cumulative_xp': 9000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 10, 'xp_req': 1000, 'cumulative_xp': 10000,   'free': 'Drop Pack',                                                      'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Jade Stone.gif'},
-            {'tier': 11, 'xp_req': 1000, 'cumulative_xp': 11000,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Mora Gain Boost +5%'},
-            {'tier': 12, 'xp_req': 1000, 'cumulative_xp': 12000,   'free': '+1 Chest Upgrade Limit',                                         'elite': '+10 Minigames Summon'},
-            {'tier': 13, 'xp_req': 1000, 'cumulative_xp': 13000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 14, 'xp_req': 1000, 'cumulative_xp': 14000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Snowglobe.png',             'elite': 'Animated Title | <a:dragon_gif:1422382705307291770> Shadows Amidst Snowstorms'},
-            {'tier': 15, 'xp_req': 1000, 'cumulative_xp': 15000,   'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
-            {'tier': 16, 'xp_req': 2500, 'cumulative_xp': 17500,   'free': 'Mora Gift Tax -5%',                                              'elite': '+10 Minigames Summon'},
-            {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +5%'},
-            {'tier': 18, 'xp_req': 2500, 'cumulative_xp': 22500,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 19, 'xp_req': 2500, 'cumulative_xp': 25000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gain Boost +5%'},
-            {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | Akitsu Kimodameshi',                            'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Dragon Mouth.gif'},
-            {'tier': 21, 'xp_req': 2500, 'cumulative_xp': 30000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
-            {'tier': 22, 'xp_req': 2500, 'cumulative_xp': 32500,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 23, 'xp_req': 2500, 'cumulative_xp': 35000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 24, 'xp_req': 2500, 'cumulative_xp': 37500,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Mora Gain Boost +5%'},
-            {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+10 Minigames Summon'},
-            {'tier': 26, 'xp_req': 5000, 'cumulative_xp': 45000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Mountains.png',        'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Holodragon.gif'},
-            {'tier': 27, 'xp_req': 5000, 'cumulative_xp': 50000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -5%'},
-            {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
-            {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | Three to Get Ready, and Here We Go',        'elite': 'Animated Title | <a:dragon1:1422382712043339836> Can\'t handle the cold?'},
+            {'tier': 1,  'xp_req': 1000, 'cumulative_xp': 1000,    'free': 'Drop Pack',                                                      'elite': 'Custom Accent Color'},
+            {'tier': 2,  'xp_req': 1000, 'cumulative_xp': 2000,    'free': 'Mora Gain Boost +5%',                                            'elite': 'Express Daily Chests'},
+            {'tier': 3,  'xp_req': 1000, 'cumulative_xp': 3000,    'free': '+3 Minigames Summon',                                            'elite': 'Custom Title'},
+            {'tier': 4,  'xp_req': 1000, 'cumulative_xp': 4000,    'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +10%'},
+            {'tier': 5,  'xp_req': 1000, 'cumulative_xp': 5000,    'free': 'Unlocks Mora Gifting',                                           'elite': 'Mora Gift Tax -10%'},
+            {'tier': 6,  'xp_req': 1000, 'cumulative_xp': 6000,    'free': 'Server Title | The Golden Apple Vacation Returns!',              'elite': 'Shop Discount +10%'},
+            {'tier': 7,  'xp_req': 1000, 'cumulative_xp': 7000,   'free': 'Drop Pack',                                                       'elite': '+1 Chest Upgrade Limit'},
+            {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                          'elite': 'Domain Discount +10%'},
+            {'tier': 9,  'xp_req': 1000, 'cumulative_xp': 9000,   'free': 'Mora Gain Boost +5%',                                             'elite': 'Custom Card Font'},
+            {'tier': 10, 'xp_req': 1000, 'cumulative_xp': 10000,   'free': 'Drop Pack',                                                      'elite': 'Custom GIF Background'},
+            {'tier': 11, 'xp_req': 1000, 'cumulative_xp': 11000,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Jade Stone.gif'},
+            {'tier': 12, 'xp_req': 1000, 'cumulative_xp': 12000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gain Boost +10%'},
+            {'tier': 13, 'xp_req': 1000, 'cumulative_xp': 13000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gift Tax -10%'},
+            {'tier': 14, 'xp_req': 1000, 'cumulative_xp': 14000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Snowglobe.png',          'elite': 'Shop Discount +10%'},
+            {'tier': 15, 'xp_req': 1000, 'cumulative_xp': 15000,   'free': 'Drop Pack',                                                      'elite': '+30 Minigames Summon'},
+            {'tier': 16, 'xp_req': 2500, 'cumulative_xp': 17500,   'free': 'Mora Gift Tax -5%',                                              'elite': '+1 Chest Upgrade Limit'},
+            {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Domain Discount +10%'},
+            {'tier': 18, 'xp_req': 2500, 'cumulative_xp': 22500,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +10%'},
+            {'tier': 19, 'xp_req': 2500, 'cumulative_xp': 25000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Shop Discount +10%'},
+            {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | Immernachtreich Apokalypse',                      'elite': 'Domain Discount +10%'},
+            {'tier': 21, 'xp_req': 2500, 'cumulative_xp': 30000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Dragon Mouth.gif'},
+            {'tier': 22, 'xp_req': 2500, 'cumulative_xp': 32500,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gain Boost +10%'},
+            {'tier': 23, 'xp_req': 2500, 'cumulative_xp': 35000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
+            {'tier': 24, 'xp_req': 2500, 'cumulative_xp': 37500,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Shop Discount +10%'},
+            {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Drop Pack',                                                      'elite': 'Domain Discount +10%'},
+            {'tier': 26, 'xp_req': 5000, 'cumulative_xp': 45000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Mountains.png',          'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Holodragon.gif'},
+            {'tier': 27, 'xp_req': 5000, 'cumulative_xp': 50000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +10%'},
+            {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -10%'},
+            {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Drop Pack',                                                      'elite': 'Shop Discount +10%'},
+            {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | What a beautiful day!',                           'elite': 'Domain Discount +10%'},
             {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
         ]
     ),
@@ -545,6 +529,7 @@ SEASONS = [
 REWARD_TYPES = {
     "Drop Pack": "drop_pack",
     "Animated Background": "animated_background",
+    "Custom GIF Background": "custom_gif_background",
     "Static Frame": "static_frame",
     "Animated Frame": "animated_frame",
     "Prestige +1": "prestige",
@@ -555,9 +540,16 @@ REWARD_TYPES = {
     "Unlocks Mora Gifting": "unlock_gifting",
     "Mora Gift Tax -5%": "gift_tax",
     "+3 Minigames Summon": "minigame_summon",
-    "Custom Embed Color": "embed_color",
+    "Custom Embed Color": "accent_color",
+    "Custom Accent Color": "accent_color",
     "Server Title": "title",
-    "Animated Title": "title"
+    "Custom Title": "custom_title",
+    "Animated Title": "title",
+    "Custom Card Font": "font_unlock",
+    "Shop Discount +10%": "shop_discount",
+    "Domain Discount +10%": "domain_discount",
+    "Express Daily Chests": "express_daily_chests",
+    "+30 Minigames Summon": "minigame_summon_30",
 }
 
 XP_QUEST_EMBED = discord.Embed(

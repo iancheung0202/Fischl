@@ -14,7 +14,7 @@ import random
 import asyncio
 import psycopg2
 
-from PIL import Image, ImageDraw, ImageFont, ImageSequence
+from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageSequence
 from firebase_admin import db
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, session, redirect, abort, jsonify
@@ -26,6 +26,20 @@ from utils.minigames import get_total_mora, get_guild_mora, check_events_enabled
 from utils.theme import wrap_page
 from utils.loading import create_loading_skeleton
 from utils.daily_games import DAILY_GAMES, HANGMAN_WORDS, UNSCRAMBLE_WORDS, TYPING_PHRASES
+
+FONT_PATH = "../assets/ja-jp.ttf"
+FONT_PRESETS = {
+    "Default": FONT_PATH,
+    "Arimo": "/usr/share/fonts/truetype/croscore/Arimo-Bold.ttf",
+    "Cousine": "/usr/share/fonts/truetype/croscore/Cousine-Bold.ttf",
+    "Tinos": "/usr/share/fonts/truetype/croscore/Tinos-Bold.ttf",
+    "DejaVu Sans": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "DejaVu Serif": "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "DejaVu Sans Mono": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    "FreeMono": "/usr/share/fonts/truetype/freefont/FreeMonoBold.ttf",
+    "FreeSans": "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    "FreeSerif": "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+}
 
 profile = Blueprint('profile', __name__)
 
@@ -244,7 +258,9 @@ async def createProfileCard(
     rank: str,
     bg: str = "../assets/mora_bg.png",
     filename: str = "../assets/mora.png",
-    profile_frame: str = None
+    profile_frame: str = None,
+    accent_color_hex: str = None,
+    font_name: str = None
 ):
     # Preload avatar once (RGBA circle)
     avatar_bytes = await user.avatar.read()
@@ -256,10 +272,31 @@ async def createProfileCard(
     im_avatar.putalpha(mask)  # avatar is now circular RGBA
 
     # Preload fonts only once
-    font_display = ImageFont.truetype("../assets/ja-jp.ttf", 45)
-    font_username = ImageFont.truetype("../assets/ja-jp.ttf", 25)
-    font_mora = ImageFont.truetype("../assets/ja-jp.ttf", 40)
-    font_rank = ImageFont.truetype("../assets/ja-jp.ttf", 35)
+    font_path = FONT_PRESETS.get(font_name, FONT_PATH) if font_name else FONT_PATH
+    if not os.path.exists(font_path):
+      font_path = "../assets/ja-jp.ttf" if os.path.exists("../assets/ja-jp.ttf") else FONT_PATH
+    font_display = ImageFont.truetype(font_path, 45)
+    font_username = ImageFont.truetype(font_path, 25)
+    font_mora = ImageFont.truetype(font_path, 40)
+    font_rank = ImageFont.truetype(font_path, 35)
+
+    accent_color = None
+    if accent_color_hex:
+      try:
+        accent_color = ImageColor.getrgb(f"#{accent_color_hex.lstrip('#')}")
+      except ValueError:
+        accent_color = None
+
+    def shift_color(base_color, strength):
+      if not accent_color:
+        return base_color
+      blended = tuple(
+        int(base_color[index] * (1 - strength) + accent_color[index] * strength)
+        for index in range(3)
+      )
+      if sum(blended) / 3 < 110:
+        blended = tuple(int(blended[index] * 0.75 + 255 * 0.25) for index in range(3))
+      return blended
 
     # Helper to load image frames
     def load_image_frames(path):
@@ -343,12 +380,12 @@ async def createProfileCard(
                 frame.paste(frame_img, (x, y), frame_img)
             
             draw = ImageDraw.Draw(frame)
-            draw.text((200, 45), user.display_name, font=font_display, fill=(255, 255, 255))
-            draw.text((200, 100), user.name, font=font_username, fill=(225, 225, 225))
-            draw.text((89, 185), num.split(".")[0], font=font_mora, fill=(233, 253, 255))
+            draw.text((200, 45), user.display_name, font=font_display, fill=accent_color or (255, 255, 255))
+            draw.text((200, 100), user.name, font=font_username, fill=shift_color((225, 225, 225), 0.5))
+            draw.text((89, 185), num.split(".")[0], font=font_mora, fill=shift_color((233, 253, 255), 0.4))
             
             if rank != "N/A":
-                draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=(203, 254, 196))
+              draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=shift_color((203, 254, 196), 0.4))
             
             output_frames.append(frame)
         
@@ -407,19 +444,19 @@ async def createProfileCard(
         
     # Draw all text onto the static background
     draw = ImageDraw.Draw(im_bg)
-    draw.text((200, 45), user.display_name, font=font_display, fill=(255, 255, 255))
-    draw.text((200, 100), user.name, font=font_username, fill=(225, 225, 225))
-    draw.text((89, 185), num.split(".")[0], font=font_mora, fill=(233, 253, 255))
+    draw.text((200, 45), user.display_name, font=font_display, fill=accent_color or (255, 255, 255))
+    draw.text((200, 100), user.name, font=font_username, fill=shift_color((225, 225, 225), 0.35))
+    draw.text((89, 185), num.split(".")[0], font=font_mora, fill=shift_color((233, 253, 255), 0.25))
 
     if rank != "N/A":
-        draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=(203, 254, 196))
+      draw.text((400, 190), f"Guild Rank: {rank}", font=font_rank, fill=shift_color((203, 254, 196), 0.25))
 
     # Finally save once (PNG)
     im_bg.save(filename)
     return filename
 
 # Import quests
-quests_path = os.path.join(os.path.dirname(__file__), "..", "..", "commands", "Events", "quests.py")
+quests_path = os.path.join(os.path.dirname(__file__), "..", "..", "commands", "Events", "config.py")
 spec_quests = importlib.util.spec_from_file_location("quests", quests_path)
 quests_module = importlib.util.module_from_spec(spec_quests)
 sys.modules["quests"] = quests_module
@@ -1220,7 +1257,9 @@ def profile_inventory(guild_id):
                 str(guild_rank),
                 bg_path,
                 card_filename,
-                profile_frame
+                profile_frame,
+                accent_color_hex=selected.get("embed_color_hex"),
+                font_name=selected.get("font")
             ))
         finally:
             loop.close()
@@ -1232,9 +1271,16 @@ def profile_inventory(guild_id):
         # Determine file extension for proper MIME type
         is_gif = card_path.lower().endswith('.gif')
         mime_type = "image/gif" if is_gif else "image/png"
+
+        custom_title = selected.get("custom_title")
+        title_display_html = (
+            f'<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">📍 {html.escape(custom_title)}</p>'
+            if custom_title else ""
+        )
         
         profile_card_html = f"""
         <div class="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700 transition-colors mb-6">
+          {title_display_html}
           <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">🎴 Profile Card</h3>
           <div class="flex justify-center">
             <img src="data:{mime_type};base64,{card_data}" alt="Profile Card" class="rounded-lg shadow-lg max-w-full">
