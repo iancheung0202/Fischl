@@ -257,14 +257,14 @@ async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, cli
         for tier in TRACK_DATA:
             if tier["cumulative_xp"] <= max_xp and tier["tier"] not in claimed:
                 await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client, pool=pool)
-                rewards_granted.append(f"Tier {tier['tier']}: {tier['elite'].split('|')[0].strip()}")
+                rewards_granted.append(f"-# - **Tier {tier['tier']}:** {tier['elite'].split('|')[0].strip()}")
 
         max_tier_xp = TRACK_DATA[-1]["cumulative_xp"]
         if max_xp > max_tier_xp:
             total_bonus_tiers = (max_xp - max_tier_xp) // 2500
             for _ in range(total_bonus_tiers):
                 await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client, pool=pool)
-                rewards_granted.append(f"Bonus Drop Pack")
+            rewards_granted.append(f"-# - `x{total_bonus_tiers}` Elite Bonus Drop Pack (dropped at {channel.mention})")
     
     return rewards_granted
 

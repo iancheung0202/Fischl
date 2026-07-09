@@ -41,12 +41,16 @@ class EliteTrack(commands.Cog):
                         from commands.Events.helperFunctions import get_user_xp
                         current_xp = await get_user_xp(self.bot.pool, guild_id, user_id)
 
-                        channel = guild.system_channel
-                        if not channel:
-                            for ch in guild.text_channels:
-                                if ch.permissions_for(guild.me).send_messages:
-                                    channel = ch
-                                    break
+                        async with self.bot.pool.acquire() as conn:
+                            enabled_rows = await conn.fetch(
+                                "SELECT channel_id FROM minigame_settings WHERE minigames_enabled = TRUE"
+                            )
+                        enabled_ids = {r['channel_id'] for r in enabled_rows}
+                        channel = None
+                        for ch in guild.text_channels:
+                            if ch.id in enabled_ids and ch.permissions_for(guild.me).send_messages:
+                                channel = ch
+                                break
 
                         if channel and current_xp > 0:
                             rewards_granted = await grant_elite_rewards_up_to_tier(
@@ -62,7 +66,7 @@ class EliteTrack(commands.Cog):
                                 user = await self.bot.fetch_user(user_id)
                                 if user:
                                     try:
-                                        rewards_message = "***You've received these elite rewards from previous tiers:***\n" + "\n".join(rewards_granted)
+                                        rewards_message = "***You've received these elite rewards from previous tiers:***\n\n" + "\n".join(rewards_granted)
                                         await user.send(
                                             embed=discord.Embed(
                                                 title="🎁 Elite Rewards Granted!",
@@ -139,7 +143,7 @@ class EliteTrack(commands.Cog):
                 pool=self.bot.pool
             )
 
-            rewards_message = "***You've also automatically received these elite rewards from previous tiers:***\n" + "\n".join(rewards_granted) if rewards_granted else "⭐ *No elite rewards from previous tiers are automatically claimed.*"
+            rewards_message = "***You've also automatically received these elite rewards from previous tiers:***\n\n" + "\n".join(rewards_granted) if rewards_granted else "⭐ *No elite rewards from previous tiers are automatically claimed.*"
 
             if user:
                 try:
