@@ -3,42 +3,24 @@ import time
 import random
 
 from discord.ui import View
-from firebase_admin import db
 
-from commands.Events.helperFunctions import addMora, TierRewardsView
+from commands.Events.helperFunctions import addMora, TierRewardsView, get_channel_mora_multiplier
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, PACK_DB
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, DROP_TIERS, DROP_WEIGHTS, DROP_AMOUNTS, XP_BONUS_CHANCE, BONUS_XP
 
-def generate_drops():
+def generate_drops(multiplier=1.0):
     num_drops = random.randint(2, 6)
     drops = []
     for _ in range(num_drops):
-        size = random.choices(
-            ["Tiny", "Small", "Medium", "Large", "Huge", "Mega"],
-            weights=[0.3, 0.25, 0.2, 0.15, 0.08, 0.02],
-            k=1
-        )[0]
-        
-        if size == "Tiny":
-            amount = random.randint(500, 999)
-        elif size == "Small":
-            amount = random.randint(1500, 2000)
-        elif size == "Medium":
-            amount = random.randint(3000, 3500)
-        elif size == "Large":
-            amount = random.randint(6000, 6700)
-        elif size == "Huge":
-            amount = random.randint(9800, 10200)
-        else:  # Mega
-            amount = random.randint(13000, 15000)
-        
+        size = random.choices(DROP_TIERS, weights=DROP_WEIGHTS, k=1)[0]
+        low, high = DROP_AMOUNTS[size]
+        amount = int(random.randint(low, high) * multiplier)
         drops.append({"type": size, "amount": amount, "revealed": False})
     return drops
 
 class DropPackView(View):
-    def __init__(self, pack_id, guild_id, user_id, drops, xp_bonus):
+    def __init__(self, guild_id, user_id, drops, xp_bonus):
         super().__init__(timeout=180)
-        self.pack_id = pack_id
         self.guild_id = guild_id
         self.user_id = user_id
         self.drops = drops
@@ -81,7 +63,7 @@ class DropPackView(View):
             embed.description += f"\n\n**Total:** {MORA_EMOTE} `{text}`"
             
             if self.xp_bonus:
-                embed.description += f"\n✨ **Bonus Reward:** +1000 XP!"
+                embed.description += f"\n✨ **Bonus Reward:** +{BONUS_XP} XP!"
                 
             embed.set_footer(text=None)
             button.label = "Complete"
@@ -97,7 +79,7 @@ class DropPackView(View):
             await update_quest(self.user_id, self.guild_id, interaction.channel.id, {"earn_mora": addedMora}, interaction.client)
             
             if self.xp_bonus:
-                tier, old_xp, new_xp = await add_xp(self.user_id, self.guild_id, 1000, interaction.client)
+                tier, old_xp, new_xp = await add_xp(self.user_id, self.guild_id, BONUS_XP, interaction.client)
                 free_embed, elite_embed = await check_tier_rewards(
                     guild_id=self.guild_id,
                     user_id=self.user_id,
@@ -108,8 +90,8 @@ class DropPackView(View):
                     pool=interaction.client.pool
                 )
                 await interaction.followup.send(view=TierRewardsView(free_embed, elite_embed))
-                
-            db.reference(f"{PACK_DB}/{self.guild_id}/{self.user_id}/{self.pack_id}").delete()
+
+            print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed the Drop Pack in {interaction.guild.name} ({interaction.guild.id})")
             
 class DropPackDelete(discord.ui.Button):
     def __init__(self):
@@ -125,16 +107,10 @@ class DropPackDelete(discord.ui.Button):
         else:
             await interaction.message.delete()
 
-async def create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier):
-    pack_id = str(int(time.time() * 1000))
-    drops = generate_drops()
-    xp_bonus = random.random() < 0.2  # 20% chance
-    
-    ref = db.reference(f"{PACK_DB}/{guild_id}/{user_id}/{pack_id}")
-    ref.set({
-        "drops": drops,
-        "xp_bonus": xp_bonus
-    })
+async def create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier, client=None):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id) if client else 1.0
+    drops = generate_drops(mora_mult)
+    xp_bonus = random.random() < XP_BONUS_CHANCE
     
     if is_bonus:
         title = f"{'Elite ' if is_elite else ''}New Bonus Drop Pack"
@@ -153,8 +129,9 @@ async def create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier)
     )
     embed.set_footer(text=f"{len(drops)} drops incoming!")
     
-    view = DropPackView(pack_id, guild_id, user_id, drops, xp_bonus)
+    view = DropPackView(guild_id, user_id, drops, xp_bonus)
     message = await channel.send(content=f"<@{user_id}>, claim this pack <t:{int(time.time()) + 180}:R>!", embed=embed, view=view)
+    print(f"⛔️⛔️⛔️⛔️⛔️ User {user_id} in {message.guild.name} ({message.guild.id}) is currently claiming a Drop Pack.")
     view.message = message
     return message
     

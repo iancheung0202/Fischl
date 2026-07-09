@@ -55,7 +55,6 @@ CURRENCY_ICON_PATH = "./assets/mora_icon.png"
 COSMETICS_DB = "/Chat Minigames Cosmetics"
 REWARDS_DB = "/Chat Minigames Rewards"
 CHEST_DB = "/Chat Minigames Chests"
-PACK_DB = "/Mora Drop Packs"
 TRACK_PENDING_DB = "/Elite Track Pending"
 SHOP_EDITS_PENDING_DB = "/Pending Shop Edits"
 
@@ -66,6 +65,18 @@ NAME_DOWN_EMOTE = "<:name_descending:1346329054634053703>"
 SHOP_SORT_OPTIONS = [("sort by cost (low to high)", PRICE_UP_EMOTE), ("sort by cost (high to low)", PRICE_DOWN_EMOTE), ("sort by name (a-z)", NAME_UP_EMOTE), ("sort by name (z-a)", NAME_DOWN_EMOTE),]
 MILESTONE_SORT_OPTIONS = [("sort by threshold (low to high)", PRICE_UP_EMOTE), ("sort by threshold (high to low)", PRICE_DOWN_EMOTE), ("sort by name (a-z)", NAME_UP_EMOTE), ("sort by name (z-a)", NAME_DOWN_EMOTE),]
 
+DROP_TIERS = ["Tiny", "Small", "Medium", "Large", "Huge", "Mega"]
+DROP_WEIGHTS = [0.3, 0.25, 0.2, 0.15, 0.08, 0.02]
+DROP_AMOUNTS = {
+    "Tiny": (500, 999),
+    "Small": (1500, 2000),
+    "Medium": (3000, 3500),
+    "Large": (6000, 6700),
+    "Huge": (9800, 10200),
+    "Mega": (13000, 15000),
+}
+XP_BONUS_CHANCE = 0.2
+BONUS_XP = 1000
 
 MORA_CHEST_NAME = "Daily Mora Chest"
 MORA_CHEST_TIERS = ["Common", "Exquisite", "Precious", "Luxurious"]

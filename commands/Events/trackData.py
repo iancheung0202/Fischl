@@ -38,7 +38,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
     
     if reward_type == "drop_pack":
         is_bonus = tier == "Bonus"
-        message = await create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier)
+        message = await create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier, client)
         if client:
             from commands.Events.quests import update_quest
             await update_quest(user_id, guild_id, channel.id, {"unlock_drop_packs": 1}, client)
