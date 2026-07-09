@@ -463,16 +463,16 @@ async def get_user_inventory(pool: asyncpg.Pool, uid: int, gid: int, exclude_cos
     if exclude_cost is not None:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT title, description, cost, gid, timestamp, pinned FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND cost != $3 ORDER BY timestamp ASC",
+                "SELECT title, description, cost, gid, timestamp, pinned, link FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND cost != $3 ORDER BY timestamp ASC",
                 uid, gid, exclude_cost
             )
     else:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT title, description, cost, gid, timestamp, pinned FROM minigame_inventory WHERE uid = $1 AND gid = $2 ORDER BY timestamp ASC",
+                "SELECT title, description, cost, gid, timestamp, pinned, link FROM minigame_inventory WHERE uid = $1 AND gid = $2 ORDER BY timestamp ASC",
                 uid, gid
             )
-    return [(row['title'], row['description'], row['cost'], row['gid'], row['timestamp'], row['pinned']) for row in rows]
+    return [(row['title'], row['description'], row['cost'], row['gid'], row['timestamp'], row['pinned'], row['link']) for row in rows]
 
 async def count_user_inventory(pool: asyncpg.Pool, uid: int, gid: int, exclude_cost: int = None) -> int:
     if exclude_cost is not None:
@@ -489,11 +489,11 @@ async def count_user_inventory(pool: asyncpg.Pool, uid: int, gid: int, exclude_c
             )
     return val or 0
 
-async def add_inventory_item(pool: asyncpg.Pool, uid: int, gid: int, title, description: str, cost: int, timestamp: int, pinned: bool = False) -> None:
+async def add_inventory_item(pool: asyncpg.Pool, uid: int, gid: int, title, description: str, cost: int, timestamp: int, pinned: bool = False, link: str = None) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO minigame_inventory (uid, gid, title, description, cost, timestamp, pinned) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            uid, gid, str(title), description, cost, timestamp, pinned
+            "INSERT INTO minigame_inventory (uid, gid, title, description, cost, timestamp, pinned, link) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            uid, gid, str(title), description, cost, timestamp, pinned, link
         )
 
 async def get_pinned_item(pool: asyncpg.Pool, uid: int, gid: int) -> Optional[str]:
@@ -707,6 +707,10 @@ async def ensure_minigame_progression_columns(pool):
     async with pool.acquire() as conn:
         for col in ["chest_disabled BOOLEAN DEFAULT FALSE", "minigame_disabled BOOLEAN DEFAULT FALSE"]:
             await conn.execute(f"ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS {col}")
+
+async def ensure_minigame_inventory_columns(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("ALTER TABLE minigame_inventory ADD COLUMN IF NOT EXISTS link TEXT DEFAULT NULL")
 
 _SETTINGS_FALLBACK = {
     "channel_id": 0,

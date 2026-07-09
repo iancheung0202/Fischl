@@ -174,39 +174,13 @@ def configure_minigames(guild_id):
 
         {f'<div class="bg-green-100 dark:bg-green-900 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-300 px-4 py-3 rounded mb-4">{message.replace("+", " ")}</div>' if message else ''}
 
-        <!-- Tab Navigation -->
-        <div class="mb-6">
-          <nav class="flex space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-            <button id="tab-channels" class="flex-1 py-2 px-4 text-sm font-medium rounded-md bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm" onclick="switchTab('channels')">
-              Configured Channels
-            </button>
-            <button id="tab-add" class="flex-1 py-2 px-4 text-sm font-medium rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100" onclick="switchTab('add')">
-              Add New Channel
-            </button>
-          </nav>
-        </div>
-
-        <!-- Configured Channels Tab -->
-        <div id="channels-tab" class="tab-content">
-          <div class="bg-white dark:bg-gray-800 rounded-2xl shadow dark:shadow-gray-700 p-6 mb-6">
-            <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Configured Channels</h3>
-            <p class="text-gray-600 dark:text-gray-300 mb-4">Manage minigames for channels that already have the system enabled.</p>
-            
-            <div id="channels-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {create_loading_skeleton(3, "bg-gray-50 dark:bg-gray-700 rounded-xl p-4 mb-4", "guild")}
-            </div>
-          </div>
-        </div>
-
-        <!-- Add New Channel Tab -->
-        <div id="add-tab" class="tab-content hidden">
-          <div class="bg-white dark:bg-gray-800 rounded-2xl shadow dark:shadow-gray-700 p-6">
-            <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Enable Minigames in New Channel</h3>
-            <p class="text-gray-600 dark:text-gray-300 mb-6">Choose a channel and frequency to enable the minigame system.</p>
-            
-            <div id="add-form-container">
-              {create_loading_container("Loading available channels...", "flex flex-col items-center justify-center py-12")}
-            </div>
+        <!-- Minigames Configuration Info -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow dark:shadow-gray-700 p-6 mb-6">
+          <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Minigames Configuration</h3>
+          <div class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-xl p-6 text-center">
+            <p class="text-gray-700 dark:text-gray-300 text-lg mb-2">
+              Use <code class="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono text-sm">/events settings</code> slash command on Discord to configure everything with ease.
+            </p>
           </div>
         </div>
 
@@ -322,22 +296,6 @@ def configure_minigames(guild_id):
         // Load all data sequentially to avoid Discord API rate limiting issues
         loadAllDataSequentially();
         
-        // Tab switching functionality
-        function switchTab(tab) {{
-          // Update tab buttons
-          document.getElementById('tab-channels').className = tab === 'channels' ? 
-            'flex-1 py-2 px-4 text-sm font-medium rounded-md bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm' :
-            'flex-1 py-2 px-4 text-sm font-medium rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100';
-          
-          document.getElementById('tab-add').className = tab === 'add' ? 
-            'flex-1 py-2 px-4 text-sm font-medium rounded-md bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm' :
-            'flex-1 py-2 px-4 text-sm font-medium rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-100';
-          
-          // Update tab content
-          document.getElementById('channels-tab').className = tab === 'channels' ? 'tab-content' : 'tab-content hidden';
-          document.getElementById('add-tab').className = tab === 'add' ? 'tab-content' : 'tab-content hidden';
-        }}
-
         // Delete channel confirmation
         function deleteChannel(channelId, channelName) {{
           if (confirm(`Are you sure you want to disable minigames for #${{channelName}}? This action cannot be undone.`)) {{
@@ -504,12 +462,6 @@ def configure_minigames(guild_id):
               
               // Update header
               document.getElementById('guild-header').innerHTML = data.header;
-              
-              // Update channels container
-              document.getElementById('channels-container').innerHTML = data.channels;
-              
-              // Update add form
-              document.getElementById('add-form-container').innerHTML = data.addForm;
               
               // Return Discord data for reuse in other endpoints
               return {{
@@ -909,16 +861,17 @@ def configure_minigames(guild_id):
                     const itemDescription = purchase.item_description ? 
                       `<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">${{purchase.item_description}}</p>` : '';
                     
+                    const linkHtml = purchase.link ? `
+                      <a href="${{purchase.link}}" target="_blank" class="absolute top-3 right-3 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors z-10" title="View original purchase message">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                        </svg>
+                      </a>
+                    ` : '';
+                    
                     const purchaseHtml = `
                       <div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-3 bg-gray-50 dark:bg-gray-700 relative">
-                        ${{purchase.link ? `
-                          <a href="${{purchase.link}}" target="_blank" class="absolute top-3 right-3 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors z-10" title="View original purchase message">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                            </svg>
-                          </a>
-                        ` : ''}}
-                        <div class="flex items-start space-x-3">
+                        ${{linkHtml}}
                           <img src="${{avatarUrl}}" alt="${{displayName}}" class="w-10 h-10 rounded-full">
                           <div class="flex-1 min-w-0">
                             <div>
@@ -1288,23 +1241,6 @@ def api_minigames_info(guild_id):
                 print(f"Exception in fetch_guild_channels: {e}")
                 return {"error": f"Failed to fetch channels: {str(e)}"}
         
-        def fetch_minigame_settings():
-            try:
-                ref = db.reference("/Chat Minigames System")
-                events_data = ref.get()
-                configured_channels = {}
-                if events_data and isinstance(events_data, dict):
-                    for channel_id, val in events_data.items():
-                        if isinstance(val, dict):
-                            configured_channels[str(channel_id)] = {
-                                "frequency": val.get("frequency", 100),
-                                "events": val.get("events", letterList.copy()),
-                            }
-                return configured_channels
-            except Exception as e:
-                print(f"Error fetching minigame settings: {e}")
-                return {}
-        
         def fetch_guild_roles():
             try:
                 response = requests_session.get(f"{API_BASE}/guilds/{guild_id}/roles", headers={"Authorization": f"Bot {BOT_TOKEN}"})
@@ -1318,14 +1254,12 @@ def api_minigames_info(guild_id):
                 return []
 
         # Execute data loading calls concurrently  
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             channels_future = executor.submit(fetch_guild_channels)
-            settings_future = executor.submit(fetch_minigame_settings)
             roles_future = executor.submit(fetch_guild_roles)
 
             try:
                 channels = channels_future.result()
-                configured_channels = settings_future.result()
                 guild_roles = roles_future.result()
             except Exception as e:
                 print(f"Error getting future results: {e}")
@@ -1353,146 +1287,8 @@ def api_minigames_info(guild_id):
         </div>
         """
 
-        # Generate configured channels cards
-        text_channels = []
-        try:
-            # Safely filter text channels
-            for channel in channels:
-                if isinstance(channel, dict) and channel.get('type') == 0:
-                    text_channels.append(channel)
-        except Exception as e:
-            return jsonify({"error": f"Error processing channels: {str(e)}"}), 500
-        
-        # Create channel map for quick lookup
-        channel_map = {}
-        try:
-            for c in text_channels:
-                if isinstance(c, dict) and 'id' in c and 'name' in c:
-                    channel_map[str(c['id'])] = c
-        except Exception as e:
-            return jsonify({"error": f"Error creating channel map: {str(e)}"}), 500
-        
-        # Filter configured channels to only include those from this guild
-        guild_configured_channels = {}
-        try:
-            for channel_id, config in configured_channels.items():
-                if channel_id in channel_map:
-                    guild_configured_channels[channel_id] = config
-        except Exception as e:
-            return jsonify({"error": f"Error filtering configured channels: {str(e)}"}), 500
-        
-        channels_html = ""
-        try:
-            if guild_configured_channels:
-                for channel_id, config in guild_configured_channels.items():
-                    channel = channel_map[channel_id]
-                    if not isinstance(channel, dict) or 'name' not in channel:
-                        continue
-                        
-                    frequency_name = next((f["name"] for f in frequency_choices if f["value"] == str(config["frequency"])), f"Custom ({100//config['frequency']}%)")
-                    enabled_games_count = len(config.get("events", []))
-                    total_games = len(minigame_titles)
-                    
-                    # Escape channel name to prevent XSS
-                    channel_name = str(channel['name']).replace("'", "&#39;").replace('"', '&quot;')
-                    
-                    channels_html += f"""
-                    <div class="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
-                      <div class="flex items-center gap-3 mb-3">
-                        <div class="w-10 h-10 border-2 border-gray-400 dark:border-gray-500 rounded-lg flex items-center justify-center">
-                          <span class="text-gray-600 dark:text-gray-400 font-bold">#</span>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                          <h4 class="font-semibold text-gray-900 dark:text-white truncate">#{channel_name}</h4>
-                          <p class="text-sm text-gray-500 dark:text-gray-400">{frequency_name}</p>
-                        </div>
-                      </div>
-                      
-                      <div class="mb-4">
-                        <div class="flex justify-between items-center mb-1">
-                          <span class="text-sm text-gray-600 dark:text-gray-300">Enabled Games</span>
-                          <span class="text-sm font-medium text-gray-900 dark:text-white">{enabled_games_count}/{total_games}</span>
-                        </div>
-                        <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                          <div class="bg-blue-500 dark:bg-blue-600 h-2 rounded-full" style="width: {(enabled_games_count/total_games)*100}%"></div>
-                        </div>
-                      </div>
-                      
-                      <div class="flex gap-2">
-                        <a href="/configure/{guild_id}/minigames/edit/{channel_id}" class="flex-1 py-2 px-3 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white text-sm font-medium rounded-md text-center transition">
-                          Edit
-                        </a>
-                        <button onclick="deleteChannel('{channel_id}', '{channel_name}')" class="flex-1 py-2 px-3 bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 text-white text-sm font-medium rounded-md transition">
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                    """
-            
-            if not channels_html:
-                channels_html = create_empty_content("No channels have minigames enabled yet. Use the 'Add New Channel' tab to get started.")
-        except Exception as e:
-            return jsonify({"error": f"Error generating channel cards: {str(e)}"}), 500
-
-        # Generate add new channel form
-        available_channels = []
-        try:
-            available_channels = [c for c in text_channels if isinstance(c, dict) and str(c.get('id', '')) not in guild_configured_channels]
-        except Exception as e:
-            return jsonify({"error": f"Error filtering available channels: {str(e)}"}), 500
-        
-        add_form_html = ""
-        try:
-            if available_channels:
-                channel_options = ""
-                for c in available_channels:
-                    if isinstance(c, dict) and 'id' in c and 'name' in c:
-                        channel_name = str(c['name']).replace('"', '&quot;')
-                        channel_options += f'<option value="{c["id"]}">{channel_name}</option>'
-                
-                frequency_options = "".join([
-                    f'<option value="{f["value"]}">{f["name"]}</option>'
-                    for f in frequency_choices
-                ])
-                
-                add_form_html = f"""
-                <form method="POST" action="/configure/{guild_id}/minigames/add" class="space-y-6">
-                  <div>
-                    <label for="channel" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Select Channel
-                    </label>
-                    <select name="channel" id="channel" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
-                      <option value="">Choose a channel...</option>
-                      {channel_options}
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label for="frequency" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Event Frequency
-                    </label>
-                    <select name="frequency" id="frequency" required class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white">
-                      <option value="">Choose frequency...</option>
-                      {frequency_options}
-                    </select>
-                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Higher percentages mean more frequent events</p>
-                  </div>
-                  
-                  <button type="submit" class="w-full py-3 px-4 bg-green-500 hover:bg-green-600 dark:bg-green-600 dark:hover:bg-green-700 text-white font-medium rounded-md transition">
-                    Enable Minigames
-                  </button>
-                </form>
-                """
-            else:
-                add_form_html = create_empty_content("All available channels already have minigames enabled.")
-        except Exception as e:
-            add_form_html = f'<div class="text-center py-12"><p class="text-red-500 dark:text-red-400">Error generating form: {str(e)}</p></div>'
-
         return jsonify({
             "header": header_html,
-            "channels": channels_html,
-            "addForm": add_form_html,
-            # Include Discord data for reuse in other endpoints
             "userGuilds": guild,
             "guildRoles": guild_roles,
             "guildChannels": channels
@@ -2149,7 +1945,7 @@ def api_delete_pending_edit(guild_id):
 
 @minigames.route("/api/configure/<guild_id>/shop/purchase-history", methods=["GET"])
 def api_shop_purchase_history(guild_id):
-    """API endpoint for shop purchase history with pagination"""
+    """API endpoint for shop purchase history with pagination from PostgreSQL"""
     if "discord_token" not in session:
         return jsonify({"error": "Not authenticated"}), 401
 
@@ -2166,36 +1962,37 @@ def api_shop_purchase_history(guild_id):
         limit = int(request.args.get('limit', 10))
         offset = (page - 1) * limit
 
-        # Get purchase history from database
-        history_ref = db.reference(f"/Mora Purchase History/{guild_id}")
-        all_purchases_data = history_ref.get() or {}
-        
-        # Flatten all purchases with user_id and purchase_id info
-        all_purchases = []
-        for user_id, user_purchases in all_purchases_data.items():
-            if isinstance(user_purchases, dict):
-                for purchase_id, purchase_data in user_purchases.items():
-                    if isinstance(purchase_data, dict):
-                        purchase_entry = purchase_data.copy()
-                        purchase_entry['user_id'] = user_id
-                        purchase_entry['purchase_id'] = purchase_id
-                        all_purchases.append(purchase_entry)
-        
-        # Sort by timestamp (newest first)
-        all_purchases.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
-        
-        # Apply pagination
-        total_purchases = len(all_purchases)
-        purchases_page = all_purchases[offset:offset + limit]
-        
+        # Query PostgreSQL for purchase history (cost != 0 excludes milestones)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT uid, title, description, cost, timestamp, link
+            FROM minigame_inventory
+            WHERE gid = %s AND cost != 0
+            ORDER BY timestamp DESC
+            LIMIT %s OFFSET %s
+        """, (int(guild_id), limit, offset))
+
+        purchases_rows = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM minigame_inventory
+            WHERE gid = %s AND cost != 0
+        """, (int(guild_id),))
+        total_purchases = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
         # Get unique user IDs for this page
-        user_ids = list(set(purchase['user_id'] for purchase in purchases_page))
-        
+        user_ids = list(set(str(row[0]) for row in purchases_rows))
+
         # Fetch user information from Discord API
         user_data = {}
         if user_ids:
             try:
-                # Batch fetch users using bot token
                 for user_id in user_ids:
                     try:
                         user_response = requests_session.get(
@@ -2217,30 +2014,29 @@ def api_shop_purchase_history(guild_id):
                         user_data[user_id] = {'username': 'Unknown User'}
             except Exception as e:
                 print(f"Error fetching user data: {e}")
-        
+
         # Enhance purchase data with user information
         enhanced_purchases = []
-        for purchase in purchases_page:
-            user_id = purchase['user_id']
-            user_info = user_data.get(user_id, {'username': 'Unknown User'})
-            
-            enhanced_purchase = {
-                'user_id': user_id,
+        for row in purchases_rows:
+            uid, title, description, cost, timestamp, link = row
+            uid_str = str(uid)
+            user_info = user_data.get(uid_str, {'username': 'Unknown User'})
+
+            enhanced_purchases.append({
+                'user_id': uid_str,
                 'username': user_info.get('username', 'Unknown User'),
                 'discriminator': user_info.get('discriminator'),
                 'avatar': user_info.get('avatar'),
                 'global_name': user_info.get('global_name'),
-                'item_name': purchase.get('item_name', 'Unknown Item'),
-                'item_description': purchase.get('item_description', ''),
-                'cost': purchase.get('cost', 0),
-                'timestamp': purchase.get('timestamp', 0),
-                'purchase_id': purchase.get('purchase_id'),
-                'link': purchase.get('link', '')
-            }
-            enhanced_purchases.append(enhanced_purchase)
-        
+                'item_name': title,
+                'item_description': description or '',
+                'cost': cost,
+                'timestamp': int(timestamp.timestamp()) if hasattr(timestamp, 'timestamp') else int(timestamp),
+                'link': link or ''
+            })
+
         has_more = (offset + limit) < total_purchases
-        
+
         return jsonify({
             "success": True,
             "purchases": enhanced_purchases,

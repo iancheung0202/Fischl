@@ -19,7 +19,7 @@ from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
 
 from commands.Events.trackData import get_current_track, check_tier_rewards, is_elite_active
-from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config
+from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_inventory_columns, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config
 from commands.Events.quests import update_quest
 
 from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS
@@ -4707,6 +4707,7 @@ class Summon(commands.Cog):
 async def setup(bot: commands.Bot) -> None:
     await ensure_minigame_settings_table(bot.pool)
     await ensure_minigame_progression_columns(bot.pool)
+    await ensure_minigame_inventory_columns(bot.pool)
     await ensure_minigame_guild_chest_settings_table(bot.pool)
     await bot.add_cog(TheEventItself(bot))
     await bot.add_cog(Summon(bot))

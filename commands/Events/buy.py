@@ -9,7 +9,7 @@ from firebase_admin import db
 from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory, apply_discount, get_shop_discount
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, HISTORY_DB, SHOP_EDITS_PENDING_DB, BALANCE_COMMAND, CONFUSED_EMOTE
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, SHOP_EDITS_PENDING_DB, BALANCE_COMMAND, CONFUSED_EMOTE
 
 global_purchase_queue = asyncio.Queue()
 
@@ -191,18 +191,20 @@ class ConfirmPurchaseView(discord.ui.View):
         roleName = self.itemName
 
         if interaction.guild.id == 1344543366372655164:  # Xianyun's Hangout
-            history_ref = db.reference(f"{HISTORY_DB}/{interaction.guild.id}/{interaction.user.id}")
-            history_snapshot = history_ref.order_by_key().limit_to_last(10).get()
-            
-            if history_snapshot:
+            async with interaction.client.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT title, description, timestamp FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND title = $3 ORDER BY timestamp DESC LIMIT 10",
+                    interaction.user.id, interaction.guild.id, roleName
+                )
                 current_time = time.time()
-                for key, val in history_snapshot.items():
-                    if val.get('item_name') == roleName and any(keyword in val.get('item_description', '').lower() for keyword in ["welkin", "pass", "voucher", "nitro"]):
-                        purchase_time = val.get('timestamp', 0)
-                        if current_time - purchase_time < 60 * 60 * 24 * 45: # 45 days
+                for row in rows:
+                    desc = (row['description'] or '').lower()
+                    if any(keyword in desc for keyword in ["welkin", "pass", "voucher", "nitro"]):
+                        purchase_time = int(row['timestamp'].timestamp()) if hasattr(row['timestamp'], 'timestamp') else int(row['timestamp'])
+                        if current_time - purchase_time < 60 * 60 * 24 * 45:  # 45 days
                             embed = discord.Embed(
                                 title="<:keksweat:1381225834110652497> Miss Xianyun wants to give someone else a chance!",
-                                description=f"You have already purchased **{roleName}** recently. You can only buy this item again <t:{int(60 * 60 * 24 * 45 +  purchase_time)}:R>.",
+                                description=f"You have already purchased **{roleName}** recently. You can only buy this item again <t:{int(60 * 60 * 24 * 45 + purchase_time)}:R>.",
                                 color=discord.Color.red()
                             )
                             await interaction.edit_original_response(embed=embed, view=None)
@@ -354,25 +356,14 @@ class ConfirmPurchaseView(discord.ui.View):
             print(f"{interaction.user.name} ({interaction.user.id}) have paid {discountedCost:,} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
 
             try:
-                purchase_timestamp = int(time.time())
-                purchase_history_ref = db.reference(f"{HISTORY_DB}/{interaction.guild.id}/{interaction.user.id}")
-                purchase_id = f"purchase_{purchase_timestamp}_{interaction.user.id}"
-                
-                item_name = roleName
-                item_description = rewards[x][1] if len(rewards[x]) > 1 else ""
-                
-                purchase_data = {
-                    "item_name": item_name,
-                    "item_description": item_description,
-                    "cost": discountedCost,
-                    "timestamp": purchase_timestamp,
-                    "link": link
-                }
-                
-                purchase_history_ref.child(purchase_id).set(purchase_data)
-                print(f"Logged purchase to history: {purchase_id} for user {interaction.user.id} in guild {interaction.guild.id}")
+                async with interaction.client.pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE minigame_inventory SET link = $3 WHERE uid = $1 AND gid = $2 AND title = $4 AND timestamp = $5",
+                        interaction.user.id, interaction.guild.id, link, str(roleName), timestamp
+                    )
+                print(f"Logged purchase link to minigame_inventory for user {interaction.user.id} in guild {interaction.guild.id}")
             except Exception as e:
-                print(f"Error logging purchase to history: {e}")
+                print(f"Error logging purchase link: {e}")
 
     @discord.ui.button(label="Purchase Item", style=discord.ButtonStyle.green)
     async def purchaseItem(self, interaction: discord.Interaction, button: discord.ui.Button):
