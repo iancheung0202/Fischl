@@ -8,7 +8,7 @@ from commands.CoOp.coOpCelestial import CoOpView as CoOpViewCelestial
 from commands.CoOp.coOpWuwaJinhsi import CoOpButtonViewWuwa
 from commands.CoOp.coOpWuwaJinhsi import CoOpViewWuwa
 
-from commands.Events.event import UserSelectView, PersistentChestInfoView, FeedbackView
+from commands.Events.event import UserSelectView, PersistentChestInfoView
 from commands.Events.helperFunctions import TierRewardsView
 
 from commands.Custom.celestial import RefreshStaffViewCelestial, LeaksAccessCelestial
@@ -30,7 +30,6 @@ views = [
     ShowPerksBulletin,
     PartnerRequestButtonView,
     PersistentChestInfoView,
-    FeedbackView,
     AutoResponseApprovalView,
     RoleApprovalView,
     TierRewardsView,

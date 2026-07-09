@@ -701,37 +701,20 @@ class Shop(commands.Cog):
         if processed > 0:
             print(f"Processed {processed} scheduled stock edits for guild {interaction.guild.id}")
         
-        # Check if events are enabled in any channel of this guild
-        found = None
-        for channel in interaction.guild.channels:
-            ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
-            system_data = ref.get()
-            if system_data:
-                found = system_data.get("events", [])
-                break
+        
+        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
+        foundGuild = ref.get() or []
 
-        if found is not None:
-            ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-            foundGuild = ref.get() or []
+        pages = await get_shop_embeds(
+            interaction, foundGuild, len(foundGuild) == 0
+        )
 
-            pages = await get_shop_embeds(
-                interaction, foundGuild, len(foundGuild) == 0
-            )
-
-            if interaction.user.guild_permissions.administrator:
-                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
-            else:
-                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=False)
-
-            view.message = await interaction.followup.send(embed=pages[0], view=view)
+        if interaction.user.guild_permissions.administrator:
+            view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
         else:
-            embed = discord.Embed(
-                title="Random events are not enabled within this server!",
-                description=f"What are you thinking? Random event is currently not even enabled in **{interaction.guild.name}**. To enable the function in a channel, use {SlashCommand('events enable')}.",
-                colour=0xFFFF00,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            view = ShopView(pages=pages, initial_author=interaction.user, is_admin=False)
+
+        view.message = await interaction.followup.send(embed=pages[0], view=view)
         
             
 async def setup(bot: commands.Bot) -> None:

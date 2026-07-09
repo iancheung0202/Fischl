@@ -14,7 +14,7 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_channel_settings, upsert_channel_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, upsert_guild_chest_config, get_guild_chest_config
 from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
@@ -22,7 +22,7 @@ from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDING
 from commands.Events.trackData import is_elite_active
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, EMOTE_CHESTS, MORA_CHEST_TIERS, MORA_CHEST_NAME, MORA_CHEST_ICONS, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -43,8 +43,13 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     average_daily = stats_data['average_daily']
     days_active = stats_data['days_active']
     
+    gc = await get_guild_chest_config(pool, guild_id)
+    tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
+    tier_emotes_list = gc.get("chests_emotes", [])
+    tier_emotes = dict(zip(tier_names, tier_emotes_list)) if tier_emotes_list else {}
+
     ref_counts = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/counts")
-    chest_counts = ref_counts.get() or {MORA_CHEST_TIERS[0]: 0, MORA_CHEST_TIERS[1]: 0, MORA_CHEST_TIERS[2]: 0, MORA_CHEST_TIERS[3]: 0}
+    chest_counts = ref_counts.get() or {}
     total_chests = sum(chest_counts.values())
 
     ref_streak = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/streaks")
@@ -53,12 +58,13 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
     max_streak = streak_data.get("max_streak", current_streak)
 
-    chest_info = (
-        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[0]]} `{chest_counts.get(MORA_CHEST_TIERS[0], 0)}` {EMOTE_BLANK}"
-        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[1]]} `{chest_counts.get(MORA_CHEST_TIERS[1], 0)}` {EMOTE_BLANK}"
-        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[2]]} `{chest_counts.get(MORA_CHEST_TIERS[2], 0)}` {EMOTE_BLANK}"
-        f"{EMOTE_CHESTS[MORA_CHEST_TIERS[3]]} `{chest_counts.get(MORA_CHEST_TIERS[3], 0)}`\n"
-        f"**Total:** `{total_chests}` {EMOTE_BLANK}"
+    chest_info = ""
+    for i, name in enumerate(tier_names):
+        emote = tier_emotes.get(name, EMOTE_BLANK)
+        count = chest_counts.get(name, 0)
+        chest_info += f"{emote} `{count}` {EMOTE_BLANK}"
+    chest_info += (
+        f"\n**Total:** `{total_chests}` {EMOTE_BLANK}"
         f"{EMOTE_STREAK} `{current_streak}` day{'s' if current_streak > 1 else ''} {EMOTE_BLANK}"
         f"{EMOTE_MAX_STREAK} `{max_streak}` day{'s' if max_streak > 1 else ''}"
     )
@@ -404,12 +410,10 @@ class ToggleView(discord.ui.View):
         await self.update_buttons(interaction.client.pool)
         
         # Get current chest and minigame spawn status
-        chest_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/flag")
-        chest_disabled = chest_flag_ref.get() or False
+        user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
+        chest_disabled = user_settings["chest_disabled"]
+        minigame_disabled = user_settings["minigame_disabled"]
         chest_status = f"{NO_EMOTE} Disabled" if chest_disabled else f"{YES_EMOTE} Enabled"
-        
-        minigame_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/minigame_flag")
-        minigame_disabled = minigame_flag_ref.get() or False
         minigame_status = f"{NO_EMOTE} Disabled" if minigame_disabled else f"{YES_EMOTE} Enabled"
         
         settings_embed = discord.Embed(
@@ -454,18 +458,18 @@ class ToggleView(discord.ui.View):
         setting_key = self.settings_select.values[0]
         
         if setting_key == "toggle_chest_spawn":
-            flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/flag")
-            current_status = flag_ref.get() or False
+            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
+            current_status = user_settings["chest_disabled"]
             new_status = not current_status
-            flag_ref.set(new_status)
+            await upsert_user_minigame_setting(interaction.client.pool, interaction.guild.id, self.user_id, "chest_disabled", new_status)
             
             chest_cog = interaction.client.get_cog('TheEventItself')
             if chest_cog and hasattr(chest_cog, 'chest_system'):
                 chest_cog.chest_system.invalidate_flag_cache(interaction.guild.id, self.user_id)
             
             chest_status = f"{NO_EMOTE} Disabled" if new_status else f"{YES_EMOTE} Enabled"
-            minigame_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/minigame_flag")
-            minigame_disabled = minigame_flag_ref.get() or False
+            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
+            minigame_disabled = user_settings["minigame_disabled"]
             minigame_status = f"{NO_EMOTE} Disabled" if minigame_disabled else f"{YES_EMOTE} Enabled"
             
             settings_embed = discord.Embed(
@@ -492,17 +496,17 @@ class ToggleView(discord.ui.View):
             )
         
         elif setting_key == "toggle_minigame_spawn":
-            minigame_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/minigame_flag")
-            current_status = minigame_flag_ref.get() or False
+            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
+            current_status = user_settings["minigame_disabled"]
             new_status = not current_status
-            minigame_flag_ref.set(new_status)
+            await upsert_user_minigame_setting(interaction.client.pool, interaction.guild.id, self.user_id, "minigame_disabled", new_status)
             
             chest_cog = interaction.client.get_cog('TheEventItself')
             if chest_cog and hasattr(chest_cog, 'chest_system'):
                 chest_cog.chest_system.invalidate_minigame_flag_cache(interaction.guild.id, self.user_id)
             
-            chest_flag_ref = db.reference(f"{CHEST_DB}/{interaction.guild.id}/{self.user_id}/flag")
-            chest_disabled = chest_flag_ref.get() or False
+            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
+            chest_disabled = user_settings["chest_disabled"]
             chest_status = f"{NO_EMOTE} Disabled" if chest_disabled else f"{YES_EMOTE} Enabled"
             minigame_status = f"{NO_EMOTE} Disabled" if new_status else f"{YES_EMOTE} Enabled"
 
@@ -616,12 +620,10 @@ class ToggleView(discord.ui.View):
         
         if self.state == "settings":
             # Get current chest and minigame spawn status for display
-            chest_flag_ref = db.reference(f"{CHEST_DB}/{self.guild_id}/{self.user_id}/flag")
-            chest_disabled = chest_flag_ref.get() or False
+            user_settings = await get_user_minigame_settings(pool, self.guild_id, self.user_id)
+            chest_disabled = user_settings["chest_disabled"]
             chest_status = "Disabled" if chest_disabled else "Enabled"
-            
-            minigame_flag_ref = db.reference(f"{CHEST_DB}/{self.guild_id}/{self.user_id}/minigame_flag")
-            minigame_disabled = minigame_flag_ref.get() or False
+            minigame_disabled = user_settings["minigame_disabled"]
             minigame_status = "Disabled" if minigame_disabled else "Enabled"
 
             is_viewer = (self.user_id != self.command_user_id)

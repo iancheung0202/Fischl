@@ -1,218 +1,520 @@
 import discord
 import datetime
-import os
 
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
-from PIL import Image, ImageEnhance, ImageSequence
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, SYSTEM_DB, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, DOT_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, SYSTEM_DB, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_UPGRADE_TIMES, EMOTE_STREAK, EMOTE_MAX_STREAK
+from commands.Events.helperFunctions import get_channel_settings, upsert_channel_settings, invalidate_channel_cache, ensure_minigame_settings_table, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config, _GUILD_CHEST_FALLBACK
 
 letterString = "".join(LETTER_LIST)
 
-class ToggleEventModal(discord.ui.Modal, title="Toggling Event"):
 
-    letter = discord.ui.TextInput(
-        label="The corresponding letter(s)",
-        style=discord.TextStyle.short,
-        placeholder="Type letters consecutively to toggle multiple games (no spaces please)",
-        max_length=26,
-        required=True,
-    )
+def parse_channel_id(interaction):
+    return int(interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip())
+
+
+class ToggleEventModal(discord.ui.Modal, title="Toggle Events"):
+    def __init__(self, channel_id: int):
+        super().__init__()
+        self.channel_id = channel_id
+        self.letter_input = discord.ui.TextInput(
+            label="The corresponding letter(s)",
+            style=discord.TextStyle.short,
+            placeholder="Type letters consecutively to toggle multiple games (no spaces please)",
+            max_length=26,
+            required=True,
+        )
+        self.add_item(self.letter_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # await interaction.response.defer()
-        channelID = int(str(self.title).split(":")[1].replace(")", "").strip())
-        ref = db.reference(f"{SYSTEM_DB}/{channelID}")
-        system_data = ref.get() or {}
-        originalList = system_data.get("events", [])
-        frequency = system_data.get("frequency", 50)
+        pool = interaction.client.pool
+        settings = await get_channel_settings(pool, self.channel_id)
+        original = list(settings.get("minigames_list", []) or [])
+        frequency = settings.get("minigames_frequency", 50)
 
-        for letter in list(str(self.letter)):
-            self.toggleLetter = str(letter).upper()
-
-            if self.toggleLetter in LETTER_LIST:
-                if self.toggleLetter in originalList:
-                    originalList.remove(self.toggleLetter)
+        for ch in list(str(self.letter_input.value)):
+            letter = ch.upper()
+            if letter in LETTER_LIST:
+                if letter in original:
+                    original.remove(letter)
                 else:
-                    originalList.append(self.toggleLetter)
-                error = False
+                    original.append(letter)
             else:
-                error = True
-                break
-
-        if not (error):
-            data = {
-                "frequency": frequency,
-                "events": originalList,
-            }
-            ref.set(data)
-
-            string = "\n> ".join(
-                [
-                    f"{emoji} - {title} {YES_EMOTE}"
-                    if self.toggleLetter in originalList
-                    else f"{emoji} - {title} {NO_EMOTE}"
-                    for self.toggleLetter, emoji, title in zip(
-                        letterString, LETTER_EMOTES, MINIGAME_TITLES
-                    )
-                ]
-            )
-
-            self.embed = discord.Embed(
-                title="Customize which mini-games you'd like to enable",
-                description=f"**Channel:** <#{channelID}>\n\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
-                color=discord.Color.blurple(),
-            )
-            self.update = discord.Embed(
-                description=f"Toggle successful :slight_smile:",
-                color=discord.Color.green(),
-            )
-        else:
-            self.embed = None
-            self.update = discord.Embed(
-                description=f"Invalid input. Please try again.",
-                color=discord.Color.red(),
-            )
-
-        self.on_submit_interaction = interaction
-        self.stop()
-
-
-class ToggleEventButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label="Toggle Event", style=discord.ButtonStyle.blurple)
-
-    async def callback(self, interaction: discord.Interaction):
-        channelID = (
-            interaction.message.embeds[0]
-            .description.split("<#")[1]
-            .split(">")[0]
-            .strip()
-        )
-
-        toggleEventModal = ToggleEventModal(title=f"Toggle Event (ID: {channelID})")
-        await interaction.response.send_modal(toggleEventModal)
-        response = await toggleEventModal.wait()
-
-        if toggleEventModal.embed is not None:
-            await interaction.edit_original_response(embed=toggleEventModal.embed)
-        await toggleEventModal.on_submit_interaction.response.send_message(
-            embed=toggleEventModal.update, ephemeral=True
-        )
-
-
-class EnableEventButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label="Enable Events", style=discord.ButtonStyle.green)
-
-    async def callback(self, interaction: discord.Interaction):
-        channel_id = int(
-            interaction.message.embeds[0]
-            .description.split("<#")[1]
-            .split(">")[0]
-            .strip()
-        )
-        channel = interaction.guild.get_channel(channel_id)
-
-        frequency_value = 50 # Uncommon (~2%)
-
-        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
-        data = {
-            "frequency": frequency_value,
-            "events": LETTER_LIST,  # All enabled by default
-        }
-        ref.set(data)
-
-        with open("./commands/Events/enabledChannels.py", "r") as file:
-            lines = file.readlines()
-
-        for i, line in enumerate(lines):
-            if line.startswith("enabledChannels ="):
-                existing_dict = eval(line.split("=", 1)[1].strip())
-                existing_dict[channel.id] = frequency_value
-                lines[i] = f"enabledChannels = {existing_dict}\n"
-                break
-
-        with open("./commands/Events/enabledChannels.py", "w") as file:
-            file.writelines(lines)
-
-        # Create settings embed
-        string = "\n> ".join(
-            [
-                f"{emoji} - {title} {YES_EMOTE}"
-                if letter in LETTER_LIST
-                else f"{emoji} - {title} {NO_EMOTE}"
-                for letter, emoji, title in zip(
-                    letterString, LETTER_EMOTES, MINIGAME_TITLES
+                return await interaction.response.send_message(
+                    embed=discord.Embed(description=f"{NO_EMOTE} Invalid letter `{letter}`.", color=discord.Color.red()),
+                    ephemeral=True
                 )
-            ]
-        )
-        embed = discord.Embed(
-            title="Customize which mini-games you'd like to enable",
-            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency_value)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
-            color=discord.Color.blurple(),
-        )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        view = EventSettingsView(channel)
+        await upsert_channel_settings(pool, self.channel_id, minigames_list=original)
+        invalidate_channel_cache(self.channel_id)
+
+        channel = interaction.guild.get_channel(self.channel_id)
+        new_settings = await get_channel_settings(pool, self.channel_id)
+        embed = build_minigames_embed(channel, new_settings)
+        view = EventSettingsView(channel, new_settings)
+        view.active_tab = "minigames"
+        view._build()
         await interaction.response.edit_message(embed=embed, view=view)
 
-        success_embed = discord.Embed(
-            title="Random events enabled!",
-            description=f"Now, there will be a **{100//frequency_value}%** chance for every message sent in {channel.mention} to trigger a random event!",
-            colour=0x00FF00,
+
+class SetMinigameRewardsModal(discord.ui.Modal, title="Set Mora Multiplier"):
+    def __init__(self, channel_id: int, current: float):
+        super().__init__()
+        self.channel_id = channel_id
+        self.add_item(discord.ui.TextInput(
+            label="Multiplier (e.g. 1.0 = 1x, 2.0 = 2x)",
+            style=discord.TextStyle.short,
+            placeholder=str(current),
+            default=str(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            val = float(self.children[0].value)
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid number.", ephemeral=True)
+        if val < 0.01 or val > 99.99:
+            return await interaction.response.send_message(f"{NO_EMOTE} Multiplier must be between 0.01 and 99.99.", ephemeral=True)
+        await upsert_channel_settings(interaction.client.pool, self.channel_id, mora_multiplier=val)
+        invalidate_channel_cache(self.channel_id)
+        channel = interaction.guild.get_channel(self.channel_id)
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        embed = build_minigames_embed(channel, settings)
+        view = EventSettingsView(channel, settings)
+        view.active_tab = "minigames"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestTierNamesModal(discord.ui.Modal, title="Chest Tier Names"):
+    def __init__(self, guild_id: int, current: list):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Tier names (comma-separated)",
+            style=discord.TextStyle.short,
+            placeholder="Common, Exquisite, Precious, Luxurious",
+            default=", ".join(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        names = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
+        if len(names) < 2:
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 tier names.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_tier_names=names)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestTierRewardsModal(discord.ui.Modal, title="Chest Tier Rewards"):
+    def __init__(self, guild_id: int, current: list):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Rewards (comma-separated integers)",
+            style=discord.TextStyle.short,
+            placeholder="2500, 7500, 15000, 30000",
+            default=", ".join(str(x) for x in current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            vals = [int(x.strip()) for x in self.children[0].value.split(",") if x.strip()]
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer list.", ephemeral=True)
+        if len(vals) < 2:
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 reward values.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_tier_rewards=vals)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestUpgradeChancesModal(discord.ui.Modal, title="Chest Upgrade Chances"):
+    def __init__(self, guild_id: int, current: list):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Chances (comma-separated decimals 0-1)",
+            style=discord.TextStyle.short,
+            placeholder="0.30, 0.15, 0.20",
+            default=", ".join(f"{x:.2f}" for x in current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            vals = [float(x.strip()) for x in self.children[0].value.split(",") if x.strip()]
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid decimal list.", ephemeral=True)
+        if any(v < 0 or v > 1 for v in vals):
+            return await interaction.response.send_message(f"{NO_EMOTE} Each chance must be between 0 and 1.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_upgrade_chances=vals)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestSpawnRangeModal(discord.ui.Modal, title="Chest Spawn Requirement"):
+    def __init__(self, guild_id: int, current: list):
+        super().__init__()
+        self.guild_id = guild_id
+        display = ", ".join(str(x) for x in current) if current else "4, 6"
+        self.add_item(discord.ui.TextInput(
+            label="Exact OR min, max (effortful messages)",
+            style=discord.TextStyle.short,
+            placeholder="4, 6",
+            default=display,
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        parts = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
+        try:
+            vals = [int(x) for x in parts]
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer(s).", ephemeral=True)
+        if len(vals) not in (1, 2) or any(v < 1 for v in vals):
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide 1 (exact) or 2 (min, max) positive integers.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_spawn_req=vals)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestStreakBonusModal(discord.ui.Modal, title="Streak Bonus"):
+    def __init__(self, guild_id: int, current: int, label: str, column: str):
+        super().__init__()
+        self.guild_id = guild_id
+        self.column = column
+        self.add_item(discord.ui.TextInput(
+            label=label,
+            style=discord.TextStyle.short,
+            placeholder=str(current),
+            default=str(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            val = int(self.children[0].value)
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer.", ephemeral=True)
+        if val < 0:
+            return await interaction.response.send_message(f"{NO_EMOTE} Must be non-negative.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, **{self.column: val})
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestBaseUpgradesModal(discord.ui.Modal, title="Base Upgrade Chances"):
+    def __init__(self, guild_id: int, current: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Number of upgrade chances",
+            style=discord.TextStyle.short,
+            placeholder="4",
+            default=str(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            val = int(self.children[0].value)
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer.", ephemeral=True)
+        if val < 0:
+            return await interaction.response.send_message(f"{NO_EMOTE} Must be non-negative.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_base_upgrade_chances=val)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestEmotesModal(discord.ui.Modal, title="Chest Emotes"):
+    def __init__(self, guild_id: int, current: list):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Emotes (comma-separated)",
+            style=discord.TextStyle.short,
+            placeholder="<a:common:1371641883121680465>, <a:exquisite:1371641856344985620>, ...",
+            default=", ".join(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        emotes = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
+        if len(emotes) < 2:
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 emotes.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_emotes=emotes)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChestIconsModal(discord.ui.Modal, title="Chest Icons"):
+    def __init__(self, guild_id: int, current: list):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Icon URLs (comma-separated)",
+            style=discord.TextStyle.short,
+            placeholder="https://i.imgur.com/2kOfLSC.png, https://i.imgur.com/DBPQSAu.png, ...",
+            default=", ".join(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        icons = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
+        if len(icons) < 2:
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 icon URLs.", ephemeral=True)
+        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_icons=icons)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class EventSettingsView(discord.ui.View):
+    def __init__(self, channel, settings: dict, guild_config: dict = None):
+        super().__init__(timeout=300)
+        self.channel = channel
+        self.settings = settings
+        self.guild_id = channel.guild.id
+        self.guild_config = guild_config
+        self.active_tab = "minigames"
+        self._build()
+
+    def _build(self):
+        self.clear_items()
+        self.add_item(TabMinigamesButton(self.active_tab == "minigames"))
+        self.add_item(TabChestsButton(self.active_tab == "chests"))
+
+        if self.active_tab == "minigames":
+            s = self.settings
+            enabled = s.get("minigames_enabled", False)
+            if enabled:
+                self.add_item(MinigamesToggleButton(not enabled))
+                self.add_item(ToggleEventsButton(self.channel.id, s))
+                self.add_item(FrequencySelect(self.channel.id, s.get("minigames_frequency", 50)))
+                self.add_item(SetRewardsButton(self.channel.id, s.get("mora_multiplier", 1.0)))
+            else:
+                self.add_item(MinigamesToggleButton(not enabled))
+        else:
+            s = self.settings
+            enabled = s.get("chests_enabled", False)
+            self.add_item(ChestsToggleButton(not enabled))
+            if enabled:
+                self.add_item(EditBaseUpgradeButton(self.guild_id))
+                self.add_item(EditSpawnRangeButton(self.guild_id))
+                self.add_item(EditStreakBonusButton(self.guild_id))
+                self.add_item(EditMaxStreakBonusButton(self.guild_id))
+                self.add_item(EditTierNamesButton(self.guild_id))
+                self.add_item(EditTierRewardsButton(self.guild_id))
+                self.add_item(EditUpgradeChancesButton(self.guild_id))
+                self.add_item(EditChestEmotesButton(self.guild_id))
+                self.add_item(EditChestIconsButton(self.guild_id))
+
+
+class TabMinigamesButton(discord.ui.Button):
+    def __init__(self, active: bool):
+        super().__init__(
+            label="Configure Games",
+            style=discord.ButtonStyle.primary if active else discord.ButtonStyle.secondary,
+            custom_id="tab_minigames",
         )
-        success_embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-        await interaction.followup.send(embed=success_embed, ephemeral=True)
-
-
-class DisableEventButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label="Disable Events", style=discord.ButtonStyle.red)
 
     async def callback(self, interaction: discord.Interaction):
         channel_id = int(
-            interaction.message.embeds[0]
-            .description.split("<#")[1]
-            .split(">")[0]
-            .strip()
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
         )
         channel = interaction.guild.get_channel(channel_id)
-
-        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
-        ref.delete()
-
-        with open("./commands/Events/enabledChannels.py", "r") as file:
-            lines = file.readlines()
-
-        for i, line in enumerate(lines):
-            if line.startswith("enabledChannels ="):
-                existing_dict = eval(line.split("=", 1)[1].strip())
-                if channel.id in existing_dict:
-                    del existing_dict[channel.id]
-                lines[i] = f"enabledChannels = {existing_dict}\n"
-                break
-
-        with open("./commands/Events/enabledChannels.py", "w") as file:
-            file.writelines(lines)
-
-        embed = discord.Embed(
-            title="Event Settings",
-            description=f"**Channel:** {channel.mention}\n**Status:** Disabled\n\nRandom events are not enabled in this channel.",
-            colour=0xFFFF00,
-        )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        view = EventSettingsView(channel)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        view = EventSettingsView(channel, settings)
+        view.active_tab = "minigames"
+        view._build()
+        embed = build_minigames_embed(channel, settings)
         await interaction.response.edit_message(embed=embed, view=view)
+
+
+class TabChestsButton(discord.ui.Button):
+    def __init__(self, active: bool):
+        super().__init__(
+            label="Configure Chests",
+            style=discord.ButtonStyle.primary if active else discord.ButtonStyle.secondary,
+            custom_id="tab_chests",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        guild_config = await get_guild_chest_config(interaction.client.pool, interaction.guild.id)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        embed = build_chests_embed(channel, settings, guild_config)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+def build_minigames_embed(channel, settings: dict) -> discord.Embed:
+    enabled = bool(settings.get("minigames_enabled", False))
+    events = settings.get("minigames_list", []) or []
+    frequency = settings.get("minigames_frequency", 50)
+    multiplier = float(settings.get("mora_multiplier", 1.0))
+
+    desc = f"**Channel:** {channel.mention}\n**Status:** {'Enabled' if enabled else 'Disabled'}\n"
+    if enabled:
+        desc += f"**Spawn Rate:** `{int(100/frequency)}%`\n"
+        desc += f"**Multiplier:** `x{multiplier}`\n\n"
+        string = "\n> ".join(
+            f"{emoji} - {title} {YES_EMOTE if letter in events else NO_EMOTE}"
+            for letter, emoji, title in zip(letterString, LETTER_EMOTES, MINIGAME_TITLES)
+        )
+        desc += f"**Enabled Games:**\n > {string}"
+    embed = discord.Embed(
+        title="🎮 Minigame Configuration",
+        description=desc,
+        color=discord.Color.blurple(),
+    )
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    return embed
+
+
+def build_chests_embed(channel, settings: dict, guild_config: dict = None) -> discord.Embed:
+    enabled = bool(settings.get("chests_enabled", False))
+    desc = f"**Channel:** {channel.mention}\n**Status:** {'Enabled' if enabled else 'Disabled'}"
+
+    if enabled:
+        desc += "\n\n> The following settings apply **server-wide** across all enabled channels.\n\n"
+        gc = guild_config or {}
+        tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
+        tier_rewards = gc.get("chests_tier_rewards", MORA_CHEST_REWARDS)
+        upgrade_chances = gc.get("chests_upgrade_chances", MORA_CHEST_UPGRADE_CHANCES)
+        spawn_req = gc.get("chests_spawn_req", list(MORA_CHEST_SPAWN_REQ))
+        streak_bonus = gc.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
+        max_streak = gc.get("chests_max_streak_bonus", MORA_CHEST_MAX_STREAK_BONUS)
+        base_upgrades = gc.get("chests_base_upgrade_chances", MORA_CHEST_UPGRADE_TIMES)
+        emotes = gc.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"])
+
+        desc += f"**Base Upgrade Chances:** `{base_upgrades}`\n"
+        spawn_str = f"`{spawn_req[0]}`" if len(spawn_req) == 1 else f"`{spawn_req[0]}–{spawn_req[1]}`"
+        desc += f"**Spawn Requirement:** {spawn_str} messages\n"
+        desc += f"**Streak Bonus:** {MORA_EMOTE} `+{streak_bonus}` per day (max `{max_streak}`)\n\n"
+
+        desc += "**Tiers:**\n"
+        for i in range(len(tier_names)):
+            name = tier_names[i] if i < len(tier_names) else "?"
+            reward = tier_rewards[i] if i < len(tier_rewards) else 0
+            emote = emotes[i] if i < len(emotes) else ""
+            chance = f"{upgrade_chances[i]*100:.0f}%" if i < len(upgrade_chances) and i < len(tier_names) - 1 else "—"
+            desc += f"{DOT_EMOTE} {emote} **{name}** — {MORA_EMOTE} `{reward:,}`"
+            if chance != "—":
+                desc += f" (upgrade to next: {chance})"
+            desc += "\n"
+
+    embed = discord.Embed(
+        title="📦 Chest Configuration",
+        description=desc,
+        color=discord.Color.gold(),
+    )
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    return embed
+
+
+class MinigamesToggleButton(discord.ui.Button):
+    def __init__(self, enable: bool):
+        label = "Enable Games" if enable else "Disable Games"
+        style = discord.ButtonStyle.green if enable else discord.ButtonStyle.red
+        super().__init__(label=label, style=style)
+        self.enable = enable
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+        kwargs = {"minigames_enabled": self.enable}
+        if self.enable:
+            settings_before = await get_channel_settings(interaction.client.pool, channel_id)
+            current_list = settings_before.get("minigames_list", []) or []
+            if not current_list:
+                kwargs["minigames_list"] = list(letterString)
+        await upsert_channel_settings(interaction.client.pool, channel_id, **kwargs)
+        invalidate_channel_cache(channel_id)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        embed = build_minigames_embed(channel, settings)
+        view = EventSettingsView(channel, settings)
+        view.active_tab = "minigames"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ToggleEventsButton(discord.ui.Button):
+    def __init__(self, channel_id: int, settings: dict):
+        super().__init__(label="Toggle Games", style=discord.ButtonStyle.grey, emoji="🎮", row=2)
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction):
+        modal = ToggleEventModal(self.channel_id)
+        await interaction.response.send_modal(modal)
 
 
 class FrequencySelect(discord.ui.Select):
-    def __init__(self, current_frequency=None):
+    def __init__(self, channel_id: int, current_frequency: int = 50):
+        self.channel_id = channel_id
         options = [
+            discord.SelectOption(label="Annoying (~50%)", value="2", default=current_frequency == 2),
             discord.SelectOption(label="Very Frequent (~10%)", value="10", default=current_frequency == 10),
             discord.SelectOption(label="Frequent (~5%)", value="20", default=current_frequency == 20),
             discord.SelectOption(label="Occasional (~3%)", value="30", default=current_frequency == 30),
@@ -224,90 +526,150 @@ class FrequencySelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         channel_id = int(
-            interaction.message.embeds[0]
-            .description.split("<#")[1]
-            .split(">")[0]
-            .strip()
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
         )
         channel = interaction.guild.get_channel(channel_id)
-
         new_frequency = int(self.values[0])
-
-        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
-        system_data = ref.get() or {}
-        system_data["Frequency"] = new_frequency
-        system_data["frequency"] = new_frequency
-        ref.set(system_data)
-
-        with open("./commands/Events/enabledChannels.py", "r") as file:
-            lines = file.readlines()
-
-        for i, line in enumerate(lines):
-            if line.startswith("enabledChannels ="):
-                existing_dict = eval(line.split("=", 1)[1].strip())
-                existing_dict[channel.id] = new_frequency
-                lines[i] = f"enabledChannels = {existing_dict}\n"
-                break
-
-        with open("./commands/Events/enabledChannels.py", "w") as file:
-            file.writelines(lines)
-
-        # Get current events
-        events = []
-        system_data = ref.get() or {}
-        events = system_data.get("events", [])
-
-        # Create settings embed
-        string = "\n> ".join(
-            [
-                f"{emoji} - {title} {YES_EMOTE}"
-                if letter in events
-                else f"{emoji} - {title} {NO_EMOTE}"
-                for letter, emoji, title in zip(
-                    letterString, LETTER_EMOTES, MINIGAME_TITLES
-                )
-            ]
-        )
-        embed = discord.Embed(
-            title="Customize which mini-games you'd like to enable",
-            description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/new_frequency)}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
-            color=discord.Color.blurple(),
-        )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        view = EventSettingsView(channel)
+        await upsert_channel_settings(interaction.client.pool, channel_id, minigames_frequency=new_frequency)
+        invalidate_channel_cache(channel_id)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        embed = build_minigames_embed(channel, settings)
+        view = EventSettingsView(channel, settings)
+        view.active_tab = "minigames"
+        view._build()
         await interaction.response.edit_message(embed=embed, view=view)
 
-        success_embed = discord.Embed(
-            title="Frequency updated!",
-            description=f"Spawn rate updated to **{100//new_frequency}%** for {channel.mention}.",
-            colour=0x00FF00,
+
+class SetRewardsButton(discord.ui.Button):
+    def __init__(self, channel_id: int, current: float):
+        super().__init__(label="Multiplier", style=discord.ButtonStyle.grey, emoji="💰", row=2)
+        self.channel_id = channel_id
+        self.current = current
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(SetMinigameRewardsModal(self.channel_id, self.current))
+
+
+class ChestsToggleButton(discord.ui.Button):
+    def __init__(self, enable: bool):
+        label = "Enable Chests" if enable else "Disable Chests"
+        style = discord.ButtonStyle.green if enable else discord.ButtonStyle.red
+        super().__init__(label=label, style=style)
+        self.enable = enable
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
         )
-        success_embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-        await interaction.followup.send(embed=success_embed, ephemeral=True)
+        channel = interaction.guild.get_channel(channel_id)
+        await upsert_channel_settings(interaction.client.pool, channel_id, chests_enabled=self.enable)
+        invalidate_channel_cache(channel_id)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        guild_config = await get_guild_chest_config(interaction.client.pool, interaction.guild.id)
+        embed = build_chests_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "chests"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
-class EventSettingsView(discord.ui.View):
-    def __init__(self, channel):
-        super().__init__()
-        self.channel = channel
+class EditTierNamesButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Tier Names", style=discord.ButtonStyle.secondary, emoji="📦", row=2)
+        self.guild_id = guild_id
 
-        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
-        system_data = ref.get()
-        enabled = False
-        frequency = None
-        events = []
-        if system_data:
-            enabled = True
-            frequency = system_data.get("frequency", 50)
-            events = system_data.get("events", [])
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_tier_names", MORA_CHEST_TIERS)
+        await interaction.response.send_modal(ChestTierNamesModal(self.guild_id, list(current)))
 
-        if enabled:
-            self.add_item(FrequencySelect(current_frequency=frequency))
-            self.add_item(ToggleEventButton())
-            self.add_item(DisableEventButton())
-        else:
-            self.add_item(EnableEventButton())
+
+class EditTierRewardsButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Tier Rewards", style=discord.ButtonStyle.secondary, emoji="💰", row=2)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_tier_rewards", MORA_CHEST_REWARDS)
+        await interaction.response.send_modal(ChestTierRewardsModal(self.guild_id, list(current)))
+
+
+class EditUpgradeChancesButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Tier Upgrade Chances", style=discord.ButtonStyle.secondary, emoji="🔼", row=2)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_upgrade_chances", MORA_CHEST_UPGRADE_CHANCES)
+        await interaction.response.send_modal(ChestUpgradeChancesModal(self.guild_id, [float(x) for x in (current or [])]))
+
+
+class EditSpawnRangeButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Spawn Requirement", style=discord.ButtonStyle.secondary, emoji="📊", row=1)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = list(gc.get("chests_spawn_req", [4, 6]))
+        await interaction.response.send_modal(ChestSpawnRangeModal(self.guild_id, current))
+
+
+class EditStreakBonusButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Streak Bonus", style=discord.ButtonStyle.secondary, emoji=EMOTE_STREAK, row=1)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
+        await interaction.response.send_modal(ChestStreakBonusModal(self.guild_id, current, "Streak bonus per day", "chests_streak_bonus"))
+
+
+class EditMaxStreakBonusButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Max Streak Bonus", style=discord.ButtonStyle.secondary, emoji=EMOTE_MAX_STREAK, row=1)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_max_streak_bonus", MORA_CHEST_MAX_STREAK_BONUS)
+        await interaction.response.send_modal(ChestStreakBonusModal(self.guild_id, current, "Maximum streak bonus", "chests_max_streak_bonus"))
+
+
+class EditBaseUpgradeButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Base Upgrade Chances", style=discord.ButtonStyle.secondary, emoji="🔢", row=1)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_base_upgrade_chances", MORA_CHEST_UPGRADE_TIMES)
+        await interaction.response.send_modal(ChestBaseUpgradesModal(self.guild_id, current))
+
+
+class EditChestEmotesButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Tier Emotes", style=discord.ButtonStyle.secondary, emoji="🎨", row=2)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"])
+        await interaction.response.send_modal(ChestEmotesModal(self.guild_id, list(current)))
+
+
+class EditChestIconsButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Tier Icons", style=discord.ButtonStyle.secondary, emoji="🖼️", row=2)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_icons", _GUILD_CHEST_FALLBACK["chests_icons"])
+        await interaction.response.send_modal(ChestIconsModal(self.guild_id, list(current)))
 
 
 @app_commands.guild_only()
@@ -327,46 +689,16 @@ class EventSystem(commands.GroupCog, name="events"):
     async def events_settings(
         self, interaction: discord.Interaction, channel: discord.TextChannel = None
     ) -> None:
-        if channel == None:
+        if channel is None:
             channel = interaction.channel
 
-        view = EventSettingsView(channel)
-
-        ref = db.reference(f"{SYSTEM_DB}/{channel.id}")
-        system_data = ref.get()
-        enabled = False
-        frequency = None
-        events = []
-        if system_data:
-            enabled = True
-            frequency = system_data.get("frequency", 50)
-            events = system_data.get("events", [])
-
-        if enabled:
-            string = "\n> ".join(
-                [
-                    f"{emoji} - {title} {YES_EMOTE}"
-                    if letter in events
-                    else f"{emoji} - {title} {NO_EMOTE}"
-                    for letter, emoji, title in zip(
-                        letterString, LETTER_EMOTES, MINIGAME_TITLES
-                    )
-                ]
-            )
-
-            embed = discord.Embed(
-                title="Customize which mini-games you'd like to enable",
-                description=f"**Channel:** {channel.mention}\n**Status:** Enabled\n**Spawn Rate:** `{int(100/frequency) if frequency else 0}%`\n\n**Enabled Games:**\n > {string}\n\nClick `Toggle Event` below and type in the **corresponding letter(s)** (i.e. `h` or `abdfm`) to **toggle** the mini-game(s). You can also edit the {SlashCommand('shop')} and {SlashCommand('milestones')} to customize further!",
-                color=discord.Color.blurple(),
-            )
-        else:
-            embed = discord.Embed(
-                title="Event Settings",
-                description=f"**Channel:** {channel.mention}\n**Status:** Disabled\n\nRandom events are not enabled in this channel.",
-                colour=0xFFFF00,
-            )
-
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        await ensure_minigame_settings_table(interaction.client.pool)
+        await ensure_minigame_guild_chest_settings_table(interaction.client.pool)
+        settings = await get_channel_settings(interaction.client.pool, channel.id)
+        embed = build_minigames_embed(channel, settings)
+        view = EventSettingsView(channel, settings)
+        view.active_tab = "minigames"
+        view._build()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @events_settings.error
@@ -374,143 +706,7 @@ class EventSystem(commands.GroupCog, name="events"):
         self, interaction: discord.Interaction, error: Exception
     ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-        
-### Darken and resize an animated background GIF for profile cards ###
-async def format_animated_background(ctx, gif_name): 
-    if not gif_name.lower().endswith('.gif'):
-        return await ctx.send("Please provide a GIF file!", delete_after=5)
-
-    base_path = f"{ANIMATED_INVENTORY_BG_PATH}/"
-    input_path = os.path.join(base_path, gif_name)
-    
-    if not os.path.exists(input_path):
-        return await ctx.send(f"File not found: {gif_name}", delete_after=10)
-    
-    try:
-        with Image.open(input_path) as im:
-            frames = []
-            duration_info = []
-            
-            for frame in ImageSequence.Iterator(im):
-                frame = frame.convert("RGBA")
-                width, height = frame.size
-                target_aspect = 720 / 256
-                current_aspect = width / height
-                
-                if current_aspect > target_aspect:
-                    new_width = int(target_aspect * height)
-                    left = (width - new_width) // 2
-                    frame = frame.crop((left, 0, left + new_width, height))
-                else:
-                    new_height = int(width / target_aspect)
-                    top = (height - new_height) // 2
-                    frame = frame.crop((0, top, width, top + new_height))
-                
-                frame = frame.resize((720, 256), Image.LANCZOS)
-                
-                enhancer = ImageEnhance.Brightness(frame)
-                frame = enhancer.enhance(0.4)
-                
-                frames.append(frame)
-                duration_info.append(frame.info.get('duration', 100))
-            
-            output_path = os.path.join(base_path, f"{gif_name}")
-            frames[0].save(
-                output_path,
-                save_all=True,
-                append_images=frames[1:],
-                duration=duration_info,
-                loop=0,
-                disposal=2
-            )
-        
-        await ctx.send(f"{YES_EMOTE} Successfully formatted `{gif_name}`!", 
-                       file=discord.File(output_path))
-    
-    except Exception as e:
-        await ctx.send(f"{NO_EMOTE} Error processing GIF: {str(e)}", delete_after=15)
-        
-class NewGameUpdate(commands.Cog):
-    def __init__(self, bot):
-        self.client = bot
-
-    @commands.Cog.listener()
-    async def on_message(self, message):
-
-        if message.author == self.client.user or message.author.bot == True:
-            return
-
-        if message.content.startswith("-format") and message.author.id == 692254240290242601:
-            await format_animated_background(message.channel, message.content.split(":")[1])
-
-        if message.content.startswith("-report "):
-            uid = message.content.split(" ")[1].replace("<@", "").replace(">", "")
-            ian = self.client.get_user(692254240290242601)
-            await ian.send(f"User with ID `{message.author.id}` reported the inventory background of a user with ID `{uid}` in **{message.guild.name}**")
-            await ian.send(file=discord.File(f"{INVENTORY_BG_PATH}/{uid}.png"))
-            await message.add_reaction(YES_EMOTE)
-
-        if message.content.startswith("-newgameupdate") and message.author.id == 692254240290242601:
-            LETTER = message.content.split(" ")[1].strip().upper()  # NEW GAME LETTER
-
-            ref = db.reference(f"{SYSTEM_DB}")
-            all_channels = ref.get() or {}
-            count = 0
-
-            for channel_id, system_data in all_channels.items():
-                if ("beta" in message.content and 1303235296254759008 != int(channel_id)) or ("beta" not in message.content and 1303235296254759008 == int(channel_id)):
-                    continue
-
-                originalList = system_data.get("events", [])
-                frequency = system_data.get("frequency", 50)
-                originalList.append(LETTER)
-                
-                updated_data = {
-                    "frequency": frequency,
-                    "events": originalList,
-                }
-                db.reference(f"{SYSTEM_DB}/{channel_id}").set(updated_data)
-
-                count += 1
-
-                if "beta" in message.content and 1303235296254759008 == int(channel_id):
-                    await message.channel.send(f"<#{channel_id}> updated with `{LETTER}` enabled by default.")
-                    break
-
-            await message.channel.send(f"`{count}` channels updated with `{LETTER}` enabled by default.")
-
-        if message.content.startswith("-removegame") and message.author.id == 692254240290242601:
-            LETTER = message.content.split(" ")[1].strip().upper()  # GAME LETTER TO REMOVE
-
-            ref = db.reference(f"{SYSTEM_DB}")
-            all_channels = ref.get() or {}
-            count = 0
-            
-            for channel_id, system_data in all_channels.items():
-                if ("beta" in message.content and 1303235296254759008 != int(channel_id)) or ("beta" not in message.content and 1303235296254759008 == int(channel_id)):
-                    continue
-
-                originalList = system_data.get("events", [])
-                frequency = system_data.get("frequency", 50)
-
-                if LETTER in originalList:
-                    originalList.remove(LETTER)  # Remove only the first occurrence
-                    
-                    updated_data = {
-                        "frequency": frequency,
-                        "events": originalList,
-                    }
-                    db.reference(f"{SYSTEM_DB}/{channel_id}").set(updated_data)
-
-                    count += 1
-
-                    if "beta" in message.content and 1303235296254759008 == int(channel_id):
-                        await message.channel.send(f"<#{channel_id}> updated with `{LETTER}` removed from the defaults.")
-                        break
-
-            await message.channel.send(f"`{count}` channels updated with `{LETTER}` removed from defaults.")
 
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(EventSystem(bot))
-    await bot.add_cog(NewGameUpdate(bot))

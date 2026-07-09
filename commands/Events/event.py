@@ -20,11 +20,10 @@ from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
 
 from commands.Events.trackData import get_current_track, check_tier_rewards, is_elite_active
-from commands.Events.helperFunctions import addMora, get_minigame_list, get_guild_mora
+from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_minigame_list, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config
 from commands.Events.quests import update_quest
-from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_UPGRADE_TIMES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_TIMEOUT, MORA_TIER_MAP, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, EMOTE_CHESTS, MORA_CHEST_ICONS, MORA_CHEST_DESCRIPTION, LETTER_LIST
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, build_chest_description
 
 
 def get_next_reset_unix():
@@ -42,25 +41,6 @@ active_memory_games = {}
 active_ttol_games = {}
 active_split_or_steal_games = {}
 
-commands_module = importlib.import_module("commands")
-from commands.Events.enabledChannels import enabledChannels
-last_modified = os.path.getmtime("./commands/Events/enabledChannels.py")
-
-def check_and_reload():
-    global last_modified, enabledChannels
-    new_modified = os.path.getmtime("./commands/Events/enabledChannels.py")
-    if new_modified > last_modified:
-        with open("./commands/Events/enabledChannels.py", "r") as f:
-            lines = f.readlines()
-        for line in lines:
-            if line.startswith("enabledChannels ="):
-                new_enabled_channels = eval(
-                    line.split("=")[1].strip()
-                )  # Extract the new list
-        if new_enabled_channels != enabledChannels:  # Only update if there's a change
-            enabledChannels = new_enabled_channels
-            last_modified = new_modified
-            print("Random Events ./commands/Events/enabledChannels.py reloaded!")
 
 async def handle_message_deletion(message):
     await asyncio.sleep(3)
@@ -245,15 +225,16 @@ class BossBattleView(discord.ui.View):
         summary = []
         elapsed = time.time() - self.start_time
         
+        mora_mult = await get_channel_mora_multiplier(self.client.pool, self.channel.id)
         sorted_users = sorted(self.participants.items(), key=lambda x: x[1], reverse=True)
         
         for rank, (uid, dmg) in enumerate(sorted_users, 1):
-            amount = 3000 + dmg
+            amount = int((3000 + dmg) * mora_mult)
             
             if rank == 1: 
-                amount += 2000
+                amount += int(2000 * mora_mult)
             if uid == self.last_hitter: 
-                amount += 1500
+                amount += int(1500 * mora_mult)
             
             text, addedMora = await addMora(self.client.pool, uid, amount, self.channel.id, self.channel.guild.id, self.client)
             
@@ -419,7 +400,8 @@ class PickUpView(discord.ui.View):
                 pass
 
 async def pickUpTheWatermelon(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     view = PickUpView(start_time=start_time)
     msg = await channel.send(
@@ -516,7 +498,8 @@ class PickUpIceCreamView(discord.ui.View):
 
 
 async def pickUpIceCream(channel, client):
-    num = random.randint(5000, 8000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    num = int(random.randint(5000, 8000) * mora_mult)
     start_time = time.time()
     view = PickUpIceCreamView(start_time=start_time)
     msg = await channel.send(
@@ -545,7 +528,8 @@ async def createImage(
 
 
 async def quicktype(channel, client):
-    reward = random.randint(4000, 6000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(4000, 6000) * mora_mult)
     start_time = time.time() 
     timeout = 300
 
@@ -648,7 +632,8 @@ async def quicktype(channel, client):
 ### --- REVERSE QUICKTYPE --- ###
 
 async def reverseQuicktype(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     timeout = 300
 
@@ -763,7 +748,8 @@ def scramble_string(input_string):
 
 
 async def unscrambleWords(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     timeout = 300
 
@@ -1010,8 +996,9 @@ class RollDiceView(discord.ui.View):
 
 
 async def rollADice(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     target = random.randint(2, 12)
-    reward = random.randint(4000, 6000)
+    reward = int(random.randint(4000, 6000) * mora_mult)
     start_time = time.time()
 
     embed = discord.Embed(
@@ -1359,7 +1346,8 @@ class EventBlackjackLobbyView(View):
 
 
 async def groupBlackjack(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     active_players: set = set()  
     all_participants: set = set()
     deadline = time.time() + 120
@@ -1405,7 +1393,8 @@ async def groupBlackjack(channel, client):
 ### --- HSR EMOJI RIDDLE  --- ###
 
 async def hsrEmojiRiddle(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     timeout = 300 
 
@@ -1490,7 +1479,8 @@ async def hsrEmojiRiddle(channel, client):
 ### --- GENSHIN EMOJI RIDDLE --- ###
 
 async def genshinEmojiRiddle(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     timeout = 300
 
@@ -1573,7 +1563,8 @@ async def genshinEmojiRiddle(channel, client):
 ### --- EGGWALK --- ###
 
 async def eggWalk(channel, client): 
-    reward = random.randint(2000, 3000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(2000, 3000) * mora_mult)
     start_time = time.time()
     timeout = 300
 
@@ -1684,7 +1675,8 @@ async def eggWalk(channel, client):
 ### --- GUESS THE NUMBER --- ###
 
 async def guessTheNumber(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     timeout = 300
 
@@ -1782,7 +1774,8 @@ class GuessNumberView(discord.ui.View):
 ### --- COUNTING CURRENCY --- ###
 
 async def countingCurrency(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     start_time = time.time()
     timeout = 300
 
@@ -1930,7 +1923,7 @@ class HangmanButton(discord.ui.Button):
 
         if "_" not in display_word:
              view.winner_id = interaction.user.id
-             text, addedMora = await addMora(interaction.client.pool, interaction.user.id, 3000, interaction.channel.id, interaction.guild.id, interaction.client)
+             text, addedMora = await addMora(interaction.client.pool, interaction.user.id, view.bonus_reward, interaction.channel.id, interaction.guild.id, interaction.client)
              view.addedMora = addedMora
              view.winner_text = text
              
@@ -1951,7 +1944,7 @@ class HangmanButton(discord.ui.Button):
              await interaction.response.edit_message(embed=view.embed, view=view)
 
 class HangmanView(discord.ui.View):
-    def __init__(self, word, embed, tries, start_time=None):
+    def __init__(self, word, embed, tries, start_time=None, word_reward=1500, bonus_reward=3000):
         super().__init__(timeout=300)
         self.word = word
         self.embed = embed
@@ -1964,12 +1957,17 @@ class HangmanView(discord.ui.View):
         self.addedMora = 0
         self.winner_text = ""
         self.start_time = start_time
+        self.word_reward = word_reward
+        self.bonus_reward = bonus_reward
 
         letters = "ABCDEFGHIJKLMNOPQRSTUVWXY"
         for i, letter in enumerate(letters):
             self.add_item(HangmanButton(letter, row=i // 5))
 
 async def hangmanGame(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    WORD_REWARD = int(1500 * mora_mult)
+    BONUS_REWARD = int(3000 * mora_mult)
     word = choose_word().lower()
     print(word)
     tries = round(5 + 0.4 * len(word))
@@ -1982,7 +1980,7 @@ async def hangmanGame(channel, client):
     display_word = update_word(word, guessed_letters)
     embed = discord.Embed(
         title="Hangman Game",
-        description=f"**Guess a letter!** Earn {MORA_EMOTE} **1500** per correct letter and an extra {MORA_EMOTE} **3000** for completing the word.",
+        description=f"**Guess a letter!** Earn {MORA_EMOTE} **{WORD_REWARD}** per correct letter and an extra {MORA_EMOTE} **{BONUS_REWARD}** for completing the word.",
         color=discord.Color.blurple(),
     )
     embed.add_field(name="Word:", value=f"`{display_word}`", inline=False)
@@ -1991,7 +1989,7 @@ async def hangmanGame(channel, client):
     embed.add_field(name="Tries remaining:", value=f"`{tries}`", inline=True)
     embed.set_footer(text="Click a letter to guess • 5-minute time limit")
     
-    view = HangmanView(word, embed, tries, start_time=start_time)
+    view = HangmanView(word, embed, tries, start_time=start_time, word_reward=WORD_REWARD, bonus_reward=BONUS_REWARD)
     game_msg = await channel.send(embed=embed, view=view)
     
     # Wait for the view to finish (timeout or win/loss)
@@ -2032,7 +2030,7 @@ async def hangmanGame(channel, client):
 
     for user_id, letters in view.correct_letters.items():
         count = sum(word.count(letter) for letter in letters)
-        reward = count * 1500
+        reward = count * view.word_reward
         if reward > 0:
             await addMora(client.pool, user_id, reward, channel.id, game_msg.guild.id, client)
 
@@ -2107,6 +2105,7 @@ class MatchPFPButton(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
 async def matchThePFP(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     messages = [message async for message in channel.history(limit=200)]
     selected_items = []
     unique_ids = set()
@@ -2131,7 +2130,7 @@ async def matchThePFP(channel, client):
             target_name=user.display_name
         ))
 
-    reward = random.randint(3000, 5000)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     embed = discord.Embed(
         title=f"Who's this?",
         description=f"First to guess wins {MORA_EMOTE} `{reward}`. **You can only guess once!**",
@@ -2320,7 +2319,8 @@ async def startWhoSaidThatGuessing(game_message, client, game_state):
     asyncio.create_task(cleanup())
 
 async def whoSaidIt(channel, client):
-    reward = random.randint(3000, 5000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(3000, 5000) * mora_mult)
 
     view = View()
     view.add_item(WhoSaidThatSubmitButton())
@@ -2436,6 +2436,7 @@ class KnowMembersButton(discord.ui.Button):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
 async def knowYourMembers(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     messages = [msg async for msg in channel.history(limit=10) if msg.author != client.user and not msg.author.bot and msg.content]
     
     author_ids = list({msg.author.id for msg in messages if not msg.author.bot})
@@ -2476,7 +2477,7 @@ async def knowYourMembers(channel, client):
             correct_member=correct_member
         ))
 
-    reward = random.randint(3000, 5000)
+    reward = int(random.randint(3000, 5000) * mora_mult)
     embed = discord.Embed(
         title="Know Your Members",
         description=f"{question}\nFirst correct guess earns {MORA_EMOTE} `{reward}`",
@@ -2562,7 +2563,8 @@ class memoryBtn(discord.ui.Button):
 
 
 async def memoryGame(channel, client):
-    reward = random.randint(5000, 7000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(5000, 7000) * mora_mult)
 
     allEmojis = [ "😄", "😊", "😃", "😉", "😍", "😘", "😚", "😗", "😙", "😜", "😝", "😛", "🤑", "🤓", "😎", "🤗", "🙂", "🤔", "😐", "😑", "😶", "🙄", "😏", "😒", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤧", "😢", "😭", "😰", "😥", "😓", "😈", "👿", "👹", "👺", "💩", "👻", "💀", "👽", "🤖", "🎃", "🎉", "🌟", "🔥", "❤️", "💙", "💜", "💛", "💚", "🖤", "💖", "💗", "💓", "💕", "💞", "💘", "💝", "💌", "💍", "💎", "🎀", "🌈", "👍", "👎", "👌", "✌", "🤞", "🤟", "🤘", "👏", "🙌", "🤲", "💪", "🙏", "👊", "🤛", "🤜", "💅", "👀", "👁", "👅", "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐷", "🐸", "🐵", "🦄", "🐉", "🐲", "🐍", "🦎", "🐢", "🍕", "🌺", "📚", "⚽", "🎵", "🍔", "🍦", "🎂", "🎁", "🎈", "🎨", "🚀", "⌛", "💡", "🎮", "📷", "📱", "💻", "⭐", "🌙", "🍎", "🍉", "🍇", "🍓", "🥑", "🍩", "🥨", "🥗", "🍿", "🍰", "🚗", "🚕", "🚙", "🚌", "🚎", "🚜", "🚲", "✈", "🚁", "🛳", ]
 
@@ -2791,7 +2793,8 @@ class TwoTruthAndALieButton(discord.ui.Button):
 
 
 async def twoTruthsAndALie(channel, client):
-    reward = random.randint(4000, 6000)
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
+    reward = int(random.randint(4000, 6000) * mora_mult)
     messages = [message async for message in channel.history(limit=10)]
     for msg in messages:
         user = msg.author
@@ -2982,6 +2985,7 @@ class StealButton(discord.ui.Button):
         del active_split_or_steal_games[interaction.message.id]
 
 async def splitOrSteal(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     messages = [message async for message in channel.history(limit=10)]
     selected_players = []
     unique_ids = set()
@@ -2998,8 +3002,8 @@ async def splitOrSteal(channel, client):
         return await channel.send(embed=discord.Embed(description=f"{NO_EMOTE} Not enough unique recent messaging users for the game."))
 
     a, b = selected_players[0], selected_players[1]
-    reward = random.randint(10000, 14000)
-    
+    reward = int(random.randint(10000, 14000) * mora_mult)
+
     view = View()
     view.add_item(SplitButton())
     view.add_item(StealButton())
@@ -3142,6 +3146,7 @@ async def resolve_rps_game(interaction: discord.Interaction, game_state: RPSGame
     del active_rps_games[interaction.message.id]
 
 async def rockPaperScissors(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     messages = [message async for message in channel.history(limit=50)]
     selected_players = []
     unique_ids = set()
@@ -3158,7 +3163,7 @@ async def rockPaperScissors(channel, client):
         return await channel.send(f"{NO_EMOTE} Not enough players for the game.")
 
     a, b = selected_players[0], selected_players[1]
-    reward = random.randint(5000, 7000)
+    reward = int(random.randint(5000, 7000) * mora_mult)
     
     view = View()
     view.add_item(RockButton())
@@ -3343,6 +3348,7 @@ class UserSelectView(discord.ui.View):
         
 
 async def doubleOrKeep(channel: discord.TextChannel, client: discord.Client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     messages = [message async for message in channel.history(limit=20)]
     unique_ids = []
     user_list = []
@@ -3354,7 +3360,7 @@ async def doubleOrKeep(channel: discord.TextChannel, client: discord.Client):
             if member:
                 user_list.append(member)
 
-    reward = random.randint(300, 500)
+    reward = int(random.randint(300, 500) * mora_mult)
     first_user = user_list[0]
     
     if len(user_list) < 2:
@@ -3494,6 +3500,7 @@ async def get_accurate_time(client) -> float:
         return time.time()
     
 async def grandAuctionHouse(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     start_time_init = time.time()
     start_time = await get_accurate_time(client)
     end_time = int(start_time) + 90
@@ -3501,7 +3508,7 @@ async def grandAuctionHouse(channel, client):
     embed = discord.Embed(
         title="Grand Auction House 🏛️",
         description=(
-            f"A mysterious box worth anywhere **between {MORA_EMOTE} `5000` and `15000`** spawned! "
+            f"A mysterious box worth anywhere **between {MORA_EMOTE} `{int(5000 * mora_mult)}` and `{int(15000 * mora_mult)}`** spawned! "
             f"**Closest bid UNDER the value of the box wins!** Auction ends <t:{end_time}:R>"
         ),
         color=0x3498db
@@ -3517,7 +3524,7 @@ async def grandAuctionHouse(channel, client):
     if remaining > 0:
         await asyncio.sleep(remaining)
     
-    box_value = random.randint(5000, 15000)
+    box_value = int(random.randint(5000, 15000) * mora_mult)
     
     if not view.bids:
         await view.message.reply(embed=discord.Embed(description=f"{NO_EMOTE} Auction ended with no bids.", color=discord.Color.red()))
@@ -3578,12 +3585,15 @@ async def grandAuctionHouse(channel, client):
 ### --- BANK HEIST --- ###
 
 async def bankHeist(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     start_time = time.time()
+    MIN_CLICK = int(500 * mora_mult)
+    MAX_CLICK = int(600 * mora_mult)
     embed = discord.Embed(
         title="Bank Heist! 💰 ",
         description=(
             "Click the button below as many times as you can in 20 seconds!\n"
-            f"Each click earns you {MORA_EMOTE} `500-600` Mora!\n\n"
+            f"Each click earns you {MORA_EMOTE} `{MIN_CLICK}-{MAX_CLICK}` Mora!\n\n"
             "**Top participants will be shown here**"
         ),
         color=discord.Color.gold()
@@ -3599,6 +3609,7 @@ async def bankHeist(channel, client):
     view.user_data = {} 
     view.game_over = False 
     view.start_time = start_time
+    view.mora_mult = mora_mult
     view.add_item(BankHeistButton())
     message = await channel.send(embed=embed, view=view)
     
@@ -3680,7 +3691,7 @@ class BankHeistButton(discord.ui.Button):
         if user_id not in view.user_data:
             view.user_data[user_id] = {"clicks": 0, "mora_earned": 0}
         
-        mora_gain = random.randint(500, 600)
+        mora_gain = int(random.randint(500, 600) * view.mora_mult)
         view.user_data[user_id]["clicks"] += 1
         view.user_data[user_id]["mora_earned"] += mora_gain
         
@@ -3778,6 +3789,7 @@ class SimpleMathView(discord.ui.View):
                 pass
 
 async def simpleMathGame(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     import operator
     ops = {
         "+": operator.add,
@@ -3827,7 +3839,7 @@ async def simpleMathGame(channel, client):
             distractors.add(val_d)
             
     options = list(distractors) + [ground_truth]
-    reward = random.randint(4000, 6000)
+    reward = int(random.randint(4000, 6000) * mora_mult)
     start_time = time.time()
     
     view = SimpleMathView(ground_truth, options, reward, client, start_time=start_time)
@@ -3972,6 +3984,7 @@ class TicTacTokView(discord.ui.View):
         return []
 
 async def ticTacTok(channel, client):
+    mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     players = []
     async for msg in channel.history(limit=50):
         if not msg.author.bot and msg.author not in players:
@@ -3985,7 +3998,7 @@ async def ticTacTok(channel, client):
     p1 = players[0]
     p2 = players[1]
     
-    reward = random.randint(5000, 7000)
+    reward = int(random.randint(5000, 7000) * mora_mult)
     view = TicTacTokView(p1, p2, reward, start_time=time.time())
     content, embed = view.get_game_state()
     await channel.send(content=content, embed=embed, view=view)
@@ -3994,7 +4007,7 @@ async def ticTacTok(channel, client):
 # --- DAILY MORA CHESTS --- #
     
 class MoraChestView(discord.ui.View):
-    def __init__(self, cog, user_id, guild_id, initial_tier, streak, clicks_remaining):
+    def __init__(self, cog, user_id, guild_id, initial_tier, streak, clicks_remaining, channel_settings: dict = None):
         super().__init__(timeout=MORA_CHEST_TIMEOUT)
         self.cog = cog
         self.user_id = user_id
@@ -4004,6 +4017,17 @@ class MoraChestView(discord.ui.View):
         self.clicks_remaining = clicks_remaining
         self.completed = False
         self.message = None
+        self.channel_settings = channel_settings or {}
+        tiers = self.channel_settings.get("chests_tier_names", MORA_CHEST_TIERS)
+        rewards = self.channel_settings.get("chests_tier_rewards", MORA_CHEST_REWARDS)
+        emotes = self.channel_settings.get("chests_emotes", [])
+        icons = self.channel_settings.get("chests_icons", [])
+        self._tier_map = dict(zip(tiers, rewards))
+        self._tier_emotes = dict(zip(tiers, emotes)) if emotes else {}
+        self._tier_icons = dict(zip(tiers, icons)) if icons else {}
+        self._upgrade_chances = self.channel_settings.get("chests_upgrade_chances", MORA_CHEST_UPGRADE_CHANCES)
+        self._streak_bonus = self.channel_settings.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
+        self._max_streak_bonus = self.channel_settings.get("chests_max_streak_bonus", MORA_CHEST_MAX_STREAK_BONUS)
         self.update_buttons()
 
     def update_buttons(self):
@@ -4043,30 +4067,30 @@ class MoraChestView(discord.ui.View):
 
             view.clicks_remaining -= 1
             new_tier = view.tier
+            tiers = list(view._tier_map.keys())
+            chances = view._upgrade_chances
 
-            if view.tier == MORA_CHEST_TIERS[0] and random.random() < MORA_CHEST_UPGRADE_CHANCES[0]:
-                new_tier = MORA_CHEST_TIERS[1]
-            elif view.tier == MORA_CHEST_TIERS[1] and random.random() < MORA_CHEST_UPGRADE_CHANCES[1]:
-                new_tier = MORA_CHEST_TIERS[2]
-            elif view.tier == MORA_CHEST_TIERS[2] and random.random() < MORA_CHEST_UPGRADE_CHANCES[2]:
-                new_tier = MORA_CHEST_TIERS[3]
+            for i in range(len(tiers) - 1):
+                if view.tier == tiers[i] and random.random() < float(chances[i] if i < len(chances) else 0):
+                    new_tier = tiers[i + 1]
+                    break
 
             success = new_tier != view.tier
             view.tier = new_tier
 
-            streak_total = min((view.streak * MORA_CHEST_STREAK_BONUS), MORA_CHEST_MAX_STREAK_BONUS)
-            total = MORA_TIER_MAP[view.tier] + streak_total
-            
+            streak_total = min((view.streak * view._streak_bonus), view._max_streak_bonus)
+            total = view._tier_map.get(view.tier, 0) + streak_total
+
             embed = interaction.message.embeds[0]
             embed.title = f"{MORA_CHEST_NAME} 🎁 ({view.tier})"
             embed.description = (
                 f"Upgrades left: `{view.clicks_remaining}`\n\n"
-                f"**Tier:** {view.tier} Chest ({MORA_EMOTE} `{MORA_TIER_MAP[view.tier]}`)\n"
+                f"**Tier:** {view.tier} Chest ({MORA_EMOTE} `{view._tier_map.get(view.tier, 0)}`)\n"
                 f"**Streak:** {EMOTE_STREAK if view.streak > 1 else ''} `{view.streak}` day{'s' if view.streak > 1 else ''} (`+{streak_total}` {MORA_EMOTE})\n"
                 f"**Total:** {MORA_EMOTE} `{total}`"
             )
             embed.color = discord.Color.gold() if success else discord.Color.random()
-            embed.set_thumbnail(url=MORA_CHEST_ICONS[view.tier])
+            embed.set_thumbnail(url=view._tier_icons.get(view.tier, ""))
 
             view.update_buttons()
             await interaction.response.edit_message(embed=embed, view=view)
@@ -4077,13 +4101,13 @@ class MoraChestView(discord.ui.View):
 
         async def callback(self, interaction: discord.Interaction):
             view = self.view
-            streak_total = min((view.streak * MORA_CHEST_STREAK_BONUS), MORA_CHEST_MAX_STREAK_BONUS)
-            total = MORA_TIER_MAP[view.tier] + streak_total
-            
+            streak_total = min((view.streak * view._streak_bonus), view._max_streak_bonus)
+            total = view._tier_map.get(view.tier, 0) + streak_total
+
             from commands.Events.helperFunctions import get_chest_bonus_chance
             bonus_chance = await get_chest_bonus_chance(interaction.client.pool, view.guild_id, view.user_id)
             is_bonus = False
-            
+
             if bonus_chance > 0 and random.random() * 100 < bonus_chance:
                 is_bonus = True
                 async with interaction.client.pool.acquire() as conn:
@@ -4106,7 +4130,7 @@ class MoraChestView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            breakdown_val = f"-# Base: {MORA_EMOTE} `{MORA_TIER_MAP[view.tier]}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {EMOTE_STREAK if view.streak > 1 else ''}"
+            breakdown_val = f"-# Base: {MORA_EMOTE} `{view._tier_map.get(view.tier, 0)}` \n-# Streak Bonus: {MORA_EMOTE} `{streak_total}` {EMOTE_STREAK if view.streak > 1 else ''}"
             if is_bonus:
                 breakdown_val += f"\n-# 🌹 **Realm Bonus:** +1 Summon!"
 
@@ -4118,27 +4142,31 @@ class MoraChestView(discord.ui.View):
                 value=f"-# <t:{reset_unix}:f> (<t:{reset_unix}:R>)", 
                 inline=True
             )
-            
+
             counts_path = f"{CHEST_DB}/{view.guild_id}/{view.user_id}/counts"
             counts_ref = db.reference(counts_path)
-            chest_counts = counts_ref.get() or {tier: 0 for tier in MORA_CHEST_TIERS}
+            tiers_for_counts = list(view._tier_map.keys())
+            chest_counts = counts_ref.get() or {t: 0 for t in tiers_for_counts}
             chest_counts[view.tier] = chest_counts.get(view.tier, 0) + 1
             total_chests = sum(chest_counts.values())
 
-            chest_info = (
-                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[0]]} `{chest_counts.get(MORA_CHEST_TIERS[0], 0)}` {EMOTE_BLANK}"
-                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[1]]} `{chest_counts.get(MORA_CHEST_TIERS[1], 0)}` {EMOTE_BLANK}"
-                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[2]]} `{chest_counts.get(MORA_CHEST_TIERS[2], 0)}` {EMOTE_BLANK}"
-                f"{EMOTE_CHESTS[MORA_CHEST_TIERS[3]]} `{chest_counts.get(MORA_CHEST_TIERS[3], 0)}`\n"
-                f"📦 **Total:** `{total_chests}` {EMOTE_BLANK}"
+            def _tier_icon(t):
+                return view._tier_emotes.get(t, EMOTE_BLANK)
+
+            chest_info = "".join(
+                f"{_tier_icon(t)} `{chest_counts.get(t, 0)}` {EMOTE_BLANK}"
+                for t in tiers_for_counts
+            )
+            chest_info += (
+                f"\n📦 **Total:** `{total_chests}` {EMOTE_BLANK}"
                 f"{EMOTE_STREAK} `{view.streak}` day{'s' if view.streak > 1 else ''} {EMOTE_BLANK}"
                 f"{EMOTE_MAX_STREAK} `{new_max_streak}` day{'s' if new_max_streak > 1 else ''}"
             )
             embed.add_field(name="Your Inventory", value=chest_info, inline=False)
-            embed.set_thumbnail(url=MORA_CHEST_ICONS[view.tier])
-            
+            embed.set_thumbnail(url=view._tier_icons.get(view.tier, ""))
+
             await interaction.response.edit_message(content=interaction.user.mention, embed=embed, view=PersistentChestInfoView())
-            
+
             streak_ref.set({
                 "streak": view.streak,
                 "max_streak": new_max_streak,
@@ -4153,7 +4181,7 @@ class MoraChestView(discord.ui.View):
 
             from commands.Events.announcements import announcement_embed
             await interaction.followup.send(embed=announcement_embed, ephemeral=True)
-            
+
     class WhatIsItButton(discord.ui.Button):
         def __init__(self):
             super().__init__(label="What is this?", style=discord.ButtonStyle.secondary, emoji="❓")
@@ -4161,87 +4189,11 @@ class MoraChestView(discord.ui.View):
         async def callback(self, interaction: discord.Interaction):
             reset_unix = get_next_reset_unix()
             embed = discord.Embed(
-                description=f"{MORA_CHEST_DESCRIPTION}\n\n***Next reset at** <t:{reset_unix}:f> (<t:{reset_unix}:R>)*",
+                description=f"{build_chest_description(self.view.channel_settings)}\n\n***Next reset at** <t:{reset_unix}:f> (<t:{reset_unix}:R>)*",
                 color=discord.Color.random()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            
-class FeedbackModal(discord.ui.Modal):
-    def __init__(self):
-        super().__init__(title="Game Feedback Survey", timeout=600)
-        
-        self.question1 = discord.ui.TextInput(
-            label="1. Do you find track & quests confusing?",
-            placeholder="The text, layout, delivery...",
-            required=True
-        )
-        
-        self.question2 = discord.ui.TextInput(
-            label="2. Are you aware of seasonal boosts?",
-            placeholder="Tax reduction, chest upgrades, summons...",
-            required=True
-        )
 
-        self.question3 = discord.ui.TextInput(
-            label="3. How do you customize your inventory?",
-            placeholder="Do you upload custom backgrounds, equip profile frames...",
-            required=True
-        )
-
-        self.question4 = discord.ui.TextInput(
-            label="4. Is the Elite Track worth it?",
-            placeholder="Would you pay for it? What's missing?",
-            required=True
-        )
-        
-        self.question5 = discord.ui.TextInput(
-            label="5. Any new quests/minigame ideas?",
-            style=discord.TextStyle.paragraph,
-            placeholder="Gambling, more inventory upgrades...",
-            required=True
-        )
-        
-        self.additional_comments = discord.ui.TextInput(
-            label="6. Any other suggestions?",
-            style=discord.TextStyle.paragraph,
-            placeholder="Any other improvements or feedback...",
-            required=False
-        )
-
-        self.add_item(self.question1)
-        self.add_item(self.question2)
-        self.add_item(self.question3)
-        self.add_item(self.question4)
-        self.add_item(self.question5)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        embed = discord.Embed(title="🎮 New Game Feedback Received", color=0x00ff00)
-        
-        feedback_data = {
-            "🏮 Do you find track & quests confusing?": self.question1.value,
-            "⏱ Are you aware of seasonal boosts?": self.question2.value,
-            "💡 How do you customize your inventory?": self.question3.value,
-            "💎 Is the Elite Track worth it?": self.question4.value,
-            "⚠️ Any new quests/minigame ideas?": self.question5.value,
-        }
-        
-        for name, value in feedback_data.items():
-            embed.add_field(name=name, value=value, inline=False)
-            
-        embed.set_footer(text=f"Submitted by {interaction.user} in {interaction.user.guild} | ID: {interaction.user.id}")
-
-        try:
-            feedback_target = await interaction.client.fetch_user(692254240290242601)
-            await feedback_target.send(embed=embed)
-            await interaction.response.send_message(
-                f"📬 Thank you for your feedback! Your responses have been recorded. \n{YES_EMOTE} You can always resubmit this form as long as it's available.",
-                ephemeral=True
-            )
-        except Exception as e:
-            await interaction.response.send_message(
-                f"{NO_EMOTE} Failed to submit feedback. Please try again later.",
-                ephemeral=True
-            )
             
 class PersistentChestInfoView(discord.ui.View):
     def __init__(self):
@@ -4260,8 +4212,9 @@ class PersistentChestInfoView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         reset_unix = get_next_reset_unix()
+        gc = await get_guild_chest_config(interaction.client.pool, interaction.guild_id)
         embed = discord.Embed(
-            description=f"{MORA_CHEST_DESCRIPTION}\n\n***Next reset at** <t:{reset_unix}:f> (<t:{reset_unix}:R>)*",
+            description=f"{build_chest_description(gc)}\n\n***Next reset at** <t:{reset_unix}:f> (<t:{reset_unix}:R>)*",
             color=discord.Color.random()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -4279,27 +4232,6 @@ class PersistentChestInfoView(discord.ui.View):
         else:
             await interaction.message.delete()
     
-    """@discord.ui.button(
-        label="Submit Feedback",
-        style=discord.ButtonStyle.green,
-        custom_id="persistent_feedback_button",
-        emoji="📝"
-    )
-    async def feedback_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(FeedbackModal())"""
-        
-class FeedbackView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(
-        label="Submit Feedback",
-        style=discord.ButtonStyle.green,
-        custom_id="feedback_button",
-        emoji="📝"
-    )
-    async def feedback_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(FeedbackModal())
 
 DATA_FILE = "commands/Events/mora_chest_data.json"
 
@@ -4328,19 +4260,31 @@ class DailyChestSystem:
         self.user_states = {} 
         self.cooldown = 5 
         self.claimed_today = set()
-        self.flag_cache = {}  # Cache: {(guild_id, user_id): (timestamp, is_disabled)}
-        self.minigame_flag_cache = {}  # Cache: {(guild_id, user_id): (timestamp, is_disabled)}
+        self.flag_cache = {}
+        self.minigame_flag_cache = {}
         self.cache_ttl = 6000
-        
+        self._enabled_channels_cache = {}
+        self._enabled_channels_ts = 0
+        self._chest_enabled_cache = {}  # {channel_id: bool}
+        self._chest_enabled_ts = 0
+
+    async def _refresh_enabled(self, pool):
+        now = time.time()
+        if now - self._enabled_channels_ts > 60:
+            from commands.Events.helperFunctions import get_enabled_channels_dict
+            self._enabled_channels_cache = await get_enabled_channels_dict(pool)
+            self._enabled_channels_ts = now
+
     def is_effortful_message(self, content: str, last_content: str) -> bool:
         content = content.strip()
         
         if len(content) < 7:
             return False
             
-        words = content.lower().split()
-        if len(set(words)) <= 2 and len(words) > 5:
-            return False
+        if content.lower().split():
+            words = content.lower().split()
+            if len(set(words)) <= 2 and len(words) > 5:
+                return False
             
         if re.search(r"(.)\1{4,}", content):
             return False
@@ -4355,15 +4299,29 @@ class DailyChestSystem:
     async def process_message(self, message, cog):
         if message.author.bot:
             return
-            
-        if message.channel.id not in enabledChannels:
+
+        await self._refresh_enabled(cog.client.pool)
+        if message.channel.id not in self._enabled_channels_cache:
+            return
+
+        csettings = await get_channel_settings(cog.client.pool, message.channel.id)
+        csettings_chest_enabled = csettings.get("chests_enabled", True)
+        prev_chest_enabled = self._chest_enabled_cache.get(message.channel.id, None)
+        if prev_chest_enabled is not None and prev_chest_enabled != csettings_chest_enabled:
+            if not csettings_chest_enabled:
+                key = (message.guild.id, message.author.id)
+                self.user_states.pop(key, None)
+                self.claimed_today.discard(key)
+        self._chest_enabled_cache[message.channel.id] = csettings_chest_enabled
+        if not csettings_chest_enabled:
             return
         
         user_id = message.author.id
         guild_id = message.guild.id
         cache_key = (guild_id, user_id)
         current_time = time.time()
-        
+
+        # Chest-disabled flag from PG
         if cache_key in self.flag_cache:
             cached_time, chest_disabled = self.flag_cache[cache_key]
             if current_time - cached_time < self.cache_ttl:
@@ -4371,12 +4329,11 @@ class DailyChestSystem:
                     return
             else:
                 del self.flag_cache[cache_key]
-        
+
         if cache_key not in self.flag_cache:
-            flag_ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/flag")
-            chest_disabled = flag_ref.get() or False
+            settings = await get_user_minigame_settings(cog.client.pool, guild_id, user_id)
+            chest_disabled = settings.get("chest_disabled", False)
             self.flag_cache[cache_key] = (current_time, chest_disabled)
-            
             if chest_disabled:
                 return
             
@@ -4388,6 +4345,9 @@ class DailyChestSystem:
             
         from commands.Events.helperFunctions import get_express_daily_chests
 
+        channel_chest_config = await get_channel_chest_config(cog.client.pool, message.guild.id, message.channel.id)
+        spawn_req = channel_chest_config.get("chests_spawn_req", [4, 6])
+
         if key not in self.user_states or self.user_states[key]['current_date'] != today:
             db_state = self.load_from_db(guild_id, user_id)
             if db_state and db_state['current_date'] == today:
@@ -4397,12 +4357,18 @@ class DailyChestSystem:
                     return
             else:
                 express_daily_chests = await get_express_daily_chests(cog.client.pool, guild_id, user_id)
+                if express_daily_chests:
+                    threshold = 1
+                elif len(spawn_req) == 1:
+                    threshold = spawn_req[0]
+                else:
+                    threshold = random.randint(spawn_req[0], spawn_req[1])
                 self.user_states[key] = {
                     'message_count': 0,
                     'last_time': 0,
                     'last_content': '',
                     'current_date': today,
-                    'threshold': 1 if express_daily_chests else random.randint(4, 6),
+                    'threshold': threshold,
                     'chest_triggered': False
                 }
         
@@ -4410,7 +4376,10 @@ class DailyChestSystem:
         if await get_express_daily_chests(cog.client.pool, guild_id, user_id):
             state['threshold'] = 1
         elif state.get('threshold') is None:
-            state['threshold'] = random.randint(4, 6)
+            if len(spawn_req) == 1:
+                state['threshold'] = spawn_req[0]
+            else:
+                state['threshold'] = random.randint(spawn_req[0], spawn_req[1])
         current_time = time.time()
         
         if current_time - state['last_time'] < self.cooldown:
@@ -4433,7 +4402,7 @@ class DailyChestSystem:
             state['chest_triggered'] = True
             self.claimed_today.add(key)
             self.save_to_db(guild_id, user_id, state)
-            await self.trigger_chest(message, cog)
+            await self.trigger_chest(message, cog, channel_chest_config)
 
     def load_from_db(self, guild_id, user_id):
         ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/progress")
@@ -4448,7 +4417,7 @@ class DailyChestSystem:
         if cache_key in self.flag_cache:
             del self.flag_cache[cache_key]
     
-    def check_minigame_disabled(self, guild_id, user_id):
+    async def check_minigame_disabled(self, pool, guild_id, user_id):
         cache_key = (guild_id, user_id)
         current_time = time.time()
         
@@ -4459,8 +4428,8 @@ class DailyChestSystem:
             else:
                 del self.minigame_flag_cache[cache_key]
         
-        flag_ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/minigame_flag")
-        minigame_disabled = flag_ref.get() or False
+        settings = await get_user_minigame_settings(pool, guild_id, user_id)
+        minigame_disabled = settings.get("minigame_disabled", False)
         self.minigame_flag_cache[cache_key] = (current_time, minigame_disabled)
         return minigame_disabled
     
@@ -4476,10 +4445,18 @@ class DailyChestSystem:
             for key in list(self.user_states.keys()):
                 del self.user_states[key]
         
-    async def trigger_chest(self, message, cog):
+    async def trigger_chest(self, message, cog, channel_chest_config=None):
         user_id = message.author.id
         guild_id = message.guild.id
         key = (user_id, guild_id)
+        
+        if channel_chest_config is None:
+            channel_chest_config = await get_channel_chest_config(cog.client.pool, message.guild.id, message.channel.id)
+        ccfg = channel_chest_config
+        tier_names = ccfg.get("chests_tier_names", MORA_CHEST_TIERS)
+        tier_rewards = ccfg.get("chests_tier_rewards", MORA_CHEST_REWARDS)
+        streak_bonus = ccfg.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
+        spawn_req = ccfg.get("chests_spawn_req", [4, 6])
         
         ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/streaks")
         streak_data = ref.get() or {}
@@ -4492,19 +4469,19 @@ class DailyChestSystem:
         from commands.Events.helperFunctions import get_chest_upgrades
         clicks_remaining = await get_chest_upgrades(cog.client.pool, guild_id, user_id)
 
-        view = MoraChestView(cog, user_id, guild_id, MORA_CHEST_TIERS[0], new_streak, clicks_remaining)
+        view = MoraChestView(cog, user_id, guild_id, tier_names[0], new_streak, clicks_remaining, channel_settings=ccfg)
         embed = discord.Embed(
             title=f"{MORA_CHEST_NAME} Unlocked! <a:tada:1227425729654820885>",
             description=(
-                f"**{MORA_CHEST_TIERS[0]} Chest** - *{MORA_EMOTE} `{MORA_CHEST_REWARDS[0]:,}`*\n"
+                f"**{tier_names[0]} Chest** - *{MORA_EMOTE} `{tier_rewards[0]:,}`*\n"
                 f"**Click to upgrade** (`{clicks_remaining}` chances left)\n"
                 f"**Messages counted:** `{self.user_states[(guild_id, user_id)]['message_count']}`\n"
-                f"**Streak:** {EMOTE_STREAK if new_streak > 1 else ''} `{new_streak}` day{'s' if new_streak > 1 else ''} ({MORA_EMOTE} `+{new_streak * MORA_CHEST_STREAK_BONUS}`)"
+                f"**Streak:** {EMOTE_STREAK if new_streak > 1 else ''} `{new_streak}` day{'s' if new_streak > 1 else ''} ({MORA_EMOTE} `+{new_streak * streak_bonus}`)"
             ),
             color=discord.Color.random()
         )
-        embed.set_thumbnail(url=MORA_CHEST_ICONS[MORA_CHEST_TIERS[0]])
-        embed.set_footer(text=f"A chest spawns after sending {self.user_states[(guild_id, user_id)]['threshold']} effortful message{'s' if self.user_states[(guild_id, user_id)]['threshold'] != 1 else ''} in minigame channels each day")
+        embed.set_thumbnail(url=ccfg.get("chests_icons", [None])[0] if ccfg.get("chests_icons") else "")
+        embed.set_footer(text=f"A chest spawns after sending {self.user_states[(guild_id, user_id)]['threshold']} effortful messages in minigame channels each day")
         chest_msg = await message.channel.send(
             content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + MORA_CHEST_TIMEOUT}:R>!",
             embed=embed,
@@ -4584,22 +4561,24 @@ class TheEventItself(commands.Cog):
             except Exception as e:
                 await message.channel.send(f"Error: {e}")
 
-        check_and_reload()
+        await self.chest_system._refresh_enabled(self.client.pool)
+        enabled_map = self.chest_system._enabled_channels_cache
         
-        if message.channel.id in enabledChannels:
+        if message.channel.id in enabled_map:
             if message.author.id == 1006694571167719527:
                 return
             
             await self.chest_system.process_message(message, self)
             
-            frequency = enabledChannels[message.channel.id]
+            frequency = enabled_map[message.channel.id]
+            channel_id = message.channel.id
 
             if message.id % frequency == 0:
-                originalList = get_minigame_list(message.channel.id)
+                originalList = await get_channel_minigame_list(self.client.pool, channel_id)
                 okForEvent = True
                 messages = [
-                    message
-                    async for message in message.channel.history(limit=frequency)
+                    msg
+                    async for msg in message.channel.history(limit=frequency)
                 ]
 
                 for msg in messages:
@@ -4609,84 +4588,31 @@ class TheEventItself(commands.Cog):
                     except Exception:
                         pass
 
-                if okForEvent and originalList is not None:
-                    if self.chest_system.check_minigame_disabled(message.guild.id, message.author.id):
+                if okForEvent and originalList is not None and len(originalList) > 0:
+                    if await self.chest_system.check_minigame_disabled(self.client.pool, message.guild.id, message.author.id):
                         return
-                    
-                    channel_id = message.channel.id
 
                     if channel_id in active_channels:
                         return
                     active_channels[channel_id] = True
-                    
-                    text = random.choice([
-                        "Send 4-6 effortful messages a day to earn daily mora chests 📦",
-                        f"Reach {SlashCommand('milestones')} to earn titles/roles! Check it out! 💎",
-                        f"Use {SlashCommand('customize')} to add a custom inventory background image & pin titles 🌆",
-                        f"Hug your favorite person(s) using {SlashCommand('hug')} 🫂",
-                        f"Check your inventory with {SlashCommand('mora')} with all your stats 🎉",
-                        f"Use {SlashCommand('gift')} to send Mora to your friends or even strangers! 🎁",
-                        f"Get FREE mora & minigame summons at [by **playing daily games on the website**](https://fischl.app/profile) 📈",
-                        f"Admins can edit event settings & view purchase logs on the **[dashboard](https://fischl.app/dashboard) ⚙️**",
-                    ])
-                    
+
                     embed = discord.Embed(
-                        description=f"Since chat is relatively active, I'm dropping a random event in `3 seconds`.\n-# ***Tip:** {text}*",
+                        description=f"Since chat is relatively active, I'm dropping a random event in `3 seconds`.\n-# ***Tip:** {random.choice(TIPS)}*",
                         color=discord.Color.orange(),
                     )
 
                     view = View()
-                    view.add_item(Button(
-                        label="Earn Free Mora & Summons",
-                        style=discord.ButtonStyle.link,
-                        url="https://fischl.app/profile",
-                        row=1,
-                        emoji="<a:legacy:1345876714240213073>"
-                    ))
-                    # view.add_item(Button(
-                    #     label="Invite",
-                    #     style=discord.ButtonStyle.link,
-                    #     url="https://discord.com/api/oauth2/authorize?client_id=732422232273584198",
-                    #     row=1,
-                    #     emoji="<a:robot:1366940845697400935>"
-                    # ))
-                    # view.add_item(Button(
-                    #     label="Support",
-                    #     style=discord.ButtonStyle.link,
-                    #     url="https://discord.gg/kaycd3fxHh",
-                    #     row=1,
-                    #     emoji="<a:join:1366940843088543775>"
-                    # ))
+                    view.add_item(PROFILE_LINK_BUTTON)
 
                     await message.channel.send(embed=embed, view=view)
-                    
+
                     events = [
-                        defeatTheBoss,
-                        quicktype,
-                        eggWalk,
-                        matchThePFP,
-                        splitOrSteal,
-                        reverseQuicktype,
-                        pickUpIceCream,
-                        pickUpTheWatermelon,
-                        guessTheNumber,
-                        memoryGame,
-                        whoSaidIt,
-                        unscrambleWords,
-                        twoTruthsAndALie,
-                        countingCurrency,
-                        rockPaperScissors,
-                        rollADice,
-                        groupBlackjack,
-                        genshinEmojiRiddle,
-                        hsrEmojiRiddle,
-                        doubleOrKeep,
-                        knowYourMembers,
-                        hangmanGame,
-                        grandAuctionHouse,
-                        bankHeist,
-                        simpleMathGame,
-                        ticTacTok
+                        defeatTheBoss, quicktype, eggWalk, matchThePFP, splitOrSteal,
+                        reverseQuicktype, pickUpIceCream, pickUpTheWatermelon, guessTheNumber,
+                        memoryGame, whoSaidIt, unscrambleWords, twoTruthsAndALie,
+                        countingCurrency, rockPaperScissors, rollADice, groupBlackjack,
+                        genshinEmojiRiddle, hsrEmojiRiddle, doubleOrKeep, knowYourMembers,
+                        hangmanGame, grandAuctionHouse, bankHeist, simpleMathGame, ticTacTok
                     ]
                     letter_to_event = dict(zip(LETTER_LIST, events))
                     eligible_events = [
@@ -4699,7 +4625,7 @@ class TheEventItself(commands.Cog):
 
                     try:
                         event = random.choice(eligible_events)
-                        print(f"<{event.__name__}>: #{message.channel.name} ({message.channel.id}) in {message.guild.name} ({message.guild.id})")
+                        print(f"<{event.__name__}>: #{message.channel.name} ({channel_id}) in {message.guild.name} ({message.guild.id})")
                         await event(message.channel, self.client)
                     except Exception as e:
                         import traceback
@@ -4816,5 +4742,8 @@ class Summon(commands.Cog):
         
 
 async def setup(bot: commands.Bot) -> None:
+    await ensure_minigame_settings_table(bot.pool)
+    await ensure_minigame_progression_columns(bot.pool)
+    await ensure_minigame_guild_chest_settings_table(bot.pool)
     await bot.add_cog(TheEventItself(bot))
     await bot.add_cog(Summon(bot))

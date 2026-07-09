@@ -27,7 +27,7 @@ DOT_EMOTE = "<:dot:1357188726047899760>"
 CONFUSED_EMOTE = "<:PinkConfused:1204614149628498010>"
 
 BALANCE_COMMAND = "mora"
-PROFILE_LINK_BUTTON = discord.ui.Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1)
+PROFILE_LINK_BUTTON = discord.ui.Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1, disabled=False)
 
 FRAMES_DIRECTORY = "./assets/Profile Frame"
 INVENTORY_BG_PATH = "./assets/Mora Inventory Background"
@@ -81,31 +81,53 @@ MORA_CHEST_TIMEOUT = 300
 MORA_TIER_MAP = dict(zip(MORA_CHEST_TIERS, MORA_CHEST_REWARDS))
 EMOTE_STREAK = "<a:streak:1371651844652273694>"
 EMOTE_MAX_STREAK = "<a:max_streak:1371655286049214672>"
-EMOTE_BLANK = "<:blank:1036792889121980426>" 
-EMOTE_CHESTS = {MORA_CHEST_TIERS[0]: "<a:common:1371641883121680465>", MORA_CHEST_TIERS[1]: "<a:exquisite:1371641856344985620>", MORA_CHEST_TIERS[2]: "<a:precious:1371641871452995689>", MORA_CHEST_TIERS[3]: "<a:luxurious:1371641841338023976>"}
-MORA_CHEST_ICONS = {MORA_CHEST_TIERS[0]: "https://i.imgur.com/2kOfLSC.png", MORA_CHEST_TIERS[1]: "https://i.imgur.com/DBPQSAu.png", MORA_CHEST_TIERS[2]: "https://i.imgur.com/zxOlrCo.png", MORA_CHEST_TIERS[3]: "https://i.imgur.com/5nWwRdc.png"}
-MORA_CHEST_DESCRIPTION = f"""## How the {MORA_CHEST_NAME} Works 🎁
-{DOT_EMOTE} Earn a chest per day after sending **{MORA_CHEST_SPAWN_REQ[0]} to {MORA_CHEST_SPAWN_REQ[1]} effortful messages** in minigame channels.
-{DOT_EMOTE} Messages must be spaced out and not repetitive/spammy.
-{DOT_EMOTE} A chest starts as **{MORA_CHEST_TIERS[0]}**, containing {MORA_EMOTE} `{MORA_CHEST_REWARDS[0]:,}`.
-{DOT_EMOTE} You get a minimum of **{MORA_CHEST_UPGRADE_TIMES} chances** to upgrade your chest.
-{DOT_EMOTE} You must claim your chest within **{MORA_CHEST_TIMEOUT // 60} minutes** or it will be wasted.
-{DOT_EMOTE} After claiming, wait until the next **UTC +0 midnight** to earn a new chest.
-### Rewards (Base Mora) 🏆
-{DOT_EMOTE} **{MORA_CHEST_TIERS[0]}**:   **`{MORA_CHEST_REWARDS[0]:,}`** Mora
-{DOT_EMOTE} **{MORA_CHEST_TIERS[1]}**:   **`{MORA_CHEST_REWARDS[1]:,}`** Mora
-{DOT_EMOTE} **{MORA_CHEST_TIERS[2]}**:   **`{MORA_CHEST_REWARDS[2]:,}`** Mora
-{DOT_EMOTE} **{MORA_CHEST_TIERS[3]}**:   **`{MORA_CHEST_REWARDS[3]:,}`** Mora
-### Upgrade Chances :arrow_up:  
-{DOT_EMOTE} `{MORA_CHEST_TIERS[0]} → {MORA_CHEST_TIERS[1]}:   {MORA_CHEST_UPGRADE_CHANCES[0]*100:.0f}% chance`
-{DOT_EMOTE} `{MORA_CHEST_TIERS[1]} → {MORA_CHEST_TIERS[2]}:   {MORA_CHEST_UPGRADE_CHANCES[1]*100:.0f}% chance`
-{DOT_EMOTE} `{MORA_CHEST_TIERS[2]} → {MORA_CHEST_TIERS[3]}:   {MORA_CHEST_UPGRADE_CHANCES[2]*100:.0f}% chance`
-### Streak Bonus {EMOTE_STREAK}
-{DOT_EMOTE} You gain a **daily streak** if you claim a chest every day.
-{DOT_EMOTE} Each day in your streak adds `+{MORA_CHEST_STREAK_BONUS}` {MORA_EMOTE} (max {MORA_CHEST_MAX_STREAK_BONUS}) to the reward.
-{DOT_EMOTE} Miss a day? Your streak resets to 1."""
+EMOTE_BLANK = "<:blank:1036792889121980426>"
+def build_chest_description(gc: dict = None) -> str:
+    if gc is None:
+        gc = {}
+    tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
+    tier_rewards = gc.get("chests_tier_rewards", MORA_CHEST_REWARDS)
+    upgrade_chances = gc.get("chests_upgrade_chances", MORA_CHEST_UPGRADE_CHANCES)
+    spawn_req = gc.get("chests_spawn_req", list(MORA_CHEST_SPAWN_REQ))
+    streak_bonus = gc.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
+    max_streak = gc.get("chests_max_streak_bonus", MORA_CHEST_MAX_STREAK_BONUS)
+    base_upgrades = gc.get("chests_base_upgrade_chances", MORA_CHEST_UPGRADE_TIMES)
+    spawn_low = spawn_req[0] if len(spawn_req) > 0 else 4
+    spawn_high = spawn_req[1] if len(spawn_req) > 1 else spawn_req[0]
+    lines = [
+        f"## How the {MORA_CHEST_NAME} Works 🎁",
+        f"{DOT_EMOTE} Earn a chest per day after sending **{spawn_low} to {spawn_high} effortful messages** in minigame channels.",
+        f"{DOT_EMOTE} Messages must be spaced out and not repetitive/spammy.",
+        f"{DOT_EMOTE} A chest starts as **{tier_names[0] if tier_names else '?'}**, containing {MORA_EMOTE} `{tier_rewards[0]:,}`." if tier_rewards else "",
+        f"{DOT_EMOTE} You get a minimum of **{base_upgrades} chances** to upgrade your chest.",
+        f"{DOT_EMOTE} You must claim your chest within **{MORA_CHEST_TIMEOUT // 60} minutes** or it will be wasted.",
+        f"{DOT_EMOTE} After claiming, wait until the next **UTC +0 midnight** to earn a new chest.",
+        "### Rewards (Base Mora) 🏆",
+    ]
+    for i in range(len(tier_names)):
+        r = tier_rewards[i] if i < len(tier_rewards) else 0
+        lines.append(f"{DOT_EMOTE} **{tier_names[i]}**:   **`{r:,}`** Mora")
+    lines.append("### Upgrade Chances :arrow_up:")
+    for i in range(len(tier_names) - 1):
+        c = upgrade_chances[i] * 100 if i < len(upgrade_chances) else 0
+        lines.append(f"{DOT_EMOTE} `{tier_names[i]} \u2192 {tier_names[i+1]}: {c:.0f}% chance`")
+    lines.append(f"### Streak Bonus {EMOTE_STREAK}")
+    lines.append(f"{DOT_EMOTE} You gain a **daily streak** if you claim a chest every day.")
+    lines.append(f"{DOT_EMOTE} Each day in your streak adds `+{streak_bonus}` {MORA_EMOTE} (max {max_streak}) to the reward.")
+    lines.append(f"{DOT_EMOTE} Miss a day? Your streak resets to 1.")
+    return "\n".join(l for l in lines if l)
 
 VIEW_FULL_TRACK = f"| **[View Full Track](https://fischl.app/profile)**"
+TIPS = [
+    "Send effortful messages to earn daily mora chests 📦",
+    f"Reach {SlashCommand('milestones')} to earn titles/roles! Check it out! 💎",
+    f"Use {SlashCommand('customize')} to add a custom inventory background image & pin titles 🌆",
+    f"Hug your favorite person(s) using {SlashCommand('hug')} 🫂",
+    f"Check your inventory with {SlashCommand('mora')} with all your stats 🎉",
+    f"Use {SlashCommand('gift')} to send Mora to your friends or even strangers! 🎁",
+    f"Get FREE mora & minigame summons at [by **playing daily games on the website**](https://fischl.app/profile) 📈",
+    f"Admins can edit event settings & view purchase logs on the **[dashboard](https://fischl.app/dashboard) ⚙️**",
+]
 
 KINGDOM_NAME = "Kingdom"
 DOMAIN_NAME = "Immernachtreich Domain"

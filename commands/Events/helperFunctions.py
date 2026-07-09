@@ -15,6 +15,8 @@ from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, SYSTEM_DB, 
 
 async def ensure_progression_user(pool: asyncpg.Pool, gid: int, uid: int) -> None:
     async with pool.acquire() as conn:
+        for col in ["chest_disabled BOOLEAN DEFAULT FALSE", "minigame_disabled BOOLEAN DEFAULT FALSE"]:
+            await conn.execute(f"ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS {col}")
         await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS shop_discount INTEGER DEFAULT 0")
         await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS domain_discount INTEGER DEFAULT 0")
         await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS express_daily_chests BOOLEAN DEFAULT FALSE")
@@ -668,20 +670,218 @@ async def get_guild_prestige_leaderboard(pool: asyncpg.Pool, gid: int, limit: in
             """, gid)
     return [(row['uid'], row['total_prestige']) for row in rows]
 
-# Misc helper functions
+# PostgreSQL minigame_settings cache & helpers
+
+settings_cache: dict[int, dict] = {}
+user_flag_cache: dict[tuple, dict] = {}
+CACHE_TTL = 60
+
+def invalidate_channel_cache(channel_id: int):
+    settings_cache.pop(channel_id, None)
+
+def invalidate_all_cache():
+    settings_cache.clear()
+    user_flag_cache.clear()
+
+def invalidate_user_flag_cache(guild_id: int, user_id: int):
+    user_flag_cache.pop((guild_id, user_id), None)
+
+async def ensure_minigame_settings_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_settings (
+                channel_id          BIGINT PRIMARY KEY,
+                mora_multiplier     NUMERIC(4,2) DEFAULT 1.00,
+                minigames_enabled   BOOLEAN DEFAULT TRUE,
+                minigames_list      TEXT[] DEFAULT '{}',
+                minigames_frequency INTEGER DEFAULT 50,
+                chests_enabled      BOOLEAN DEFAULT FALSE
+            )
+        """)
+        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS mora_multiplier NUMERIC(4,2) DEFAULT 1.00")
+        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS chests_enabled BOOLEAN DEFAULT FALSE")
+
+async def ensure_minigame_guild_chest_settings_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_guild_chest_settings (
+                gid                         BIGINT PRIMARY KEY,
+                chests_base_upgrade_chances INTEGER DEFAULT 4,
+                chests_tier_names           TEXT[] DEFAULT ARRAY['Common','Exquisite','Precious','Luxurious'],
+                chests_tier_rewards         INTEGER[] DEFAULT ARRAY[2500,7500,15000,30000],
+                chests_upgrade_chances      NUMERIC(5,2)[] DEFAULT ARRAY[0.30,0.15,0.20],
+                chests_streak_bonus         INTEGER DEFAULT 100,
+                chests_max_streak_bonus     INTEGER DEFAULT 10000,
+                chests_spawn_req            INTEGER[] DEFAULT ARRAY[4,6],
+                chests_emotes               TEXT[] DEFAULT ARRAY['<a:common:1371641883121680465>','<a:exquisite:1371641856344985620>','<a:precious:1371641871452995689>','<a:luxurious:1371641841338023976>'],
+                chests_icons                TEXT[] DEFAULT ARRAY['https://i.imgur.com/2kOfLSC.png','https://i.imgur.com/DBPQSAu.png','https://i.imgur.com/zxOlrCo.png','https://i.imgur.com/5nWwRdc.png']
+            )
+        """)
+        await conn.execute("ALTER TABLE minigame_guild_chest_settings ADD COLUMN IF NOT EXISTS chests_emotes TEXT[] DEFAULT ARRAY['<a:common:1371641883121680465>','<a:exquisite:1371641856344985620>','<a:precious:1371641871452995689>','<a:luxurious:1371641841338023976>']")
+        await conn.execute("ALTER TABLE minigame_guild_chest_settings ADD COLUMN IF NOT EXISTS chests_icons TEXT[] DEFAULT ARRAY['https://i.imgur.com/2kOfLSC.png','https://i.imgur.com/DBPQSAu.png','https://i.imgur.com/zxOlrCo.png','https://i.imgur.com/5nWwRdc.png']")
+
+async def ensure_minigame_progression_columns(pool):
+    async with pool.acquire() as conn:
+        for col in ["chest_disabled BOOLEAN DEFAULT FALSE", "minigame_disabled BOOLEAN DEFAULT FALSE"]:
+            await conn.execute(f"ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS {col}")
+
+_SETTINGS_FALLBACK = {
+    "channel_id": 0,
+    "mora_multiplier": 1.00,
+    "minigames_enabled": False,
+    "minigames_list": [],
+    "minigames_frequency": 50,
+    "chests_enabled": False,
+}
+
+_GUILD_CHEST_FALLBACK = {
+    "chests_base_upgrade_chances": 4,
+    "chests_tier_names": ["Common", "Exquisite", "Precious", "Luxurious"],
+    "chests_tier_rewards": [2500, 7500, 15000, 30000],
+    "chests_upgrade_chances": [0.30, 0.15, 0.20],
+    "chests_streak_bonus": 100,
+    "chests_max_streak_bonus": 10000,
+    "chests_spawn_req": [4, 6],
+    "chests_emotes": ["<a:common:1371641883121680465>", "<a:exquisite:1371641856344985620>", "<a:precious:1371641871452995689>", "<a:luxurious:1371641841338023976>"],
+    "chests_icons": ["https://i.imgur.com/2kOfLSC.png", "https://i.imgur.com/DBPQSAu.png", "https://i.imgur.com/zxOlrCo.png", "https://i.imgur.com/5nWwRdc.png"],
+}
+
+async def get_channel_settings(pool, channel_id: int) -> dict:
+    if channel_id in settings_cache:
+        return settings_cache[channel_id]
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM minigame_settings WHERE channel_id = $1", channel_id)
+    if row:
+        data = dict(row)
+    else:
+        data = dict(_SETTINGS_FALLBACK)
+        data["channel_id"] = channel_id
+    settings_cache[channel_id] = data
+    return data
+
+async def get_channel_mora_multiplier(pool, channel_id: int) -> float:
+    settings = await get_channel_settings(pool, channel_id)
+    return float(settings.get("mora_multiplier", 1.00))
+
+async def get_channel_minigame_list(pool, channel_id: int) -> list:
+    settings = await get_channel_settings(pool, channel_id)
+    raw = settings.get("minigames_list", [])
+    if isinstance(raw, list):
+        return raw
+    return []
+
+async def get_enabled_channels_dict(pool) -> dict:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT channel_id, minigames_frequency FROM minigame_settings WHERE minigames_enabled = TRUE"
+        )
+    return {r["channel_id"]: r["minigames_frequency"] for r in rows}
+
+async def upsert_channel_settings(pool, channel_id: int, **kwargs):
+    invalidate_channel_cache(channel_id)
+    cols = ", ".join(kwargs.keys())
+    vals = list(kwargs.values())
+    placeholders = ", ".join(f"${i+2}" for i in range(len(vals)))
+    updates = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs.keys()))
+    async with pool.acquire() as conn:
+        await conn.execute(f"""
+            INSERT INTO minigame_settings (channel_id, {cols})
+            VALUES ($1, {placeholders})
+            ON CONFLICT (channel_id) DO UPDATE SET {updates}
+        """, channel_id, *vals)
+
+async def get_guild_chest_config(pool, guild_id: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM minigame_guild_chest_settings WHERE gid = $1", guild_id)
+    if row:
+        d = dict(row)
+        return {
+            "chests_base_upgrade_chances": d.get("chests_base_upgrade_chances", 4),
+            "chests_tier_names": list(d.get("chests_tier_names", _GUILD_CHEST_FALLBACK["chests_tier_names"])),
+            "chests_tier_rewards": list(d.get("chests_tier_rewards", _GUILD_CHEST_FALLBACK["chests_tier_rewards"])),
+            "chests_upgrade_chances": [float(x) for x in (d.get("chests_upgrade_chances", _GUILD_CHEST_FALLBACK["chests_upgrade_chances"]) or [])],
+            "chests_streak_bonus": d.get("chests_streak_bonus", 100),
+            "chests_max_streak_bonus": d.get("chests_max_streak_bonus", 10000),
+            "chests_spawn_req": list(d.get("chests_spawn_req", [4, 6])),
+            "chests_emotes": list(d.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"])),
+            "chests_icons": list(d.get("chests_icons", _GUILD_CHEST_FALLBACK["chests_icons"])),
+        }
+    return dict(_GUILD_CHEST_FALLBACK)
+
+async def upsert_guild_chest_config(pool, guild_id: int, **kwargs):
+    cols = ", ".join(kwargs.keys())
+    vals = list(kwargs.values())
+    placeholders = ", ".join(f"${i+2}" for i in range(len(vals)))
+    updates = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs.keys()))
+    async with pool.acquire() as conn:
+        await conn.execute(f"""
+            INSERT INTO minigame_guild_chest_settings (gid, {cols})
+            VALUES ($1, {placeholders})
+            ON CONFLICT (gid) DO UPDATE SET {updates}
+        """, guild_id, *vals)
+
+async def get_channel_chest_config(pool, guild_id: int, channel_id: int) -> dict:
+    s = await get_channel_settings(pool, channel_id)
+    gc = await get_guild_chest_config(pool, guild_id)
+    return {
+        "chests_enabled": s.get("chests_enabled", False),
+        "chests_base_upgrade_chances": gc.get("chests_base_upgrade_chances", 4),
+        "chests_tier_names": gc.get("chests_tier_names", _GUILD_CHEST_FALLBACK["chests_tier_names"]),
+        "chests_tier_rewards": gc.get("chests_tier_rewards", _GUILD_CHEST_FALLBACK["chests_tier_rewards"]),
+        "chests_upgrade_chances": gc.get("chests_upgrade_chances", _GUILD_CHEST_FALLBACK["chests_upgrade_chances"]),
+        "chests_streak_bonus": gc.get("chests_streak_bonus", 100),
+        "chests_max_streak_bonus": gc.get("chests_max_streak_bonus", 10000),
+        "chests_spawn_req": gc.get("chests_spawn_req", [4, 6]),
+        "chests_emotes": gc.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"]),
+        "chests_icons": gc.get("chests_icons", _GUILD_CHEST_FALLBACK["chests_icons"]),
+    }
+
+# User minigame settings helpers (chest_disabled / minigame_disabled)
+
+async def get_user_minigame_settings(pool, guild_id: int, user_id: int) -> dict:
+    key = (guild_id, user_id)
+    cached = user_flag_cache.get(key)
+    if cached:
+        ts, data = cached
+        if time.time() - ts < CACHE_TTL:
+            return data
+        del user_flag_cache[key]
+    await ensure_progression_user(pool, guild_id, user_id)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT chest_disabled, minigame_disabled FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            guild_id, user_id
+        )
+    data = {
+        "chest_disabled": bool(row["chest_disabled"]) if row else False,
+        "minigame_disabled": bool(row["minigame_disabled"]) if row else False,
+    }
+    user_flag_cache[key] = (time.time(), data)
+    return data
+
+async def upsert_user_minigame_setting(pool, guild_id: int, user_id: int, column: str, value):
+    invalidate_user_flag_cache(guild_id, user_id)
+    await ensure_progression_user(pool, guild_id, user_id)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"UPDATE minigame_progression SET {column} = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
+            guild_id, user_id, bool(value)
+        )
+
+# Legacy alias to be deleted
 
 def get_minigame_list(channel_id):
-    """Get list of minigames enabled in a channel."""
-    ref = db.reference(f"{SYSTEM_DB}/{channel_id}")
-    data = ref.get() or {}
-    return data.get("events", [])
+    import warnings
+    warnings.warn("sync get_minigame_list is deprecated, use async get_channel_minigame_list", DeprecationWarning)
+    return []
+
+# Misc helpers
 
 async def delayed_check_milestones(pool: asyncpg.Pool, userID, guildID, channelID, client):
     """Delay milestone check to allow database consistency."""
     await asyncio.sleep(1)
     await check_milestones(pool, userID, guildID, channelID, client)
 
-    
 async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, client):
     """Check and award milestones for a user when mora threshold is reached."""
     try:

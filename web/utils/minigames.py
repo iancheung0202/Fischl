@@ -56,36 +56,46 @@ def get_guild_mora(user_id, guild_id):
         print(f"Error getting guild mora: {e}")
         return 0
 
-def check_events_enabled(guild_id, stickies=None):
-    """Check if events are enabled in any channel of a guild"""
-    if stickies is None:
-        ref = db.reference("/Chat Minigames System")
-        system_data = ref.get() or {}
-    else:
-        system_data = stickies
-             
-    # Get all channels in the guild first
+def get_channel_settings_sync(guild_id, channel_id):
+    """Synchronously read channel settings from PostgreSQL for the web layer"""
     try:
-        channels = requests_session.get(f"{API_BASE}/guilds/{guild_id}/channels", 
-                                      headers={"Authorization": f"Bot {BOT_TOKEN}"}).json()
-        
-        # Handle API errors
-        if isinstance(channels, dict) and 'message' in channels:
-            return False
-            
-        guild_channel_ids = {int(channel['id']) for channel in channels if channel.get('type') == 0}  # Text channels only
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT minigame_list, mora_multiplier, minigames_frequency, chests_enabled "
+            "FROM minigame_settings WHERE channel_id = %s",
+            (channel_id,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row:
+            return {
+                "minigame_list": row[0],
+                "mora_multiplier": row[1],
+                "minigames_frequency": row[2],
+                "chests_enabled": row[3],
+            }
+        return None
     except Exception as e:
-        print(f"Error fetching channels for guild {guild_id}: {e}")
+        print(f"Error getting channel settings: {e}")
+        return None
+
+def check_events_enabled(guild_id, stickies=None):
+    """Check if events are enabled in any channel of a guild using PostgreSQL"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM minigame_settings WHERE minigames_enabled = TRUE"
+        )
+        count = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return count and count[0] > 0
+    except Exception as e:
+        print(f"Error checking events enabled: {e}")
         return False
-    
-    # Check if any channel in this guild has events enabled (check against system_data keys)
-    for channel_id in system_data.keys():
-        try:
-            if int(channel_id) in guild_channel_ids:
-                return True
-        except (ValueError, TypeError):
-            continue
-    return False
 
 
 # Hardcoded season data matching Discord bot
@@ -528,7 +538,7 @@ def generate_mora_graph(user_id, guild_id, display_name):
         
         # Get chest counts
         ref_counts = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/counts")
-        chest_counts = ref_counts.get() or {"Common": 0, "Exquisite": 0, "Precious": 0, "Luxurious": 0}
+        chest_counts = ref_counts.get() or {}
         total_chests = sum(chest_counts.values())
 
         # Get streak data
@@ -538,11 +548,34 @@ def generate_mora_graph(user_id, guild_id, display_name):
         current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
         max_streak = streak_data.get("max_streak", current_streak)
 
-        chest_info = (
-            f"<img src='https://cdn.discordapp.com/emojis/1371641883121680465.png?size=20' style='line-height: 1em; display: inline; vertical-align: baseline;'> <code>{chest_counts.get('Common', 0)}</code> &nbsp; &nbsp; "
-            f"<img src='https://cdn.discordapp.com/emojis/1371641856344985620.png?size=20' style='line-height: 1em; display: inline; vertical-align: baseline;'> <code>{chest_counts.get('Exquisite', 0)}</code> &nbsp; &nbsp; "
-            f"<img src='https://cdn.discordapp.com/emojis/1371641871452995689.png?size=20' style='line-height: 1em; display: inline; vertical-align: baseline;'> <code>{chest_counts.get('Precious', 0)}</code> &nbsp; &nbsp; "
-            f"<img src='https://cdn.discordapp.com/emojis/1371641841338023976.png?size=20' style='line-height: 1em; display: inline; vertical-align: baseline;'> <code>{chest_counts.get('Luxurious', 0)}</code> <br>"
+        # Get guild chest config for dynamic tier names / emotes / icons
+        try:
+            cursor.execute(
+                "SELECT chests_tier_names, chests_emotes, chests_icons FROM minigame_guild_chest_settings WHERE gid = %s",
+                (guild_id,)
+            )
+            gc_row = cursor.fetchone()
+        except Exception:
+            gc_row = None
+        if gc_row:
+            tier_names = gc_row[0] or ["Common", "Exquisite", "Precious", "Luxurious"]
+            emotes = gc_row[1] or ["<a:common:1371641883121680465>", "<a:exquisite:1371641856344985620>", "<a:precious:1371641871452995689>", "<a:luxurious:1371641841338023976>"]
+            icons = gc_row[2] or ["https://i.imgur.com/2kOfLSC.png", "https://i.imgur.com/DBPQSAu.png", "https://i.imgur.com/zxOlrCo.png", "https://i.imgur.com/5nWwRdc.png"]
+        else:
+            tier_names = ["Common", "Exquisite", "Precious", "Luxurious"]
+            emotes = ["<a:common:1371641883121680465>", "<a:exquisite:1371641856344985620>", "<a:precious:1371641871452995689>", "<a:luxurious:1371641841338023976>"]
+            icons = ["https://i.imgur.com/2kOfLSC.png", "https://i.imgur.com/DBPQSAu.png", "https://i.imgur.com/zxOlrCo.png", "https://i.imgur.com/5nWwRdc.png"]
+
+        chest_info = ""
+        for i, name in enumerate(tier_names):
+            emoji_id = emotes[i].split(":")[-1].rstrip(">") if i < len(emotes) else ""
+            count = chest_counts.get(name, 0)
+            chest_info += (
+                f"<img src='https://cdn.discordapp.com/emojis/{emoji_id}.png?size=20' "
+                f"style='line-height: 1em; display: inline; vertical-align: baseline;'> "
+                f"<code>{count}</code> &nbsp; &nbsp; "
+            )
+        chest_info += (
             f"<b>Total:</b> <code>{total_chests}</code> &nbsp; &nbsp; "
             f"<img src='https://cdn.discordapp.com/emojis/1371651844652273694.png?size=20' style='line-height: 1em; display: inline; vertical-align: baseline;'> <code>{current_streak}</code> day{'s' if current_streak > 1 else ''} &nbsp; &nbsp; "
             f"<img src='https://cdn.discordapp.com/emojis/1371655286049214672.png?size=20' style='line-height: 1em; display: inline; vertical-align: baseline;'> <code>{max_streak}</code> day{'s' if max_streak > 1 else ''}"

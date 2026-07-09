@@ -94,7 +94,7 @@ class Select(discord.ui.Select):
                 "condition": lambda cmd: (
                     "customize" in cmd.name
                     or "mora" in cmd.name
-                    or "leaderboard" in cmd.name
+                    or ("leaderboard" in cmd.name and "send" not in cmd.name)
                     or "buy" in cmd.name
                     or "shop" in cmd.name
                     or "milestones" in cmd.name
