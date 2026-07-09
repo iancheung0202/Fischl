@@ -13,13 +13,11 @@ from discord.ui import Button, View, Select
 from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
-from commands.Events.trackData import get_current_track
+from commands.Events.trackData import get_current_track, is_elite_active
 from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_channel_settings, upsert_channel_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, upsert_guild_chest_config, get_guild_chest_config
-from commands.Events.trackData import is_elite_active, get_current_track
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
-from commands.Events.trackData import is_elite_active
 from utils.commands import SlashCommand
 
 from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
@@ -119,13 +117,13 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
 
         
 class ToggleView(discord.ui.View):
-    def __init__(self, original_embed, user_id, command_user_id, message=None, guild_id=None, custom_color=None):
+    def __init__(self, original_embed, user_id, command_user_id, message=None, guild_id=None, custom_color=None, is_elite=False):
         super().__init__(timeout=180)
         self.original_embed = original_embed
         self.user_id = user_id
         self.command_user_id = command_user_id
         self.message = message
-        self.state = "home"  # home, graph, track, quests, domain, settings
+        self.state = "home"
         self.guild_id = guild_id
         self.purchase_button = None
         self.custom_color = custom_color
@@ -136,7 +134,6 @@ class ToggleView(discord.ui.View):
         self.profile_button = PROFILE_LINK_BUTTON
         self.add_item(self.profile_button)
 
-        is_elite = is_elite_active(self.user_id, self.guild_id)
         self.purchase_button = ThanksEliteTrack() if is_elite else PurchaseEliteTrack()
         self.add_item(self.purchase_button) 
         
@@ -307,7 +304,7 @@ class ToggleView(discord.ui.View):
                 f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) <:PaiHype:1194817285748183140>\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# <:reply:1036792837821435976> **Earn XP** by purchasing in the shop and completing quests.\n"
                 f"```diff\n"
                 f"+ Current Tier: {current_tier_display} ({user_xp} total XP)\n"
-                + f"- Status: {'Elite Track Activated' if is_elite_active(self.user_id, self.guild_id) else 'Free Track Only'}\n"
+                + f"- Status: {'Elite Track Activated' if await is_elite_active(interaction.client.pool, self.user_id, self.guild_id) else 'Free Track Only'}\n"
                 + f"{next_tier_info}\n"
                 + (f" {double_struck_number(current_tier)} {emoji_bar(xp_in_current_tier / next_tier_xp if next_tier_xp else 0)} {double_struck_number(current_tier + 1)}\n" if current_tier < 31 else "")
                 + f"```\n"
@@ -757,7 +754,7 @@ class Mora(commands.Cog):
             
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/selected")
         selected = ref_selected.get() or {}
-        elite_active = is_elite_active(user.id, interaction.guild.id)
+        elite_active = await is_elite_active(interaction.client.pool, user.id, interaction.guild.id)
         custom_color_hex = selected.get("embed_color_hex") if elite_active else None
         custom_color = discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
         
@@ -895,7 +892,8 @@ class Mora(commands.Cog):
         url = msg_obj.attachments[0].proxy_url
         embed.set_image(url=url)
 
-        view = ToggleView(embed, user.id, interaction.user.id, message=None, guild_id=interaction.guild.id, custom_color=custom_color)
+        elite = await is_elite_active(interaction.client.pool, user.id, interaction.guild.id)
+        view = ToggleView(embed, user.id, interaction.user.id, message=None, guild_id=interaction.guild.id, custom_color=custom_color, is_elite=elite)
         message = await interaction.followup.send(embed=embed, view=view)
         view.message = message
         if followup:

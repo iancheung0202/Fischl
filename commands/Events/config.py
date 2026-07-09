@@ -55,7 +55,6 @@ CURRENCY_ICON_PATH = "./assets/mora_icon.png"
 COSMETICS_DB = "/Chat Minigames Cosmetics"
 REWARDS_DB = "/Chat Minigames Rewards"
 CHEST_DB = "/Chat Minigames Chests"
-TRACK_PENDING_DB = "/Elite Track Pending"
 SHOP_EDITS_PENDING_DB = "/Pending Shop Edits"
 
 PRICE_UP_EMOTE = "<:price_ascending:1346329079145562112>"

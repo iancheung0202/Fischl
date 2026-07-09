@@ -708,6 +708,22 @@ async def ensure_minigame_progression_columns(pool):
         for col in ["chest_disabled BOOLEAN DEFAULT FALSE", "minigame_disabled BOOLEAN DEFAULT FALSE"]:
             await conn.execute(f"ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS {col}")
 
+async def ensure_minigame_elite_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_elite (
+                user_id             BIGINT NOT NULL,
+                guild_id            BIGINT NOT NULL,
+                server_name         TEXT DEFAULT '',
+                expires_at          BIGINT NOT NULL,
+                activated_at        BIGINT DEFAULT EXTRACT(EPOCH FROM CURRENT_TIMESTAMP),
+                order_id            TEXT DEFAULT '',
+                pending_processed    BOOLEAN DEFAULT FALSE,
+                claimed_tiers       INTEGER[] DEFAULT '{}',
+                PRIMARY KEY (user_id, guild_id)
+            )
+        """)
+
 async def ensure_minigame_inventory_columns(pool):
     async with pool.acquire() as conn:
         await conn.execute("ALTER TABLE minigame_inventory ADD COLUMN IF NOT EXISTS link TEXT DEFAULT NULL")
@@ -956,4 +972,8 @@ class TierRewardsView(discord.ui.View):
             await interaction.message.delete()
             
 async def setup(bot) -> None:
-    pass
+    await ensure_minigame_settings_table(bot.pool)
+    await ensure_minigame_progression_columns(bot.pool)
+    await ensure_minigame_inventory_columns(bot.pool)
+    await ensure_minigame_guild_chest_settings_table(bot.pool)
+    await ensure_minigame_elite_table(bot.pool)

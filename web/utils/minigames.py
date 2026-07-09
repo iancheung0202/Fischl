@@ -359,10 +359,42 @@ def get_current_track():
             {'tier': 2,  'xp_req': 250, 'cumulative_xp': 500,    'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +5%'},
         ]
 
+def load_elite_subscriptions():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, guild_id, server_name, expires_at FROM minigame_elite")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        subs = {}
+        for row in rows:
+            key = f"{row[0]}-{row[1]}"
+            subs[key] = {
+                "user_id": row[0],
+                "server_id": row[1],
+                "server_name": row[2] or "",
+                "expires_at": row[3]
+            }
+        return subs
+    except Exception:
+        return {}
+
 def save_elite_subscriptions(subscriptions):
     try:
-        elite_track_ref = db.reference("/Elite Track")
-        elite_track_ref.set(subscriptions)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        for key, sub in subscriptions.items():
+            cursor.execute(
+                """INSERT INTO minigame_elite (user_id, guild_id, server_name, expires_at)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (user_id, guild_id)
+                   DO UPDATE SET server_name = EXCLUDED.server_name, expires_at = EXCLUDED.expires_at""",
+                (sub["user_id"], sub["server_id"], sub.get("server_name", ""), sub["expires_at"])
+            )
+        conn.commit()
+        cursor.close()
+        conn.close()
     except Exception:
         pass
 
@@ -372,59 +404,49 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
         print(f"Starting elite subscription activation for user {user_id} in guild {guild_id}")
         if order_id:
             print(f"Order ID: {order_id}")
-        
-        # Calculate expiration date (current season end)
+
         current_season = get_current_season()
         print(f"Current season: {current_season}")
         if not current_season:
             return False, "No active season found"
-        
-        expires_at = current_season.get("end_ts", time.time() + (3 * 30 * 24 * 60 * 60))  # Default 3 months if no season
-        print(f"Subscription will expire at: {expires_at}")
-        
-        # Load existing subscriptions
-        print("Loading existing subscriptions...")
-        subscriptions = load_elite_subscriptions()
-        print(f"Loaded {len(subscriptions)} existing subscriptions")
 
-        # Get guild name for notification
+        expires_at = current_season.get("end_ts", time.time() + (3 * 30 * 24 * 60 * 60))
+        print(f"Subscription will expire at: {expires_at}")
+
         guild_response = requests_session.get(
             f"{API_BASE}/guilds/{guild_id}",
             headers={"Authorization": f"Bot {BOT_TOKEN}"}
         )
         guild_name = guild_response.json().get("name", f"Server {guild_id}") if guild_response.status_code == 200 else f"Server {guild_id}"
         print(f"Guild name: {guild_name}")
-        
-        # Add new subscription
-        key = f"{user_id}-{guild_id}"
-        subscriptions[key] = {
-            "user_id": int(user_id),
-            "server_id": int(guild_id),
-            "server_name": guild_name,
-            "expires_at": expires_at
-        }
-        print(f"Added subscription with key: {key}")
-        
-        # Save subscriptions
-        print("Saving subscriptions to Firebase...")
-        save_elite_subscriptions(subscriptions)
-        print("Subscriptions saved successfully")
-        
-        # Send Discord notification
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT INTO minigame_elite (user_id, guild_id, server_name, expires_at, order_id, pending_processed)
+               VALUES (%s, %s, %s, %s, %s, FALSE)
+               ON CONFLICT (user_id, guild_id)
+               DO UPDATE SET server_name = EXCLUDED.server_name, expires_at = EXCLUDED.expires_at,
+                             order_id = EXCLUDED.order_id, pending_processed = FALSE""",
+            (int(user_id), int(guild_id), guild_name, expires_at, order_id or "")
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("Subscription saved to PostgreSQL successfully")
+
         try:
             print("Sending Discord notification...")
-            
-            # Send DM to user
             user_response = requests_session.post(
                 f"{API_BASE}/users/@me/channels",
                 headers={"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"},
                 json={"recipient_id": str(user_id)}
             )
-            
+
             if user_response.status_code == 200:
                 dm_channel_id = user_response.json()["id"]
                 print(f"Created DM channel: {dm_channel_id}")
-                
+
                 embed = {
                     "description": (
                         f"## <a:moneydance:1227425759077859359> Elite Track Activated!\n"
@@ -433,11 +455,10 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
                     ),
                     "color": 0xfa0add
                 }
-                
-                # Add footer with order ID if provided
+
                 if order_id:
                     embed["footer"] = {"text": f"Order ID: {order_id}"}
-                
+
                 dm_response = requests_session.post(
                     f"{API_BASE}/channels/{dm_channel_id}/messages",
                     headers={"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"},
@@ -446,47 +467,33 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
                 print(f"DM sent successfully")
             else:
                 print(f"Failed to create DM channel: {user_response.status_code}")
-            
-            # Create a notification for the bot to process retroactive rewards
-            # The bot can monitor this path and process pending activations
-            try:
-                print("Creating pending activation notification...")
-                pending_ref = db.reference(f"/Elite Track Pending/{guild_id}")
-                current_pending = pending_ref.get() or []
-                current_pending.append({
-                    "user_id": user_id,
-                    "timestamp": time.time(),
-                    "activated_via": "website"
-                })
-                pending_ref.set(current_pending)
-                print("Pending activation notification created successfully")
-            except Exception as e:
-                print(f"Could not create pending activation: {e}")
-                        
+
         except Exception as e:
             print(f"Error sending Discord notification: {e}")
-        
+
         print("Elite subscription activation completed successfully")
         return True, "Elite subscription activated successfully"
-        
+
     except Exception as e:
         print(f"Error activating elite subscription: {e}")
-        traceback.print_exc()
         return False, f"Error activating subscription: {str(e)}"
 
-def load_elite_subscriptions():
-    try:
-        elite_track_ref = db.reference("/Elite Track")
-        return elite_track_ref.get() or {}
-    except Exception:
-        return {}
-    
 def is_elite_active(user_id, guild_id):
-    subscriptions = load_elite_subscriptions()
-    key = f"{user_id}-{guild_id}"
-    if key in subscriptions:
-        return time.time() < subscriptions[key]["expires_at"]
-    return False
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT expires_at FROM minigame_elite WHERE user_id = %s AND guild_id = %s",
+            (int(user_id), int(guild_id))
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row:
+            return time.time() < row[0]
+        return False
+    except Exception:
+        return False
 
 def generate_mora_graph(user_id, guild_id, display_name):
     """Generate mora earnings graph for a user in a guild"""

@@ -15,7 +15,7 @@ class DatabaseCog(commands.Cog):
         description="Execute raw SQL queries"
     )
     @app_commands.describe(
-        query="minigame_inventory/mora/progression/settings/guild_chest_settings"
+        query="minigame_inventory/mora/progression/settings/guild_chest_settings/rewards/elite"
     )
     async def database_query(
         self,

@@ -15,21 +15,25 @@ def get_current_track():
     return season.track_data if season else []
 
 async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=False, client=None, pool=None):
-    if is_elite:
-        elite_claimed_ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/elite_claimed")
-        elite_claimed = elite_claimed_ref.get() or []
-        if tier in elite_claimed:
-            return (None, None)
-        if tier != "Bonus":
-            elite_claimed.append(tier)
-            elite_claimed_ref.set(elite_claimed)
+    if is_elite and pool:
+        async with pool.acquire() as conn:
+            claimed = await conn.fetchval(
+                "SELECT claimed_tiers FROM minigame_elite WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            ) or []
+            if tier in claimed:
+                return (None, None)
+            if tier != "Bonus":
+                await conn.execute(
+                    "UPDATE minigame_elite SET claimed_tiers = array_append(claimed_tiers, $1) WHERE user_id = $2 AND guild_id = $3",
+                    tier, user_id, guild_id
+                )
         
     reward_type = REWARD_TYPES.get(reward_str.split("|")[0].strip(), "other")
     title = None
     description = None
     
     if pool is None:
-        # Fallback if pool not provided
         from commands.Events.helperFunctions import get_user_stats
         stats = {"mora_boost": 0, "chest_upgrades": 4, "gift_tax": None, "minigame_summons": 0}
     else:
@@ -173,7 +177,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         description = f"**Tier `{tier}`:** Your gifting tax rate is now **`{new_tax}%`**! Use {SlashCommand('gift')} to send some love!"
     
     elif reward_type == "minigame_summon" or reward_type == "minigame_summon_30":
-        summon_amount = 30 if reward_type == "minigame_summon_30" else int(reward_str.split()[0].replace('+', '')) # Extract summon amount (e.g., "+3" from "+3 Minigames Summon")
+        summon_amount = 30 if reward_type == "minigame_summon_30" else int(reward_str.split()[0].replace('+', ''))
         async with pool.acquire() as conn:
             new_summons = await conn.fetchval(
                 "UPDATE minigame_progression SET minigame_summons = minigame_summons + $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2 RETURNING minigame_summons",
@@ -214,7 +218,7 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=
         if title is not None and description is not None:
             embed.add_field(name=title, value=f"-# {description}", inline=False)
         
-        if is_elite_active(user_id, guild_id):
+        if await is_elite_active(pool, user_id, guild_id):
             title, description = await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client, pool=pool)
             if title is not None and description is not None:
                 elite_embed.add_field(name=title, value=f"-# {description}", inline=False)
@@ -235,52 +239,45 @@ async def check_tier_rewards(guild_id, user_id, old_xp, new_xp, channel, client=
         for _ in range(bonus_tiers_earned):
             await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, client=client, pool=pool)
             
-            if is_elite_active(user_id, guild_id):
+            if await is_elite_active(pool, user_id, guild_id):
                 await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client, pool=pool)
 
     return (embed, elite_embed)
 
 async def grant_elite_rewards_up_to_tier(guild_id, user_id, channel, max_xp, client=None, pool=None):
-    elite_claimed_ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/elite_claimed")
-    elite_claimed = elite_claimed_ref.get() or []
-    
     rewards_granted = []
     TRACK_DATA = get_current_track()
-    for tier in TRACK_DATA:
-        if tier["cumulative_xp"] <= max_xp and tier["tier"] not in elite_claimed:
-            await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client, pool=pool)
-            rewards_granted.append(f"Tier {tier['tier']}: {tier['elite'].split('|')[0].strip()}")
-    
-    max_tier_xp = TRACK_DATA[-1]["cumulative_xp"]
-    if max_xp > max_tier_xp:
-        total_bonus_tiers = (max_xp - max_tier_xp) // 2500
-        
-        for _ in range(total_bonus_tiers):
-            await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client, pool=pool)
-            rewards_granted.append(f"Bonus Drop Pack")
+
+    async with pool.acquire() as conn:
+        claimed = await conn.fetchval(
+            "SELECT claimed_tiers FROM minigame_elite WHERE user_id = $1 AND guild_id = $2",
+            user_id, guild_id
+        ) or []
+
+        for tier in TRACK_DATA:
+            if tier["cumulative_xp"] <= max_xp and tier["tier"] not in claimed:
+                await grant_reward(guild_id, user_id, tier["elite"], tier["tier"], channel, is_elite=True, client=client, pool=pool)
+                rewards_granted.append(f"Tier {tier['tier']}: {tier['elite'].split('|')[0].strip()}")
+
+        max_tier_xp = TRACK_DATA[-1]["cumulative_xp"]
+        if max_xp > max_tier_xp:
+            total_bonus_tiers = (max_xp - max_tier_xp) // 2500
+            for _ in range(total_bonus_tiers):
+                await grant_reward(guild_id, user_id, "Drop Pack", "Bonus", channel, is_elite=True, client=client, pool=pool)
+                rewards_granted.append(f"Bonus Drop Pack")
     
     return rewards_granted
 
-def load_elite_subscriptions():
+async def is_elite_active(pool, user_id, guild_id):
     try:
-        elite_track_ref = db.reference("/Elite Track")
-        return elite_track_ref.get() or {}
+        async with pool.acquire() as conn:
+            expires = await conn.fetchval(
+                "SELECT expires_at FROM minigame_elite WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
+            return expires is not None and time.time() < expires
     except Exception:
-        return {}
-
-def save_elite_subscriptions(subscriptions):
-    try:
-        elite_track_ref = db.reference("/Elite Track")
-        elite_track_ref.set(subscriptions)
-    except Exception:
-        pass
-
-def is_elite_active(user_id, guild_id):
-    subscriptions = load_elite_subscriptions()
-    key = f"{user_id}-{guild_id}"
-    if key in subscriptions:
-        return time.time() < subscriptions[key]["expires_at"]
-    return False
+        return False
 
 async def setup(bot):
     pass

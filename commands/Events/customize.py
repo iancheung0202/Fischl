@@ -372,7 +372,7 @@ class Customize(commands.Cog):
                 return await interaction.followup.send(
                     f"{NO_EMOTE} Invalid font preset. Choose one of the available presets."
                 )
-            if font != "Default" and not (is_elite_active(interaction.user.id, interaction.guild.id) and current_selected.get("font_unlocked")):
+            if font != "Default" and not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and current_selected.get("font_unlocked")):
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You have not unlocked **custom font preset** on the Elite Track!"
                 )
@@ -440,7 +440,7 @@ class Customize(commands.Cog):
 
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         selected = ref_selected.get() or {}
-        if not (is_elite_active(interaction.user.id, interaction.guild.id) and selected.get("animated_background_unlocked")):
+        if not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and selected.get("animated_background_unlocked")):
             raise ValueError("You have not unlocked **custom animated GIF background** on the Elite Track!")
 
         output_path = f"{ANIMATED_INVENTORY_BG_PATH}/{interaction.user.id}-temp.gif"
@@ -527,7 +527,7 @@ class Customize(commands.Cog):
                 else:
                     title_name = str(title_data)
                 message = f"Title set to: **{title_name}**"
-            elif selected.get("custom_title_unlocked") and is_elite_active(interaction.user.id, interaction.guild.id):
+            elif selected.get("custom_title_unlocked") and await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id):
                 custom_title = title_value.strip()
                 if not custom_title:
                     return await interaction.followup.send(
@@ -565,7 +565,7 @@ class Customize(commands.Cog):
     ):
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
-        elite_active = is_elite_active(interaction.user.id, interaction.guild.id)
+        elite_active = await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id)
         active_selected = resolve_active_cosmetic_values(current_selected, elite_active)
         accent_color_hex = active_selected["embed_color_hex"]
         font_name = font if font else active_selected["font"]
@@ -724,7 +724,7 @@ class Customize(commands.Cog):
         ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
         current_selected = ref_selected.get() or {}
         bg_path = None
-        elite_active = is_elite_active(interaction.user.id, interaction.guild.id)
+        elite_active = await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id)
         
         static_path = f"{INVENTORY_BG_PATH}/{interaction.user.id}.png"
         if os.path.exists(static_path):
