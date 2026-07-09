@@ -1,6 +1,5 @@
 import discord
 import time
-import datetime
 
 from discord import app_commands
 from discord.ext import commands
@@ -10,7 +9,7 @@ from commands.Events.helperFunctions import addMora
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, REWARDS_DB, SYSTEM_DB, SHOP_EDITS_PENDING_DB
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, REWARDS_DB, SHOP_EDITS_PENDING_DB
 
 async def get_shop_embeds(
     interaction, item_list, empty_condition, sort_by="cost", reverse=True

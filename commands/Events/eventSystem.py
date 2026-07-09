@@ -3,10 +3,9 @@ import datetime
 
 from discord import app_commands
 from discord.ext import commands
-from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, DOT_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, SYSTEM_DB, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_UPGRADE_TIMES, EMOTE_STREAK, EMOTE_MAX_STREAK
-from commands.Events.helperFunctions import get_channel_settings, upsert_channel_settings, invalidate_channel_cache, ensure_minigame_settings_table, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config, _GUILD_CHEST_FALLBACK
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, DOT_EMOTE, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_UPGRADE_TIMES, EMOTE_STREAK, EMOTE_MAX_STREAK
+from commands.Events.helperFunctions import get_channel_settings, upsert_channel_settings, ensure_minigame_settings_table, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config, _GUILD_CHEST_FALLBACK
 
 letterString = "".join(LETTER_LIST)
 
@@ -48,7 +47,9 @@ class ToggleEventModal(discord.ui.Modal, title="Toggle Events"):
                 )
 
         await upsert_channel_settings(pool, self.channel_id, minigames_list=original)
-        invalidate_channel_cache(self.channel_id)
+        cog = interaction.client.get_cog('TheEventItself')
+        if cog:
+            cog.cache.invalidate_channel(self.channel_id)
 
         channel = interaction.guild.get_channel(self.channel_id)
         new_settings = await get_channel_settings(pool, self.channel_id)
@@ -79,7 +80,9 @@ class SetMinigameRewardsModal(discord.ui.Modal, title="Set Mora Multiplier"):
         if val < 0.01 or val > 99.99:
             return await interaction.response.send_message(f"{NO_EMOTE} Multiplier must be between 0.01 and 99.99.", ephemeral=True)
         await upsert_channel_settings(interaction.client.pool, self.channel_id, mora_multiplier=val)
-        invalidate_channel_cache(self.channel_id)
+        cog = interaction.client.get_cog('TheEventItself')
+        if cog:
+            cog.cache.invalidate_channel(self.channel_id)
         channel = interaction.guild.get_channel(self.channel_id)
         settings = await get_channel_settings(interaction.client.pool, self.channel_id)
         embed = build_minigames_embed(channel, settings)
@@ -491,7 +494,9 @@ class MinigamesToggleButton(discord.ui.Button):
             if not current_list:
                 kwargs["minigames_list"] = list(letterString)
         await upsert_channel_settings(interaction.client.pool, channel_id, **kwargs)
-        invalidate_channel_cache(channel_id)
+        cog = interaction.client.get_cog('TheEventItself')
+        if cog:
+            cog.cache.invalidate_channel(channel_id)
         settings = await get_channel_settings(interaction.client.pool, channel_id)
         embed = build_minigames_embed(channel, settings)
         view = EventSettingsView(channel, settings)
@@ -531,7 +536,9 @@ class FrequencySelect(discord.ui.Select):
         channel = interaction.guild.get_channel(channel_id)
         new_frequency = int(self.values[0])
         await upsert_channel_settings(interaction.client.pool, channel_id, minigames_frequency=new_frequency)
-        invalidate_channel_cache(channel_id)
+        cog = interaction.client.get_cog('TheEventItself')
+        if cog:
+            cog.cache.invalidate_channel(channel_id)
         settings = await get_channel_settings(interaction.client.pool, channel_id)
         embed = build_minigames_embed(channel, settings)
         view = EventSettingsView(channel, settings)
@@ -563,7 +570,9 @@ class ChestsToggleButton(discord.ui.Button):
         )
         channel = interaction.guild.get_channel(channel_id)
         await upsert_channel_settings(interaction.client.pool, channel_id, chests_enabled=self.enable)
-        invalidate_channel_cache(channel_id)
+        cog = interaction.client.get_cog('TheEventItself')
+        if cog:
+            await cog.cache.invalidate_channel(channel_id)
         settings = await get_channel_settings(interaction.client.pool, channel_id)
         guild_config = await get_guild_chest_config(interaction.client.pool, interaction.guild.id)
         embed = build_chests_embed(channel, settings, guild_config)

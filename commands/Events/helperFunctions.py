@@ -7,9 +7,8 @@ import asyncpg
 
 from typing import Optional
 from firebase_admin import db
-from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, SYSTEM_DB, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
 
 # Progression helper functions
 
@@ -670,22 +669,6 @@ async def get_guild_prestige_leaderboard(pool: asyncpg.Pool, gid: int, limit: in
             """, gid)
     return [(row['uid'], row['total_prestige']) for row in rows]
 
-# PostgreSQL minigame_settings cache & helpers
-
-settings_cache: dict[int, dict] = {}
-user_flag_cache: dict[tuple, dict] = {}
-CACHE_TTL = 60
-
-def invalidate_channel_cache(channel_id: int):
-    settings_cache.pop(channel_id, None)
-
-def invalidate_all_cache():
-    settings_cache.clear()
-    user_flag_cache.clear()
-
-def invalidate_user_flag_cache(guild_id: int, user_id: int):
-    user_flag_cache.pop((guild_id, user_id), None)
-
 async def ensure_minigame_settings_table(pool):
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -747,17 +730,11 @@ _GUILD_CHEST_FALLBACK = {
 }
 
 async def get_channel_settings(pool, channel_id: int) -> dict:
-    if channel_id in settings_cache:
-        return settings_cache[channel_id]
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM minigame_settings WHERE channel_id = $1", channel_id)
     if row:
-        data = dict(row)
-    else:
-        data = dict(_SETTINGS_FALLBACK)
-        data["channel_id"] = channel_id
-    settings_cache[channel_id] = data
-    return data
+        return dict(row)
+    return dict(_SETTINGS_FALLBACK, channel_id=channel_id)
 
 async def get_channel_mora_multiplier(pool, channel_id: int) -> float:
     settings = await get_channel_settings(pool, channel_id)
@@ -778,7 +755,6 @@ async def get_enabled_channels_dict(pool) -> dict:
     return {r["channel_id"]: r["minigames_frequency"] for r in rows}
 
 async def upsert_channel_settings(pool, channel_id: int, **kwargs):
-    invalidate_channel_cache(channel_id)
     cols = ", ".join(kwargs.keys())
     vals = list(kwargs.values())
     placeholders = ", ".join(f"${i+2}" for i in range(len(vals)))
@@ -839,28 +815,18 @@ async def get_channel_chest_config(pool, guild_id: int, channel_id: int) -> dict
 # User minigame settings helpers (chest_disabled / minigame_disabled)
 
 async def get_user_minigame_settings(pool, guild_id: int, user_id: int) -> dict:
-    key = (guild_id, user_id)
-    cached = user_flag_cache.get(key)
-    if cached:
-        ts, data = cached
-        if time.time() - ts < CACHE_TTL:
-            return data
-        del user_flag_cache[key]
     await ensure_progression_user(pool, guild_id, user_id)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT chest_disabled, minigame_disabled FROM minigame_progression WHERE gid = $1 AND uid = $2",
             guild_id, user_id
         )
-    data = {
+    return {
         "chest_disabled": bool(row["chest_disabled"]) if row else False,
         "minigame_disabled": bool(row["minigame_disabled"]) if row else False,
     }
-    user_flag_cache[key] = (time.time(), data)
-    return data
 
 async def upsert_user_minigame_setting(pool, guild_id: int, user_id: int, column: str, value):
-    invalidate_user_flag_cache(guild_id, user_id)
     await ensure_progression_user(pool, guild_id, user_id)
     async with pool.acquire() as conn:
         await conn.execute(

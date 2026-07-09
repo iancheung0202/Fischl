@@ -32,6 +32,7 @@ PROFILE_LINK_BUTTON = discord.ui.Button(label="Earn Daily Mora & Summons", style
 FRAMES_DIRECTORY = "./assets/Profile Frame"
 INVENTORY_BG_PATH = "./assets/Mora Inventory Background"
 ANIMATED_INVENTORY_BG_PATH = "./assets/Animated Mora Inventory Background"
+GRAPHS_DIRECTORY = "./assets/graph"
 DEFAULT_BG_PATH = "./assets/mora_bg.png"
 FONT_PATH = "./assets/ja-jp.ttf"
 FONT_PRESETS = {
@@ -54,8 +55,6 @@ CURRENCY_ICON_PATH = "./assets/mora_icon.png"
 COSMETICS_DB = "/Chat Minigames Cosmetics"
 REWARDS_DB = "/Chat Minigames Rewards"
 CHEST_DB = "/Chat Minigames Chests"
-SYSTEM_DB = "/Chat Minigames System"
-# QUEST_DB = "/Chat Minigames Quests"
 HISTORY_DB = "/Mora Purchase History"
 PACK_DB = "/Mora Drop Packs"
 TRACK_PENDING_DB = "/Elite Track Pending"
@@ -624,6 +623,120 @@ MINIGAME_TITLES = [
 
 LETTER_LIST = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
 LETTER_EMOTES = ["🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯", "🇰", "🇱", "🇲", "🇳", "🇴", "🇵", "🇶", "🇷", "🇸", "🇹", "🇺", "🇻", "🇼", "🇽", "🇾", "🇿"]
+
+BOSSES = [
+    "Stormterror Dvalin",
+    "Andrius",
+    "Childe",
+    "Azhdaha",
+    "La Signora",
+    "Magatsu Mitake Narukami no Mikoto",
+    "Everlasting Lord of Arcane Wisdom",
+    "Guardian of Apep's Oasis",
+    "All-Devouring Narwhal",
+    "The Knave",
+    "Lord of Eroded Primal Fire",
+    "Geo Hypostasis",
+    "Cryo Hypostasis",
+    "Pyro Hypostasis",
+    "Electro Hypostasis",
+    "Anemo Hypostasis",
+    "Hydro Hypostasis",
+    "Cryo Regisvine",
+    "Pyro Regisvine",
+    "Oceanid",
+    "Primo Geovishap",
+    "Perpetual Mechanical Array",
+    "Maguu Kenki",
+    "Ruin Serpent",
+    "Thunder Manifestation",
+    "Golden Wolflord",
+    "Bathysmal Vishap Herd",
+    "Algorithm of Semi-Intransient Matrix of Overseer Network",
+    "Aeonblight Drake",
+    "Jadeplume Terrorshroom",
+    "Electro Regisvine",
+    "Pyro Scorpion",
+    "Iniquitous Baptist",
+    "Emperor of Fire and Iron",
+    "Emperor of Wind and Frost",
+    "Emperor of Pure Water",
+    "Emperor of Lightning and Thunder",
+    "Emperor of Earth and Stone",
+    "Emperor of Ice and Snow",
+    "Emperor of Flames and Ashes",
+    "Emperor of Storms and Tempests",
+    "Emperor of Shadows and Darkness",
+    "Emperor of Light and Radiance",
+    "Doomsday Beast",
+    "Cocolia, Mother of Deception",
+    "Phantylia the Undying",
+    "Starcrusher Swarm King - Skaracabaz (Synthetic)",
+    "Harmonious Choir - The Great Septimus",
+    "Shadow of Feixiao and Ecliptic Inner Beast",
+    "Abundant Ebon Deer",
+    "Annihilator of Desolation Mistral",
+    "Argenti (Boss)",
+    "Blaznana Monkey Trick",
+    "Borisin Warhead: Hoolay",
+    "Savage God, Mad King, Incarnation of Strife",
+    "The Giver, Master of Legions, Lance of Fury",
+    "The Past, Present, and Eternal Show",
+]
+HSR_EMOJI_RIDDLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0pPz9A-wegeqpyIxYSjR-trCnP5ffIkOE-ThkVXhCC46pjgL9h5eEwOp42-oDce340eHYhO6TSbLl/pub?output=csv"
+GENSHIN_EMOJI_RIDDLE_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVeIY2FLhHODz6nyJ5D8IWBtDRRttfIZNkUKnRmqoTksaHXxZnckUD7ou4s5DKT_CDRZbMBs9tlnd8/pub?output=csv"
+CURRENCY_EMOTES = [
+    f"{MORA_EMOTE}",
+    "<:PRIMOGEM:1364031230357540894>",
+    "<:Polychrome:1316607903939035236>"
+]
+WORDS = [
+   "albedo", "alhaitham", "aloy", "amber", "arataki", "ayaka", "ayato", "barbara", "beidou",
+    "bennett", "candace", "chongyun", "collei", "cyno", "dehya", "diluc", "diona", "dori", "eula",
+    "fischl", "focalors", "freminet", "ganyu", "gorou", "itto", "jean",
+    "kaedehara", "kaeya", "kaveh", "keqing", "klee", "kokomi", "kuki", "layla", "lisa", "mika",
+    "mona", "nahida", "nilou", "ningguang", "noelle", "qiqi", "raiden", "rosaria", "sara",
+    "sayu", "shenhe", "shinobu", "sucrose", "tartaglia", "thoma", "tighnari", "venti", "wanderer", "xiangling",
+    "xiao", "xingqiu", "xinyan", "yaoyao", "yelan", "yoimiya", "aether",
+    "lumine", "paimon", "dainsleif", "kaiser", "mihoyo", "liyue", "mondstadt", "sumeru", "fontaine",
+    "natlan", "hilichurl", "abyss", "archon", "vision", "delusion", "gnosis", "hilichurl",
+    "treasure", "hoarder", "fatui", "harbinger", "adeptus", "yaksha", "cryo", "pyro", "hydro", "electro",
+    "anemo", "dendro", "claymore", "sword", "polearm", "bow", "catalyst", "artifact", "talent",
+    "constellation", "ascension", "resin", "primogem", "wish", "banner", "gacha", "spiral", "abyss", "domain",
+    "ley", "line", "boss", "weekly", "event", "quest", "commission", "expedition", "teapot", "serenitea",
+    "realm", "adeptal", "energy", "recharge", "critical", "rate", "damage", "attack", "defense",
+    "elemental", "mastery", "burst", "skill", "cooldown", "stamina", "sprint", "dash", "glide", "climb",
+    "swim", "dodge", "parry", "shield", "heal", "revive", "buff", "debuff", "crowd", "control",
+    "single", "target", "damage", "physical", "resistance", "elemental", "reaction", "overload", "superconduct",
+    "shatter", "swirl", "crystal", "burning", "bloom", "hyperbloom", "burgeon", "quicken", "aggravate",
+    "spread", "cold", "melt", "vapor", "resonance", "synergy", "team", "composition", "meta", "build",
+    "rotation", "combo", "chain", "artifact", "bonus", "refinement", "enhancement",
+    "ascend", "level", "talent", "book", "material", "boss", "drop", "elite", "enemy",
+    "common", "spawn", "respawn", "loot", "chest", "reward", "achievement", "trophy", "title",
+    "namecard", "profile", "signature", "friend", "multiplayer", "world", "level", "rank", "adventure",
+    "experience", "mora", "currency", "shop", "store", "purchase", "bundle", "pack", "offer",
+    "discount", "sale", "promotion", "event", "banner", "update", "patch", "maintenance", "server", "downtime",
+    "patch", "note", "announcement", "news", "forum", "community", "discussion",
+    "guide", "tutorial", "walkthrough", "tips", "tricks", "strategy", "build", "review", "tier", "list",
+    "ranking", "comparison", "analysis", "breakdown", "overview", "summary", "highlight", "spotlight", "feature", "preview",
+    "teaser", "trailer", "demo", "beta", "test", "release", "launch", "download", "install", "uninstall",
+    "update", "upgrade", "patch", "version", "compatibility", "requirement", "specification", "platform", "device",
+    "console", "mobile", "android", "tablet", "smartphone", "emulator", "controller", "keyboard", "mouse",
+    "touchscreen", "interface", "menu", "option", "setting", "configuration", "preference",
+    "control", "scheme", "layout", "binding", "shortcut", "hotkey", "command", "input", "sensitivity",
+    "calibration", "resolution", "graphics", "quality", "performance", "frame", "rate", "latency", "ping",
+    "connection", "network", "server", "region", "ping", "delay", "disconnect", "reconnect", "sync",
+    "cloud", "save", "load", "backup", "restore", "data", "progress", "account", "profile", "login",
+    "logout", "register", "signup", "signin", "authentication", "verification", "security", "password", "username", "email",
+    "notification", "alert", "message", "chat", "voice", "text", "communication", "social", "friend", "request",
+    "invite", "party", "team", "guild", "clan", "alliance", "faction", "group", "community", "forum",
+    "discussion", "thread", "post", "comment", "reply", "like", "share", "subscribe", "follow", "unfollow",
+    "block", "report", "moderator", "admin", "server"
+]
+MEMORY_GAME_EMOJIS = [ "😄", "😊", "😃", "😉", "😍", "😘", "😚", "😗", "😙", "😜", "😝", "😛", "🤑", "🤓", "😎", "🤗", "🙂", "🤔", "😐", "😑", "😶", "🙄", "😏", "😒", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤧", "😢", "😭", "😰", "😥", "😓", "😈", "👿", "👹", "👺", "💩", "👻", "💀", "👽", "🤖", "🎃", "🎉", "🌟", "🔥", "❤️", "💙", "💜", "💛", "💚", "🖤", "💖", "💗", "💓", "💕", "💞", "💘", "💝", "💌", "💍", "💎", "🎀", "🌈", "👍", "👎", "👌", "✌", "🤞", "🤟", "🤘", "👏", "🙌", "🤲", "💪", "🙏", "👊", "🤛", "🤜", "💅", "👀", "👁", "👅", "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐷", "🐸", "🐵", "🦄", "🐉", "🐲", "🐍", "🦎", "🐢", "🍕", "🌺", "📚", "⚽", "🎵", "🍔", "🍦", "🎂", "🎁", "🎈", "🎨", "🚀", "⌛", "💡", "🎮", "📷", "📱", "💻", "⭐", "🌙", "🍎", "🍉", "🍇", "🍓", "🥑", "🍩", "🥨", "🥗", "🍿", "🍰", "🚗", "🚕", "🚙", "🚌", "🚎", "🚜", "🚲", "✈", "🚁", "🛳", ]
+TTOL_EMOJIS = ["<:Anemo:1364310439781072946>", "<:Pyro:1364310441949663274>", "<:Electro:1364310441014071345>"]
+CROSS_EMOJI = "<:cross:1458355882940170280>"
+CIRCLE_EMOJI = "<:circle:1458355853731168307>"
 
 async def setup(bot):
     pass

@@ -6,7 +6,6 @@ import random
 import os
 import re
 import json
-import importlib
 import pandas as pd
 import io
 import aiohttp
@@ -20,10 +19,11 @@ from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
 
 from commands.Events.trackData import get_current_track, check_tier_rewards, is_elite_active
-from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_minigame_list, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config
+from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config
 from commands.Events.quests import update_quest
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, build_chest_description
+from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS
+from commands.Events.config import build_chest_description
 
 
 def get_next_reset_unix():
@@ -265,66 +265,7 @@ class BossBattleView(discord.ui.View):
         self.stop()
 
 async def defeatTheBoss(channel, client):
-    bosses = [
-        "Stormterror Dvalin",
-        "Andrius",
-        "Childe",
-        "Azhdaha",
-        "La Signora",
-        "Magatsu Mitake Narukami no Mikoto",
-        "Everlasting Lord of Arcane Wisdom",
-        "Guardian of Apep's Oasis",
-        "All-Devouring Narwhal",
-        "The Knave",
-        "Lord of Eroded Primal Fire",
-        "Geo Hypostasis",
-        "Cryo Hypostasis",
-        "Pyro Hypostasis",
-        "Electro Hypostasis",
-        "Anemo Hypostasis",
-        "Hydro Hypostasis",
-        "Cryo Regisvine",
-        "Pyro Regisvine",
-        "Oceanid",
-        "Primo Geovishap",
-        "Perpetual Mechanical Array",
-        "Maguu Kenki",
-        "Ruin Serpent",
-        "Thunder Manifestation",
-        "Golden Wolflord",
-        "Bathysmal Vishap Herd",
-        "Algorithm of Semi-Intransient Matrix of Overseer Network",
-        "Aeonblight Drake",
-        "Jadeplume Terrorshroom",
-        "Electro Regisvine",
-        "Pyro Scorpion",
-        "Iniquitous Baptist",
-        "Emperor of Fire and Iron",
-        "Emperor of Wind and Frost",
-        "Emperor of Pure Water",
-        "Emperor of Lightning and Thunder",
-        "Emperor of Earth and Stone",
-        "Emperor of Ice and Snow",
-        "Emperor of Flames and Ashes",
-        "Emperor of Storms and Tempests",
-        "Emperor of Shadows and Darkness",
-        "Emperor of Light and Radiance",
-        "Doomsday Beast",
-        "Cocolia, Mother of Deception",
-        "Phantylia the Undying",
-        "Starcrusher Swarm King - Skaracabaz (Synthetic)",
-        "Harmonious Choir - The Great Septimus",
-        "Shadow of Feixiao and Ecliptic Inner Beast",
-        "Abundant Ebon Deer",
-        "Annihilator of Desolation Mistral",
-        "Argenti (Boss)",
-        "Blaznana Monkey Trick",
-        "Borisin Warhead: Hoolay",
-        "Savage God, Mad King, Incarnation of Strife",
-        "The Giver, Master of Legions, Lance of Fury",
-        "The Past, Present, and Eternal Show",
-    ]
-    boss = random.choice(bosses)
+    boss = random.choice(BOSSES)
     hp = random.randint(3000, 8000)
     start_time = int(time.time())
     
@@ -753,8 +694,7 @@ async def unscrambleWords(channel, client):
     start_time = time.time()
     timeout = 300
 
-    from assets.words import words
-    word = random.choice(words).strip().lower()
+    word = random.choice(WORDS).strip().lower()
     scrambled = scramble_string(word)
 
     embed = discord.Embed(
@@ -1398,7 +1338,7 @@ async def hsrEmojiRiddle(channel, client):
     start_time = time.time()
     timeout = 300 
 
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR0pPz9A-wegeqpyIxYSjR-trCnP5ffIkOE-ThkVXhCC46pjgL9h5eEwOp42-oDce340eHYhO6TSbLl/pub?output=csv"
+    url = HSR_EMOJI_RIDDLE_CSV_URL
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=10) as response:
             if response.status != 200:
@@ -1484,7 +1424,7 @@ async def genshinEmojiRiddle(channel, client):
     start_time = time.time()
     timeout = 300
 
-    url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTVeIY2FLhHODz6nyJ5D8IWBtDRRttfIZNkUKnRmqoTksaHXxZnckUD7ou4s5DKT_CDRZbMBs9tlnd8/pub?output=csv"
+    url = GENSHIN_EMOJI_RIDDLE_CSV_URL
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=10) as response:
             if response.status != 200:
@@ -1779,9 +1719,9 @@ async def countingCurrency(channel, client):
     start_time = time.time()
     timeout = 300
 
-    A = f"{MORA_EMOTE}"
-    B = "<:PRIMOGEM:1364031230357540894>"
-    C = "<:Polychrome:1316607903939035236>"
+    A = CURRENCY_EMOTES[0]
+    B = CURRENCY_EMOTES[1]
+    C = CURRENCY_EMOTES[2]
 
     grid = [[None for _ in range(15)] for _ in range(15)]
     fill_probability = 0.2
@@ -1876,8 +1816,7 @@ async def countingCurrency(channel, client):
 ### --- HANGMAN --- ###
 
 def choose_word():
-    from assets.words import words
-    available_words = [w for w in words if 'z' not in w.lower()]
+    available_words = [w for w in WORDS if 'z' not in w.lower()]
     if not available_words:
         return "error"
     return random.choice(available_words).lower()
@@ -2566,9 +2505,7 @@ async def memoryGame(channel, client):
     mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
     reward = int(random.randint(5000, 7000) * mora_mult)
 
-    allEmojis = [ "😄", "😊", "😃", "😉", "😍", "😘", "😚", "😗", "😙", "😜", "😝", "😛", "🤑", "🤓", "😎", "🤗", "🙂", "🤔", "😐", "😑", "😶", "🙄", "😏", "😒", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤧", "😢", "😭", "😰", "😥", "😓", "😈", "👿", "👹", "👺", "💩", "👻", "💀", "👽", "🤖", "🎃", "🎉", "🌟", "🔥", "❤️", "💙", "💜", "💛", "💚", "🖤", "💖", "💗", "💓", "💕", "💞", "💘", "💝", "💌", "💍", "💎", "🎀", "🌈", "👍", "👎", "👌", "✌", "🤞", "🤟", "🤘", "👏", "🙌", "🤲", "💪", "🙏", "👊", "🤛", "🤜", "💅", "👀", "👁", "👅", "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐷", "🐸", "🐵", "🦄", "🐉", "🐲", "🐍", "🦎", "🐢", "🍕", "🌺", "📚", "⚽", "🎵", "🍔", "🍦", "🎂", "🎁", "🎈", "🎨", "🚀", "⌛", "💡", "🎮", "📷", "📱", "💻", "⭐", "🌙", "🍎", "🍉", "🍇", "🍓", "🥑", "🍩", "🥨", "🥗", "🍿", "🍰", "🚗", "🚕", "🚙", "🚌", "🚎", "🚜", "🚲", "✈", "🚁", "🛳", ]
-
-    emojis = random.sample(allEmojis, 3)
+    emojis = random.sample(MEMORY_GAME_EMOJIS, 3)
     chosen_col = random.randint(0, 2)
     chosen_emote = emojis[chosen_col]
     chosen_col += 1
@@ -2703,9 +2640,9 @@ class TwoTruthAndALieModal(discord.ui.Modal, title="Enter your two truths and on
         random.shuffle(statements)
 
         self.correct_emote = (
-            "<:Anemo:1364310439781072946>" if statements[0] == str(self.lie) else
-            "<:Pyro:1364310441949663274>" if statements[1] == str(self.lie) else
-            "<:Electro:1364310441014071345>"
+            TTOL_EMOJIS[0] if statements[0] == str(self.lie) else
+            TTOL_EMOJIS[1] if statements[1] == str(self.lie) else
+            TTOL_EMOJIS[2]
         )
 
         user_display = await userAndTitle(interaction.user.id, interaction.guild.id, interaction.client.pool)
@@ -2715,9 +2652,9 @@ class TwoTruthAndALieModal(discord.ui.Modal, title="Enter your two truths and on
                 f'First to determine which of the following statement by '
                 f'{user_display} '
                 f'is a lie wins {MORA_EMOTE} `{self.reward}`!\n\n'
-                f'<:Anemo:1364310439781072946> "{statements[0]}"\n'
-                f'<:Pyro:1364310441949663274> "{statements[1]}"\n'
-                f'<:Electro:1364310441014071345> "{statements[2]}"'
+                f'{TTOL_EMOJIS[0]} "{statements[0]}"\n'
+                f'{TTOL_EMOJIS[1]} "{statements[1]}"\n'
+                f'{TTOL_EMOJIS[2]} "{statements[2]}"'
             )
         )
         
@@ -2763,9 +2700,8 @@ class TwoTruthAndALieButton(discord.ui.Button):
         )
 
         view = View()
-        view.add_item(answerLieBtn("<:Anemo:1364310439781072946>"))
-        view.add_item(answerLieBtn("<:Pyro:1364310441949663274>"))
-        view.add_item(answerLieBtn("<:Electro:1364310441014071345>"))
+        for ttol_emoji in TTOL_EMOJIS:
+            view.add_item(answerLieBtn(ttol_emoji))
         
         await modal.submission_interaction.response.send_message(f"{YES_EMOTE} Success", ephemeral=True)
         
@@ -3666,7 +3602,7 @@ async def bankHeist(channel, client):
             )
         
         reward_embed = discord.Embed(
-            title="Mora Rewards Distributed",
+            title="Rewards Distributed",
             description="\n".join(summary),
             color=discord.Color.green()
         )
@@ -3877,7 +3813,7 @@ class TicTacTokButton(discord.ui.Button):
         player_symbol = view.current_symbol
         self.disabled = True
         self.label = ""
-        self.emoji = "<:cross:1458355882940170280>" if player_symbol == "X" else "<:circle:1458355853731168307>"
+        self.emoji = CROSS_EMOJI if player_symbol == "X" else CIRCLE_EMOJI
         self.style = discord.ButtonStyle.secondary
         
         view.board[self.x][self.y] = player_symbol
@@ -3947,11 +3883,11 @@ class TicTacTokView(discord.ui.View):
         p1 = self.players[self.player1_id]
         p2 = self.players[self.player2_id]
         
-        turn_msg = f"It's {'<:cross:1458355882940170280>' if self.current_symbol == 'X' else '<:circle:1458355853731168307>'} <@{self.current_player}>'s turn!"
+        turn_msg = f"It's {CROSS_EMOJI if self.current_symbol == 'X' else CIRCLE_EMOJI} <@{self.current_player}>'s turn!"
         
         embed = discord.Embed(
             title="Tik Tac Tok", 
-            description=f"First to match 3 symbols in a line wins {MORA_EMOTE} `{self.reward}`.\n\n<:cross:1458355882940170280> {p1.mention}\n<:circle:1458355853731168307> {p2.mention}",
+            description=f"First to match 3 symbols in a line wins {MORA_EMOTE} `{self.reward}`.\n\n{CROSS_EMOJI} {p1.mention}\n{CIRCLE_EMOJI} {p2.mention}",
             color=discord.Color.blurple()
         )
         
@@ -4235,45 +4171,98 @@ class PersistentChestInfoView(discord.ui.View):
 
 DATA_FILE = "commands/Events/mora_chest_data.json"
 
-def load_counts():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    try:
-        with open(DATA_FILE, "r") as f:
-            raw = json.load(f)
-            return {
-                tuple(map(int, k.split("|"))): (v[0], datetime.datetime.fromisoformat(v[1]))
-                for k, v in raw.items()
-            }
-    except (json.JSONDecodeError, FileNotFoundError):
-        return {}
+class ChannelCache:
+    TTL = 60
 
-def save_counts(counts):
-    with open(DATA_FILE, "w") as f:
-        json.dump({
-            f"{k[0]}|{k[1]}": [v[0], v[1].isoformat()]
-            for k, v in counts.items()
-        }, f)
+    def __init__(self, pool):
+        self.pool = pool
+        self.settings = {}     # {channel_id: (ts, dict)}
+        self.minigame = {}     # {channel_id: frequency}
+        self.minigame_ts = 0
+        self.chest = set()     # set of channel ids with chests enabled
+        self.chest_ts = 0
+        self.guild_chest = {}  # {guild_id: (ts, dict)}
+        self.guild_chest_ts = {}  # per-guild TTL tracker
+
+    async def get_channel(self, channel_id):
+        now = time.time()
+        cached = self.settings.get(channel_id)
+        if cached and now - cached[0] < self.TTL:
+            return cached[1]
+        s = await get_channel_settings(self.pool, channel_id)
+        self.settings[channel_id] = (now, s)
+        return s
+
+    async def get_mg_channels(self):
+        now = time.time()
+        if now - self.minigame_ts < self.TTL:
+            return self.minigame
+        rows = await self.pool.fetch(
+            "SELECT channel_id, minigames_frequency FROM minigame_settings WHERE minigames_enabled = TRUE"
+        )
+        self.minigame = {r["channel_id"]: r["minigames_frequency"] for r in rows}
+        self.minigame_ts = now
+        return self.minigame
+
+    async def get_chest_channels(self):
+        now = time.time()
+        if now - self.chest_ts < self.TTL:
+            return self.chest
+        rows = await self.pool.fetch(
+            "SELECT channel_id FROM minigame_settings WHERE chests_enabled = TRUE"
+        )
+        self.chest = {r["channel_id"] for r in rows}
+        self.chest_ts = now
+        return self.chest
+
+    async def get_guild_chest(self, guild_id):
+        now = time.time()
+        cached = self.guild_chest.get(guild_id)
+        if cached and now - cached[0] < self.TTL:
+            return cached[1]
+        cfg = await get_guild_chest_config(self.pool, guild_id)
+        self.guild_chest[guild_id] = (now, cfg)
+        return cfg
+
+    def invalidate_channel(self, channel_id):
+        self.settings.pop(channel_id, None)
+
+    def invalidate_all(self):
+        self.settings.clear()
+        self.minigame.clear()
+        self.minigame_ts = 0
+        self.chest.clear()
+        self.chest_ts = 0
+        self.guild_chest.clear()
+
+
+class UserFlags:
+    TTL = 6000
+
+    def __init__(self, pool):
+        self.pool = pool
+        self.flags = {}  # {(gid, uid): (ts, {chest_disabled, minigame_disabled})}
+
+    async def get(self, guild_id, user_id):
+        key = (guild_id, user_id)
+        now = time.time()
+        cached = self.flags.get(key)
+        if cached and now - cached[0] < self.TTL:
+            return cached[1]
+        settings = await get_user_minigame_settings(self.pool, guild_id, user_id)
+        self.flags[key] = (now, settings)
+        return settings
+
+    def invalidate(self, guild_id, user_id):
+        self.flags.pop((guild_id, user_id), None)
+
 
 class DailyChestSystem:
-    def __init__(self):
-        self.user_states = {} 
-        self.cooldown = 5 
+    def __init__(self, flags: UserFlags):
+        self.user_states = {}
+        self.cooldown = 5
         self.claimed_today = set()
-        self.flag_cache = {}
-        self.minigame_flag_cache = {}
-        self.cache_ttl = 6000
-        self._enabled_channels_cache = {}
-        self._enabled_channels_ts = 0
-        self._chest_enabled_cache = {}  # {channel_id: bool}
-        self._chest_enabled_ts = 0
-
-    async def _refresh_enabled(self, pool):
-        now = time.time()
-        if now - self._enabled_channels_ts > 60:
-            from commands.Events.helperFunctions import get_enabled_channels_dict
-            self._enabled_channels_cache = await get_enabled_channels_dict(pool)
-            self._enabled_channels_ts = now
+        self.flags = flags
 
     def is_effortful_message(self, content: str, last_content: str) -> bool:
         content = content.strip()
@@ -4296,53 +4285,34 @@ class DailyChestSystem:
                 
         return True
 
-    async def process_message(self, message, cog):
+    async def process_message(self, message, cog, cache: ChannelCache, flags: UserFlags):
         if message.author.bot:
             return
 
-        await self._refresh_enabled(cog.client.pool)
-        if message.channel.id not in self._enabled_channels_cache:
+        chest_channels = await cache.get_chest_channels()
+        if message.channel.id not in chest_channels:
             return
 
-        csettings = await get_channel_settings(cog.client.pool, message.channel.id)
+        csettings = await cache.get_channel(message.channel.id)
         csettings_chest_enabled = csettings.get("chests_enabled", True)
-        prev_chest_enabled = self._chest_enabled_cache.get(message.channel.id, None)
-        if prev_chest_enabled is not None and prev_chest_enabled != csettings_chest_enabled:
-            if not csettings_chest_enabled:
-                key = (message.guild.id, message.author.id)
-                self.user_states.pop(key, None)
-                self.claimed_today.discard(key)
-        self._chest_enabled_cache[message.channel.id] = csettings_chest_enabled
         if not csettings_chest_enabled:
             return
-        
+
         user_id = message.author.id
         guild_id = message.guild.id
         cache_key = (guild_id, user_id)
         current_time = time.time()
 
-        # Chest-disabled flag from PG
-        if cache_key in self.flag_cache:
-            cached_time, chest_disabled = self.flag_cache[cache_key]
-            if current_time - cached_time < self.cache_ttl:
-                if chest_disabled:
-                    return
-            else:
-                del self.flag_cache[cache_key]
+        flags_data = await flags.get(guild_id, user_id)
+        if flags_data.get("chest_disabled", False):
+            return
 
-        if cache_key not in self.flag_cache:
-            settings = await get_user_minigame_settings(cog.client.pool, guild_id, user_id)
-            chest_disabled = settings.get("chest_disabled", False)
-            self.flag_cache[cache_key] = (current_time, chest_disabled)
-            if chest_disabled:
-                return
-            
         key = (guild_id, user_id)
         today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-        
+
         if key in self.claimed_today:
             return
-            
+
         from commands.Events.helperFunctions import get_express_daily_chests
 
         channel_chest_config = await get_channel_chest_config(cog.client.pool, message.guild.id, message.channel.id)
@@ -4371,7 +4341,7 @@ class DailyChestSystem:
                     'threshold': threshold,
                     'chest_triggered': False
                 }
-        
+
         state = self.user_states[key]
         if await get_express_daily_chests(cog.client.pool, guild_id, user_id):
             state['threshold'] = 1
@@ -4381,24 +4351,24 @@ class DailyChestSystem:
             else:
                 state['threshold'] = random.randint(spawn_req[0], spawn_req[1])
         current_time = time.time()
-        
+
         if current_time - state['last_time'] < self.cooldown:
             return
-            
+
         if not self.is_effortful_message(message.content, state['last_content']):
             return
-            
+
         state['message_count'] += 1
         state['last_time'] = current_time
         state['last_content'] = message.content
-        
+
         if not state['chest_triggered']:
             self.save_to_db(guild_id, user_id, state)
-        
-        if (not state['chest_triggered'] and 
+
+        if (not state['chest_triggered'] and
             state['message_count'] >= state['threshold'] and
             (user_id, guild_id) not in cog.pending_chests):
-            
+
             state['chest_triggered'] = True
             self.claimed_today.add(key)
             self.save_to_db(guild_id, user_id, state)
@@ -4413,30 +4383,14 @@ class DailyChestSystem:
         ref.set(state)
     
     def invalidate_flag_cache(self, guild_id, user_id):
-        cache_key = (guild_id, user_id)
-        if cache_key in self.flag_cache:
-            del self.flag_cache[cache_key]
+        self.flags.invalidate(guild_id, user_id)
     
     async def check_minigame_disabled(self, pool, guild_id, user_id):
-        cache_key = (guild_id, user_id)
-        current_time = time.time()
-        
-        if cache_key in self.minigame_flag_cache:
-            cached_time, minigame_disabled = self.minigame_flag_cache[cache_key]
-            if current_time - cached_time < self.cache_ttl:
-                return minigame_disabled
-            else:
-                del self.minigame_flag_cache[cache_key]
-        
-        settings = await get_user_minigame_settings(pool, guild_id, user_id)
-        minigame_disabled = settings.get("minigame_disabled", False)
-        self.minigame_flag_cache[cache_key] = (current_time, minigame_disabled)
-        return minigame_disabled
+        data = await self.flags.get(guild_id, user_id)
+        return data.get("minigame_disabled", False)
     
     def invalidate_minigame_flag_cache(self, guild_id, user_id):
-        cache_key = (guild_id, user_id)
-        if cache_key in self.minigame_flag_cache:
-            del self.minigame_flag_cache[cache_key]
+        self.flags.invalidate(guild_id, user_id)
         
     async def reset_daily_states(self):
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -4494,8 +4448,10 @@ class DailyChestSystem:
 class TheEventItself(commands.Cog):
     def __init__(self, bot):
         self.client = bot
+        self.cache = ChannelCache(bot.pool)
+        self.user_flags = UserFlags(bot.pool)
         self.pending_chests = set()
-        self.chest_system = DailyChestSystem()
+        self.chest_system = DailyChestSystem(self.user_flags)
         self.daily_reset.start()
     
     @tasks.loop(minutes=1)
@@ -4561,84 +4517,91 @@ class TheEventItself(commands.Cog):
             except Exception as e:
                 await message.channel.send(f"Error: {e}")
 
-        await self.chest_system._refresh_enabled(self.client.pool)
-        enabled_map = self.chest_system._enabled_channels_cache
-        
-        if message.channel.id in enabled_map:
-            if message.author.id == 1006694571167719527:
-                return
-            
-            await self.chest_system.process_message(message, self)
-            
-            frequency = enabled_map[message.channel.id]
-            channel_id = message.channel.id
+        if message.author.id == 1006694571167719527:
+            return
 
-            if message.id % frequency == 0:
-                originalList = await get_channel_minigame_list(self.client.pool, channel_id)
-                okForEvent = True
-                messages = [
-                    msg
-                    async for msg in message.channel.history(limit=frequency)
-                ]
+        chest_channels = await self.cache.get_chest_channels()
+        if message.channel.id in chest_channels:
+            await self.chest_system.process_message(message, self, self.cache, self.user_flags)
 
-                for msg in messages:
-                    try:
-                        if len(msg.embeds) > 0 and msg.author.id == self.client.user.id:
-                            okForEvent = False
-                    except Exception:
-                        pass
+        mg_channels = await self.cache.get_mg_channels()
+        if message.channel.id not in mg_channels:
+            return
 
-                if okForEvent and originalList is not None and len(originalList) > 0:
-                    if await self.chest_system.check_minigame_disabled(self.client.pool, message.guild.id, message.author.id):
-                        return
+        csettings = await self.cache.get_channel(message.channel.id)
+        if not csettings.get("minigames_enabled", False):
+            return
 
-                    if channel_id in active_channels:
-                        return
-                    active_channels[channel_id] = True
+        frequency = mg_channels[message.channel.id]
+        if message.id % frequency != 0:
+            return
 
-                    embed = discord.Embed(
-                        description=f"Since chat is relatively active, I'm dropping a random event in `3 seconds`.\n-# ***Tip:** {random.choice(TIPS)}*",
-                        color=discord.Color.orange(),
-                    )
+        minigame_list = csettings.get("minigames_list", [])
+        if not minigame_list or not isinstance(minigame_list, list) or len(minigame_list) == 0:
+            return
 
-                    view = View()
-                    view.add_item(PROFILE_LINK_BUTTON)
+        flags_data = await self.user_flags.get(message.guild.id, message.author.id)
+        if flags_data.get("minigame_disabled", False):
+            return
 
-                    await message.channel.send(embed=embed, view=view)
+        messages = [
+            msg
+            async for msg in message.channel.history(limit=frequency)
+        ]
+        for msg in messages:
+            try:
+                if len(msg.embeds) > 0 and msg.author.id == self.client.user.id:
+                    return
+            except Exception:
+                pass
 
-                    events = [
-                        defeatTheBoss, quicktype, eggWalk, matchThePFP, splitOrSteal,
-                        reverseQuicktype, pickUpIceCream, pickUpTheWatermelon, guessTheNumber,
-                        memoryGame, whoSaidIt, unscrambleWords, twoTruthsAndALie,
-                        countingCurrency, rockPaperScissors, rollADice, groupBlackjack,
-                        genshinEmojiRiddle, hsrEmojiRiddle, doubleOrKeep, knowYourMembers,
-                        hangmanGame, grandAuctionHouse, bankHeist, simpleMathGame, ticTacTok
-                    ]
-                    letter_to_event = dict(zip(LETTER_LIST, events))
-                    eligible_events = [
-                        letter_to_event[letter]
-                        for letter in originalList
-                        if letter in letter_to_event
-                    ]
+        if message.channel.id in active_channels:
+            return
+        active_channels[message.channel.id] = True
 
-                    await asyncio.sleep(2.4)
+        embed = discord.Embed(
+            description=f"Since chat is relatively active, I'm dropping a random event in `3 seconds`.\n-# ***Tip:** {random.choice(TIPS)}*",
+            color=discord.Color.orange(),
+        )
 
-                    try:
-                        event = random.choice(eligible_events)
-                        print(f"<{event.__name__}>: #{message.channel.name} ({channel_id}) in {message.guild.name} ({message.guild.id})")
-                        await event(message.channel, self.client)
-                    except Exception as e:
-                        import traceback
-                        tb_str = traceback.format_exc()
-                        print("Event crashed:\n", tb_str)
-                        embed = discord.Embed(description=f"Event crashed: `{e}`")
-                        embed.set_footer(text="Error has been logged and developer has been notified.")
-                        msg = await message.channel.send(embed=embed)
-                        ian = await self.client.fetch_user(692254240290242601)
-                        await ian.send(f"Event crashed: {msg.jump_url}")
-                    finally:
-                        active_channels.pop(channel_id, None)
-                        print("✅")
+        view = View()
+        view.add_item(PROFILE_LINK_BUTTON)
+
+        await message.channel.send(embed=embed, view=view)
+
+        events = [
+            defeatTheBoss, quicktype, eggWalk, matchThePFP, splitOrSteal,
+            reverseQuicktype, pickUpIceCream, pickUpTheWatermelon, guessTheNumber,
+            memoryGame, whoSaidIt, unscrambleWords, twoTruthsAndALie,
+            countingCurrency, rockPaperScissors, rollADice, groupBlackjack,
+            genshinEmojiRiddle, hsrEmojiRiddle, doubleOrKeep, knowYourMembers,
+            hangmanGame, grandAuctionHouse, bankHeist, simpleMathGame, ticTacTok
+        ]
+        letter_to_event = dict(zip(LETTER_LIST, events))
+        eligible_events = [
+            letter_to_event[letter]
+            for letter in minigame_list
+            if letter in letter_to_event
+        ]
+
+        await asyncio.sleep(2.4)
+
+        try:
+            event = random.choice(eligible_events)
+            print(f"<{event.__name__}>: #{message.channel.name} ({message.channel.id}) in {message.guild.name} ({message.guild.id})")
+            await event(message.channel, self.client)
+        except Exception as e:
+            import traceback
+            tb_str = traceback.format_exc()
+            print("Event crashed:\n", tb_str)
+            embed = discord.Embed(description=f"Event crashed: `{e}`")
+            embed.set_footer(text="Error has been logged and developer has been notified.")
+            msg = await message.channel.send(embed=embed)
+            ian = await self.client.fetch_user(692254240290242601)
+            await ian.send(f"Event crashed: {msg.jump_url}")
+        finally:
+            active_channels.pop(message.channel.id, None)
+            print("✅")
 
 
 class Summon(commands.Cog):

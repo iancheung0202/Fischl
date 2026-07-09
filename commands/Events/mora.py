@@ -22,7 +22,7 @@ from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDING
 from commands.Events.trackData import is_elite_active
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -110,8 +110,8 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     ax.spines['right'].set_visible(False)
     
     plt.tight_layout()
-    os.makedirs("./assets/graph", exist_ok=True)
-    path = f"./assets/graph/{user_id}.png"
+    os.makedirs(GRAPHS_DIRECTORY, exist_ok=True)
+    path = f"{GRAPHS_DIRECTORY}/{user_id}.png"
     plt.savefig(path, bbox_inches='tight', dpi=120, transparent=True)
     plt.close()
     
