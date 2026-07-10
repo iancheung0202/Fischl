@@ -8,7 +8,7 @@ from commands.Events.helperFunctions import addMora, get_shop_items, set_shop_it
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, REPLY_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS
 
 async def get_shop_embeds(
     interaction, item_list, empty_condition, sort_by="cost", reverse=True
@@ -36,9 +36,9 @@ async def get_shop_embeds(
         title=f"{interaction.guild.name}'s Server Shop",
         description=(
             f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-            f"<:reply:1036792837821435976> *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
-            f"<:reply:1036792837821435976> *To purchase an item, use {SlashCommand('buy')}.*\n"
-            f"<:reply:1036792837821435976> *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
+            f"{REPLY_EMOTE} *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
+            f"{REPLY_EMOTE} *To purchase an item, use {SlashCommand('buy')}.*\n"
+            f"{REPLY_EMOTE} *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
         ),
         color=discord.Color.gold(),
     )
@@ -70,8 +70,9 @@ async def get_shop_embeds(
                 title=f"{interaction.guild.name}'s Server Shop",
                 description=(
                     f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-                    f"<:reply:1036792837821435976> *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
-                    f"<:reply:1036792837821435976> *To purchase an item, use {SlashCommand('buy')}.*\n"
+                    f"{REPLY_EMOTE} *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
+                    f"{REPLY_EMOTE} *To purchase an item, use {SlashCommand('buy')}.*\n"
+                    f"{REPLY_EMOTE} *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
                 ),
                 color=discord.Color.gold(),
             )

@@ -14,6 +14,8 @@ CURRENCY_NAME = "Mora"
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 YES_EMOTE = "<:yes:1036811164891480194>"    
 NO_EMOTE = "<:no:1036810470860013639>"
+YES_EMOTE_2 = "<:BunnyYes:1224838535979204748>"
+NO_EMOTE_2 = "<:BunnyNo:1224838553218060349>"
 RESOLVED_EMOTE = "<:resolved:1364813186028797984>"
 UNRESOLVED_EMOTE = "<:yae_hi:1364813223307645000>"
 HMM_EMOTE = "<:DW_elhmm:971735422147379200>"
@@ -25,9 +27,16 @@ HAPPY_EMOTE = "<a:NekoHappy:1335019855920758855>"
 MONEYDANCE_EMOTE = "<a:moneydance:1227425759077859359>"
 DOT_EMOTE = "<:dot:1357188726047899760>"
 CONFUSED_EMOTE = "<:PinkConfused:1204614149628498010>"
+REPLY_EMOTE = "<:reply:1036792837821435976>"
+
+SIGIL_EMOTE = "<a:sigils:1402736987902967850>"
+SIGIL_CURRENCY_NAME = "Sigils"
+DEFAULT_CHAT_RANGE = (19, 25)
+DEFAULT_CHAT_MAX_CAP = 60
+DEFAULT_CHAT_MSG_RANGE = (15, 20)
 
 BALANCE_COMMAND = "mora"
-PROFILE_LINK_BUTTON = discord.ui.Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1, disabled=False)
+PROFILE_LINK_BUTTON = discord.ui.Button(label="Earn Daily Rewards", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1, disabled=False)
 
 FRAMES_DIRECTORY = "./assets/Profile Frame"
 INVENTORY_BG_PATH = "./assets/Mora Inventory Background"
@@ -179,7 +188,7 @@ def perk_info(key, lvl):
 class ThanksEliteTrack(discord.ui.Button):
     def __init__(self, is_active=False):
         super().__init__(
-            label="Elite Track Subscriber",
+            label="Elite Patron",
             style=discord.ButtonStyle.green,
             disabled=True,
             emoji="❤️", 

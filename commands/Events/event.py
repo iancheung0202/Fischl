@@ -16,10 +16,10 @@ from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
 
 from commands.Events.trackData import get_current_track, check_tier_rewards, is_elite_active
-from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, get_guild_chest_config, get_chest_progress, upsert_chest_progress, get_chest_streaks, upsert_chest_streaks, get_chest_counts, upsert_chest_counts
+from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, get_guild_settings, get_chest_progress, upsert_chest_progress, get_chest_streaks, upsert_chest_streaks, get_chest_counts, upsert_chest_counts, get_sigils_balance, get_daily_sigils, add_sigils, parse_boosted_roles
 from commands.Events.quests import update_quest
 
-from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS
+from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_RANGE, DEFAULT_CHAT_MAX_CAP, DEFAULT_CHAT_MSG_RANGE
 from commands.Events.config import build_chest_description
 
 
@@ -4144,7 +4144,7 @@ class PersistentChestInfoView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         reset_unix = get_next_reset_unix()
-        gc = await get_guild_chest_config(interaction.client.pool, interaction.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, interaction.guild_id)
         embed = discord.Embed(
             description=f"{build_chest_description(gc)}\n\n***Next reset at** <t:{reset_unix}:f> (<t:{reset_unix}:R>)*",
             color=discord.Color.random()
@@ -4216,7 +4216,7 @@ class ChannelCache:
         cached = self.guild_chest.get(guild_id)
         if cached and now - cached[0] < self.TTL:
             return cached[1]
-        cfg = await get_guild_chest_config(self.pool, guild_id)
+        cfg = await get_guild_settings(self.pool, guild_id)
         self.guild_chest[guild_id] = (now, cfg)
         return cfg
 
@@ -4438,6 +4438,108 @@ class DailyChestSystem:
         view.message = chest_msg
         cog.pending_chests.add(key)
         
+
+class DailySigilSystem:
+    def __init__(self, pool):
+        self.pool = pool
+        self.cooldowns = {}
+        self.msg_counts = {}
+        self.last_messages = {}
+
+    def is_effortful_message(self, content: str, user_id: int) -> bool:
+        content = content.strip()
+        if len(content) < 5:
+            return False
+        if re.fullmatch(r"(\s*<a?:\w+:\d+>\s*){1,4}", content):
+            return False
+        if re.search(r"(https?:\/\/|www\.|discord\.gg\/)", content.lower()):
+            return False
+        last_msg = self.last_messages.get(user_id, "")
+        if last_msg:
+            similarity = SequenceMatcher(None, last_msg.lower(), content.lower()).ratio()
+            if similarity > 0.9:
+                return False
+        return True
+
+    async def calculate_max_sigils(self, guild: discord.Guild, member: discord.Member, guild_settings: dict, csettings: dict) -> int:
+        max_sigils = guild_settings.get("chat_max_cap", DEFAULT_CHAT_MAX_CAP)
+        boosted = csettings.get("chat_boosted_roles", [])
+        if isinstance(boosted, list):
+            for entry in boosted:
+                if isinstance(entry, str) and ":" in entry:
+                    parts = entry.split(":", 1)
+                    try:
+                        rid = int(parts[0])
+                        bonus = parts[1]
+                        if rid in [r.id for r in member.roles]:
+                            if bonus.startswith("+"):
+                                max_sigils += int(bonus[1:])
+                            else:
+                                max_sigils = max(max_sigils, int(bonus))
+                    except (ValueError, IndexError):
+                        continue
+        return max_sigils
+
+    async def process_chat_sigils(self, message, csettings: dict):
+        if message.author.bot or not message.guild:
+            return
+
+        user_id = message.author.id
+        current_time = time.time()
+
+        cooldown = 5
+        last_time = self.cooldowns.get(user_id, 0)
+        if current_time - last_time < cooldown:
+            return
+
+        if not self.is_effortful_message(message.content, user_id):
+            return
+
+        self.cooldowns[user_id] = current_time
+        self.msg_counts[user_id] = self.msg_counts.get(user_id, 0) + 1
+        self.last_messages[user_id] = message.content.strip()
+
+        chat_range = csettings.get("chat_range", list(DEFAULT_CHAT_RANGE))
+        low = chat_range[0] if len(chat_range) > 0 else DEFAULT_CHAT_RANGE[0]
+        high = chat_range[1] if len(chat_range) > 1 else low
+        chat_msg_range = csettings.get("chat_msg_range", list(DEFAULT_CHAT_MSG_RANGE))
+        msg_low = chat_msg_range[0] if len(chat_msg_range) > 0 else DEFAULT_CHAT_MSG_RANGE[0]
+        msg_high = chat_msg_range[1] if len(chat_msg_range) > 1 else msg_low
+
+        if self.msg_counts[user_id] < random.randint(msg_low, msg_high):
+            return
+
+        self.msg_counts[user_id] = 0
+
+        guild_settings = await get_guild_settings(self.pool, message.guild.id)
+        max_sigils = await self.calculate_max_sigils(message.guild, message.author, guild_settings, csettings)
+        if max_sigils <= 0:
+            return
+
+        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        daily_data = await get_daily_sigils(self.pool, user_id, message.guild.id, today)
+        daily_earned = daily_data.get("earnings", 0)
+
+        sigils_earned = random.randint(low, high)
+        if daily_earned + sigils_earned > max_sigils:
+            sigils_earned = max(0, max_sigils - daily_earned)
+        if sigils_earned <= 0:
+            return
+
+        balance = await add_sigils(self.pool, user_id, message.guild.id, sigils_earned)
+        new_daily = daily_earned + sigils_earned
+        reset_ts = get_next_reset_unix()
+
+        try:
+            await message.channel.send(
+                f"<:BennettThumbsUp:1411638508375773395> {message.author.mention} earned {SIGIL_EMOTE} **{sigils_earned} {SIGIL_CURRENCY_NAME}** "
+                f"for chatting actively! *(Daily Cap: `{new_daily}/{int(max_sigils)}`)*\n"
+                f"> -# <a:clock:1382887924273774754> Resets <t:{reset_ts}:R>. Use </mora> to check your progress!"
+            )
+        except Exception:
+            pass
+
+
 class TheEventItself(commands.Cog):
     def __init__(self, bot):
         self.client = bot
@@ -4446,7 +4548,8 @@ class TheEventItself(commands.Cog):
         self.pending_chests = set()
         self.chest_system = DailyChestSystem(self.user_flags)
         self.daily_reset.start()
-    
+        self.sigil_system = DailySigilSystem(bot.pool)
+
     @tasks.loop(minutes=1)
     async def daily_reset(self):
         await self.chest_system.reset_daily_states()
@@ -4517,11 +4620,16 @@ class TheEventItself(commands.Cog):
         if message.channel.id in chest_channels:
             await self.chest_system.process_message(message, self, self.cache, self.user_flags)
 
+        csettings = await self.cache.get_channel(message.channel.id)
+        if csettings.get("chat_enabled", False):
+            flags_data = await self.user_flags.get(message.guild.id, message.author.id)
+            if not flags_data.get("sigils_disabled", False):
+                await self.sigil_system.process_chat_sigils(message, csettings)
+
         mg_channels = await self.cache.get_mg_channels()
         if message.channel.id not in mg_channels:
             return
 
-        csettings = await self.cache.get_channel(message.channel.id)
         if not csettings.get("minigames_enabled", False):
             return
 

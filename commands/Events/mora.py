@@ -13,13 +13,13 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track, is_elite_active
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_chest_config, get_chest_counts, get_chest_streaks, get_cosmetics, get_milestones_list
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_settings, get_channel_settings, get_chest_counts, get_chest_streaks, get_cosmetics, get_milestones_list, get_sigils_balance, get_daily_sigils, add_sigils, parse_boosted_roles
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
+from commands.Events.config import DOT_EMOTE, MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, NO_EMOTE_2, REPLY_EMOTE, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_MSG_RANGE, DEFAULT_CHAT_MAX_CAP, YES_EMOTE_2
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -40,7 +40,7 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     average_daily = stats_data['average_daily']
     days_active = stats_data['days_active']
     
-    gc = await get_guild_chest_config(pool, guild_id)
+    gc = await get_guild_settings(pool, guild_id)
     tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
     tier_emotes_list = gc.get("chests_emotes", [])
     tier_emotes = dict(zip(tier_names, tier_emotes_list)) if tier_emotes_list else {}
@@ -296,9 +296,9 @@ class ToggleView(discord.ui.View):
         
         season = get_current_season()
         embed = discord.Embed(
-            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Progression Track",
+            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Progression Track in {interaction.guild.name}",
             description=(
-                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) <:PaiHype:1194817285748183140>\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# <:reply:1036792837821435976> **Earn XP** by purchasing in the shop and completing quests.\n"
+                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) <:PaiHype:1194817285748183140>\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# {REPLY_EMOTE} **Earn XP** by purchasing in the shop and completing quests.\n"
                 f"```diff\n"
                 f"+ Current Tier: {current_tier_display} ({user_xp} total XP)\n"
                 + f"- Status: {'Elite Track Activated' if await is_elite_active(interaction.client.pool, self.user_id, self.guild_id) else 'Free Track Only'}\n"
@@ -361,15 +361,15 @@ class ToggleView(discord.ui.View):
                 quest_text.append(f"- {QUEST_DESCRIPTIONS.get(q_type, q_type)}: {status}")
                 
             if dur_data.get("bonus_awarded"):
-                quest_text.append(f"-# <:reply:1036792837821435976> *`{QUEST_BONUS_XP[duration]}` XP bonus already claimed! {RESOLVED_EMOTE}*")
+                quest_text.append(f"-# {REPLY_EMOTE} *`{QUEST_BONUS_XP[duration]}` XP bonus already claimed! {RESOLVED_EMOTE}*")
             else:
-                quest_text.append(f"-# <:reply:1036792837821435976> *Complete all for `+{QUEST_BONUS_XP[duration]}` XP bonus! {UNRESOLVED_EMOTE}*")
+                quest_text.append(f"-# {REPLY_EMOTE} *Complete all for `+{QUEST_BONUS_XP[duration]}` XP bonus! {UNRESOLVED_EMOTE}*")
         
         if not quest_text:
             quest_text = ["No active quests. The next season starts <t:1751328000:R>."]
         
         quests_embed = discord.Embed(
-            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Quests",
+            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Quests in {interaction.guild.name}",
             description="\n".join(quest_text),
             color=self.custom_color or discord.Color.green()
         )
@@ -393,6 +393,72 @@ class ToggleView(discord.ui.View):
         embed = await get_kingdom_embed(target_user, interaction.guild.id, self.custom_color, interaction.client.pool)
         await interaction.response.edit_message(embed=embed, view=self)
 
+    @discord.ui.button(label=SIGIL_CURRENCY_NAME, style=discord.ButtonStyle.grey, custom_id="sigils")
+    async def sigils_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.command_user_id:
+            await interaction.response.send_message("You can't use this button!", ephemeral=True)
+            return
+
+        self.state = "sigils"
+        await self.update_buttons(interaction.client.pool)
+
+        balance = await get_sigils_balance(interaction.client.pool, self.user_id, interaction.guild.id)
+        import datetime as dt
+        today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+        daily_data = await get_daily_sigils(interaction.client.pool, self.user_id, interaction.guild.id, today)
+        daily_earned = daily_data.get("earnings", 0)
+        reset_ts = (dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) + dt.timedelta(days=1)).timestamp()
+
+        guild_settings = await get_guild_settings(interaction.client.pool, interaction.guild.id)
+        base_cap = guild_settings.get("chat_max_cap", DEFAULT_CHAT_MAX_CAP)
+        effective_cap = int(base_cap)
+        bonus_text = []
+        all_settings = await get_channel_settings(interaction.client.pool, interaction.channel.id) if interaction.channel else {}
+        boosted_raw = await parse_boosted_roles(all_settings.get("chat_boosted_roles", [])) if all_settings else []
+        if boosted_raw:
+            member = await interaction.guild.fetch_member(self.user_id)
+            for rid, bonus in boosted_raw:
+                role = interaction.guild.get_role(rid)
+                if role:
+                    has_role = role in member.roles
+                    if has_role and str(bonus).startswith("+"):
+                        effective_cap += int(str(bonus).lstrip("+"))
+                    elif has_role:
+                        effective_cap = max(effective_cap, int(bonus))
+                    bonus_text.append(
+                        f"{DOT_EMOTE} {role.mention}: `{bonus}` {YES_EMOTE}" if has_role
+                        else f"-# {DOT_EMOTE} {role.mention}: `{bonus}`"
+                    )
+
+        embed = discord.Embed(
+            title=f"{interaction.user.display_name}'s {SIGIL_CURRENCY_NAME} in {interaction.guild.name}",
+            color=self.custom_color or discord.Color.purple()
+        )
+        embed.add_field(name=f"{SIGIL_EMOTE} Balance", value=f"`{balance}`", inline=True)
+        embed.add_field(
+            name="Daily Chat Progress",
+            value=f"`{daily_earned}/{effective_cap}` {SIGIL_CURRENCY_NAME} earned",
+            inline=True
+        )
+        embed.add_field(
+            name="Reset Time",
+            value=f"<t:{int(reset_ts)}:R>" if reset_ts > time.time() else "Available now!",
+            inline=True
+        )
+
+        if bonus_text:
+            embed.add_field(
+                name="Role Bonuses to Max Sigils",
+                value="\n".join(bonus_text),
+                inline=False
+            )
+        
+        chat_msg_range = all_settings.get("chat_msg_range", list(DEFAULT_CHAT_MSG_RANGE)) if all_settings else list(DEFAULT_CHAT_MSG_RANGE)
+        msg_footer = f"{chat_msg_range[0]}" if len(chat_msg_range) == 1 else f"{chat_msg_range[0]}-{chat_msg_range[1]}"
+        embed.set_footer(text=f"Tip: Earn a batch of {SIGIL_CURRENCY_NAME} by sending {msg_footer} messages in enabled channels.")
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
     @discord.ui.button(label="Settings", style=discord.ButtonStyle.grey, custom_id="settings")
     async def settings_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.command_user_id:
@@ -401,32 +467,8 @@ class ToggleView(discord.ui.View):
 
         self.state = "settings"
         await self.update_buttons(interaction.client.pool)
-        
-        # Get current chest and minigame spawn status
-        user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
-        chest_disabled = user_settings["chest_disabled"]
-        minigame_disabled = user_settings["minigame_disabled"]
-        chest_status = f"{NO_EMOTE} Disabled" if chest_disabled else f"{YES_EMOTE} Enabled"
-        minigame_status = f"{NO_EMOTE} Disabled" if minigame_disabled else f"{YES_EMOTE} Enabled"
-        
-        settings_embed = discord.Embed(
-            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
-            description="Customize your gameplay experience. Use the dropdown below to modify settings.",
-            color=self.custom_color or discord.Color.blurple()
-        )
-        settings_embed.add_field(
-            name="Daily Chest Spawning",
-            value=f"**Status:** {chest_status}\n-# When disabled, chests will not spawn from messages.",
-            inline=False
-        )
-        settings_embed.add_field(
-            name="Minigame Spawning",
-            value=f"**Status:** {minigame_status}\n-# When disabled, minigames will not trigger from messages.",
-            inline=False
-        )
-        settings_embed.set_footer(text="Tip: You can re-enable settings anytime by toggling them back on")
-        
-        await interaction.response.edit_message(embed=settings_embed, view=self)
+        embed = await self.build_settings_embed(interaction.client.pool, interaction.guild, self.user_id, interaction.channel.id if interaction.channel else None)
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def upgrade_select_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.command_user_id:
@@ -444,98 +486,90 @@ class ToggleView(discord.ui.View):
         else:
             await interaction.response.send_message(f"{NO_EMOTE} {msg}", ephemeral=True)
 
+    async def build_settings_embed(self, pool, guild, user_id, channel_id):
+        user_settings = await get_user_minigame_settings(pool, guild.id, user_id)
+        chest_disabled = user_settings["chest_disabled"]
+        minigame_disabled = user_settings["minigame_disabled"]
+        sigils_disabled = user_settings["sigils_disabled"]
+
+        csettings = await get_channel_settings(pool, channel_id) if channel_id else {}
+        chests_enabled = csettings.get("chests_enabled", False)
+        minigames_enabled = csettings.get("minigames_enabled", False)
+        chat_enabled = csettings.get("chat_enabled", False)
+
+        channel = guild.get_channel(channel_id) if channel_id else None
+
+        def pref(user_off):
+            return NO_EMOTE_2 if user_off else YES_EMOTE_2
+
+        def ch_state(enabled):
+            return YES_EMOTE if enabled else NO_EMOTE
+
+        try:
+            member = await guild.fetch_member(user_id)
+            title = f"{member.display_name}'s Settings in {guild.name}"
+        except:
+            title = "Settings"
+
+        desc = (
+            f"A feature works only when both **you** and a **channel** both have it enabled."
+        )
+
+        embed = discord.Embed(
+            title=title,
+            description=desc,
+            color=self.custom_color or discord.Color.blurple()
+        )
+
+        prefs = (
+            f"-# {DOT_EMOTE} Daily Chest Spawning: {pref(chest_disabled)} \n"
+            f"-# {DOT_EMOTE} Minigame Spawning: {pref(minigame_disabled)} \n"
+            f"-# {DOT_EMOTE} Sigils Chat Earning: {pref(sigils_disabled)}"
+        )
+        embed.add_field(name="Your Server Preferences", value=prefs, inline=True)
+
+        states = (
+            f"-# {DOT_EMOTE} Daily Chest Spawning: {ch_state(chests_enabled)} \n"
+            f"-# {DOT_EMOTE} Minigame Spawning: {ch_state(minigames_enabled)} \n"
+            f"-# {DOT_EMOTE} Sigils Chat Earning: {ch_state(chat_enabled)}"
+        )
+        ch_name = f"#{channel.name} (Current Channel)" if channel else "Current Channel"
+        embed.add_field(name=ch_name, value=states, inline=True)
+
+        embed.set_footer(text="Tip: You can toggle your server preferences at any time.")
+        return embed
+
     async def settings_select_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.command_user_id:
             return await interaction.response.send_message("You can't use this button!", ephemeral=True)
-        
-        setting_key = self.settings_select.values[0]
-        
-        if setting_key == "toggle_chest_spawn":
-            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
-            current_status = user_settings["chest_disabled"]
-            new_status = not current_status
-            await upsert_user_minigame_setting(interaction.client.pool, interaction.guild.id, self.user_id, "chest_disabled", new_status)
-            
-            chest_cog = interaction.client.get_cog('TheEventItself')
-            if chest_cog and hasattr(chest_cog, 'chest_system'):
-                chest_cog.chest_system.invalidate_flag_cache(interaction.guild.id, self.user_id)
-            
-            chest_status = f"{NO_EMOTE} Disabled" if new_status else f"{YES_EMOTE} Enabled"
-            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
-            minigame_disabled = user_settings["minigame_disabled"]
-            minigame_status = f"{NO_EMOTE} Disabled" if minigame_disabled else f"{YES_EMOTE} Enabled"
-            
-            settings_embed = discord.Embed(
-                title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
-                description="Customize your gameplay experience. Use the dropdown below to modify settings.",
-                color=self.custom_color or discord.Color.blurple()
-            )
-            settings_embed.add_field(
-                name="Daily Chest Spawning",
-                value=f"**Status:** {chest_status}\n-# When disabled, chests will not spawn from messages.",
-                inline=False
-            )
-            settings_embed.add_field(
-                name="Minigame Spawning",
-                value=f"**Status:** {minigame_status}\n-# When disabled, minigames will not trigger from messages.",
-                inline=False
-            )
-            settings_embed.set_footer(text="Tip: You can re-enable settings anytime by toggling them back on")
-            
-            await interaction.response.edit_message(embed=settings_embed, view=self)
-            await interaction.followup.send(
-                f"{YES_EMOTE} Daily chest spawning is now **{'disabled' if new_status else 'enabled'}**!",
-                ephemeral=True
-            )
-        
-        elif setting_key == "toggle_minigame_spawn":
-            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
-            current_status = user_settings["minigame_disabled"]
-            new_status = not current_status
-            await upsert_user_minigame_setting(interaction.client.pool, interaction.guild.id, self.user_id, "minigame_disabled", new_status)
-            
-            chest_cog = interaction.client.get_cog('TheEventItself')
-            if chest_cog and hasattr(chest_cog, 'chest_system'):
-                chest_cog.chest_system.invalidate_minigame_flag_cache(interaction.guild.id, self.user_id)
-            
-            user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
-            chest_disabled = user_settings["chest_disabled"]
-            chest_status = f"{NO_EMOTE} Disabled" if chest_disabled else f"{YES_EMOTE} Enabled"
-            minigame_status = f"{NO_EMOTE} Disabled" if new_status else f"{YES_EMOTE} Enabled"
 
-            settings_embed = discord.Embed(
-                title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Settings in {interaction.guild.name}",
-                description="Customize your gameplay experience. Use the dropdown below to modify settings.",
-                color=self.custom_color or discord.Color.blurple()
-            )
-            settings_embed.add_field(
-                name="Daily Chest Spawning",
-                value=f"**Status:** {chest_status}\n-# When disabled, chests will not spawn from messages.",
-                inline=False
-            )
-            settings_embed.add_field(
-                name="Minigame Spawning",
-                value=f"**Status:** {minigame_status}\n-# When disabled, minigames will not trigger from messages.",
-                inline=False
-            )
-            settings_embed.set_footer(text="Tip: You can re-enable settings anytime by toggling them back on")
-            
-            await interaction.response.edit_message(embed=settings_embed, view=self)
-            await interaction.followup.send(
-                f"{YES_EMOTE} Minigame spawning is now **{'disabled' if new_status else 'enabled'}**!",
-                ephemeral=True
-            )
+        setting_key = self.settings_select.values[0]
+        column = {"toggle_chest_spawn": "chest_disabled", "toggle_minigame_spawn": "minigame_disabled", "toggle_sigils_spawn": "sigils_disabled"}[setting_key]
+        label = {"toggle_chest_spawn": "Daily chest spawning", "toggle_minigame_spawn": "Minigame spawning", "toggle_sigils_spawn": "Sigils chat earning"}[setting_key]
+
+        user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
+        new_status = not user_settings[column]
+        await upsert_user_minigame_setting(interaction.client.pool, interaction.guild.id, self.user_id, column, new_status)
+
+        chest_cog = interaction.client.get_cog('TheEventItself')
+        if chest_cog and hasattr(chest_cog, 'chest_system'):
+            chest_cog.chest_system.invalidate_flag_cache(interaction.guild.id, self.user_id)
+
+        embed = await self.build_settings_embed(interaction.client.pool, interaction.guild, self.user_id, interaction.channel.id if interaction.channel else None)
+        await self.update_buttons(interaction.client.pool)
+        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.send(f"{YES_EMOTE} {label} is now **{'disabled' if new_status else 'enabled'}**!", ephemeral=True)
 
     async def update_buttons(self, pool=None):
         for child in self.children:
-            if child.custom_id in ["home", "graph", "track", "quests", "domain", "settings"]:
+            if child.custom_id in ["home", "graph", "track", "quests", "domain", "sigils", "settings"]:
                 child.disabled = False
                 child.style = discord.ButtonStyle.grey
             if self.state == child.custom_id:
                 child.disabled = True
                 child.style = discord.ButtonStyle.blurple
         
-        show_profile_promo = (self.state != "domain" and self.state != "settings")
+        show_profile_promo = True # (self.state != "domain" and self.state != "sigils" and self.state != "settings")
         
         items_to_remove = []
         
@@ -641,7 +675,11 @@ class ToggleView(discord.ui.View):
                         discord.SelectOption(
                             label="Minigame Spawning",
                             value="toggle_minigame_spawn",
-                        )
+                        ),
+                        discord.SelectOption(
+                            label="Sigils Chat Earning",
+                            value="toggle_sigils_spawn",
+                        ),
                     ],
                     custom_id="settings_select",
                     row=2
@@ -755,7 +793,7 @@ class Mora(commands.Cog):
         custom_color = discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
         
         embed = discord.Embed(
-            title=f"{user.display_name}'s Inventory",
+            title=f"{user.display_name}'s Inventory in {interaction.guild.name}",
             description="",
             color=custom_color or discord.Color.gold()
         )

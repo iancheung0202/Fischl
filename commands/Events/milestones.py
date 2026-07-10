@@ -8,7 +8,7 @@ from commands.Events.helperFunctions import get_users_by_mora_threshold, get_mil
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MILESTONE_SORT_OPTIONS
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, REPLY_EMOTE, MILESTONE_SORT_OPTIONS
 
 def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sort_by="threshold", reverse=True) -> list:
     if not milestones:
@@ -39,8 +39,8 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sor
     page = discord.Embed(
         title=f"{interaction.guild.name}'s Server Milestones",
         description=(
-            f"<:reply:1036792837821435976> *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
-            f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds. They are designed to be cumulative.*"
+            f"{REPLY_EMOTE} *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
+            f"{REPLY_EMOTE} *You automatically earn roles and titles when reaching certain thresholds. They are designed to be cumulative.*"
         ),
         color=discord.Color.pink()
     )
@@ -74,8 +74,8 @@ def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sor
             page = discord.Embed(
                 title=f"{interaction.guild.name}'s Server Milestones",
                 description=(
-                    f"<:reply:1036792837821435976> *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
-                    f"<:reply:1036792837821435976> *You automatically earn roles and titles when reaching certain thresholds. They are designed to be cumulative.*"
+                    f"{REPLY_EMOTE} *Unlike {SlashCommand('shop')} items, all milestones cost {MORA_EMOTE} `0`.*\n"
+                    f"{REPLY_EMOTE} *You automatically earn roles and titles when reaching certain thresholds. They are designed to be cumulative.*"
                 ),
                 color=discord.Color.pink()
             )

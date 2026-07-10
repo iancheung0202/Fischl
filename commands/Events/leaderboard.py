@@ -11,11 +11,12 @@ from commands.Events.helperFunctions import (
     get_global_kingdom_leaderboard, get_guild_kingdom_leaderboard,
     get_global_minigame_wins_leaderboard, get_guild_minigame_wins_leaderboard,
     get_global_active_days_leaderboard, get_guild_active_days_leaderboard,
-    get_global_prestige_leaderboard, get_guild_prestige_leaderboard
+    get_global_prestige_leaderboard, get_guild_prestige_leaderboard,
+    get_guild_sigils_leaderboard
 )
 from utils.pagination import BasePaginationView
 
-from commands.Events.config import MORA_EMOTE, CURRENCY_NAME
+from commands.Events.config import MORA_EMOTE, CURRENCY_NAME, SIGIL_CURRENCY_NAME, SIGIL_EMOTE
         
 
 class Leaderboard(commands.Cog):
@@ -37,6 +38,7 @@ class Leaderboard(commands.Cog):
             app_commands.Choice(name="Minigame Wins", value="wins"),
             app_commands.Choice(name="Active Days", value="actively"),
             app_commands.Choice(name="Prestige", value="prestige"),
+            app_commands.Choice(name=SIGIL_CURRENCY_NAME, value="sigils"),
         ],
         scope=[
             app_commands.Choice(name="Global", value="global"),
@@ -59,13 +61,17 @@ class Leaderboard(commands.Cog):
                 "wins": (get_global_minigame_wins_leaderboard, get_guild_minigame_wins_leaderboard),
                 "actively": (get_global_active_days_leaderboard, get_guild_active_days_leaderboard),
                 "prestige": (get_global_prestige_leaderboard, get_guild_prestige_leaderboard),
+                "sigils": (None, get_guild_sigils_leaderboard),
             }
             
             if type.value in leaderboard_types:
                 global_func, server_func = leaderboard_types[type.value]
                 
                 if scope.value == "global":
-                    ranking = await global_func(interaction.client.pool)
+                    if global_func:
+                        ranking = await global_func(interaction.client.pool)
+                    else:
+                        ranking = []
                 else:  # server
                     ranking = await server_func(interaction.client.pool, interaction.guild.id)
                 
@@ -134,6 +140,14 @@ class Leaderboard(commands.Cog):
                 "color_server": 0xFFB6C1,
                 "title": "Prestige Leaderboard",
                 "metric": "total prestige earned",
+                "has_rank_title": False,
+            },
+            "sigils": {
+                "icon": SIGIL_EMOTE,
+                "color_global": 0x9B59B6,
+                "color_server": 0x9B59B6,
+                "title": f"{SIGIL_CURRENCY_NAME} Leaderboard",
+                "metric": "their total sigils earned",
                 "has_rank_title": False,
             },
         }

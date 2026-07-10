@@ -663,6 +663,27 @@ async def get_guild_prestige_leaderboard(pool: asyncpg.Pool, gid: int, limit: in
             """, gid)
     return [(row['uid'], row['total_prestige']) for row in rows]
 
+async def get_guild_sigils_leaderboard(pool: asyncpg.Pool, gid: int, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(earnings) as total
+                FROM minigame_sigils
+                WHERE gid = $1
+                GROUP BY uid
+                ORDER BY total DESC
+                LIMIT $2
+            """, gid, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(earnings) as total
+                FROM minigame_sigils
+                WHERE gid = $1
+                GROUP BY uid
+                ORDER BY total DESC
+            """, gid)
+    return [(row['uid'], row['total']) for row in rows]
+
 async def ensure_minigame_settings_table(pool):
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -672,11 +693,19 @@ async def ensure_minigame_settings_table(pool):
                 minigames_enabled   BOOLEAN DEFAULT TRUE,
                 minigames_list      TEXT[] DEFAULT '{}',
                 minigames_frequency INTEGER DEFAULT 50,
-                chests_enabled      BOOLEAN DEFAULT FALSE
+                chests_enabled      BOOLEAN DEFAULT FALSE,
+                chat_enabled        BOOLEAN DEFAULT FALSE,
+                chat_range          INTEGER[] DEFAULT ARRAY[19,25],
+                chat_boosted_roles  TEXT[] DEFAULT '{}',
+                chat_msg_range      INTEGER[] DEFAULT ARRAY[15,20]
             )
         """)
+        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS chat_enabled BOOLEAN DEFAULT FALSE")
+        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS chat_range INTEGER[] DEFAULT ARRAY[19,25]")
+        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS chat_boosted_roles TEXT[] DEFAULT '{}'")
+        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS chat_msg_range INTEGER[] DEFAULT ARRAY[15,20]")
 
-async def ensure_minigame_guild_chest_settings_table(pool):
+async def ensure_minigame_guild_settings_table(pool):
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS minigame_guild_chest_settings (
@@ -689,9 +718,11 @@ async def ensure_minigame_guild_chest_settings_table(pool):
                 chests_max_streak_bonus     INTEGER DEFAULT 10000,
                 chests_spawn_req            INTEGER[] DEFAULT ARRAY[4,6],
                 chests_emotes               TEXT[] DEFAULT ARRAY['<a:common:1371641883121680465>','<a:exquisite:1371641856344985620>','<a:precious:1371641871452995689>','<a:luxurious:1371641841338023976>'],
-                chests_icons                TEXT[] DEFAULT ARRAY['https://i.imgur.com/2kOfLSC.png','https://i.imgur.com/DBPQSAu.png','https://i.imgur.com/zxOlrCo.png','https://i.imgur.com/5nWwRdc.png']
+                chests_icons                TEXT[] DEFAULT ARRAY['https://i.imgur.com/2kOfLSC.png','https://i.imgur.com/DBPQSAu.png','https://i.imgur.com/zxOlrCo.png','https://i.imgur.com/5nWwRdc.png'],
+                chat_max_cap                INTEGER DEFAULT 60
             )
         """)
+        await conn.execute("ALTER TABLE minigame_guild_chest_settings ADD COLUMN IF NOT EXISTS chat_max_cap INTEGER DEFAULT 60")
 
 async def ensure_minigame_progression_table(pool):
     async with pool.acquire() as conn:
@@ -720,12 +751,14 @@ async def ensure_minigame_progression_table(pool):
 
                 chest_disabled          BOOLEAN DEFAULT FALSE,
                 minigame_disabled       BOOLEAN DEFAULT FALSE,
+                sigils_disabled         BOOLEAN DEFAULT FALSE,
 
                 updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
                 PRIMARY KEY (gid, uid)
             )
         """)
+        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS sigils_disabled BOOLEAN DEFAULT FALSE")
 
 async def ensure_minigame_elite_table(pool):
     async with pool.acquire() as conn:
@@ -852,6 +885,78 @@ async def upsert_chest_counts(pool, gid: int, uid: int, counts: list):
             ON CONFLICT (gid, uid) DO UPDATE SET
                 counts = EXCLUDED.counts
         """, gid, uid, counts)
+
+# ── minigame_sigils ─────────────────────────────────────────────────────
+
+async def ensure_minigame_sigils_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_sigils (
+                uid      BIGINT NOT NULL,
+                gid      BIGINT NOT NULL,
+                date     TEXT NOT NULL,
+                earnings INTEGER DEFAULT 0,
+                PRIMARY KEY (uid, gid, date)
+            )
+        """)
+
+async def get_sigils_balance(pool, uid: int, gid: int) -> int:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT COALESCE(SUM(earnings), 0) FROM minigame_sigils WHERE uid = $1 AND gid = $2",
+            uid, gid
+        )
+    return val or 0
+
+async def get_daily_sigils(pool, uid: int, gid: int, date: str) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT earnings FROM minigame_sigils WHERE uid = $1 AND gid = $2 AND date = $3",
+            uid, gid, date
+        )
+    return {"earnings": row["earnings"] if row else 0}
+
+async def upsert_daily_sigils(pool, uid: int, gid: int, date: str, earnings: int):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_sigils (uid, gid, date, earnings)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (uid, gid, date) DO UPDATE SET
+                earnings = EXCLUDED.earnings
+        """, uid, gid, date, earnings)
+
+async def add_sigils(pool, uid: int, gid: int, amount: int) -> int:
+    import datetime
+    date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            INSERT INTO minigame_sigils (uid, gid, date, earnings)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (uid, gid, date) DO UPDATE SET
+                earnings = minigame_sigils.earnings + EXCLUDED.earnings
+            RETURNING earnings
+        """, uid, gid, date, amount)
+    return row["earnings"] if row else amount
+
+async def parse_boosted_roles(raw: list) -> list:
+    if not raw:
+        return []
+    result = []
+    for entry in raw:
+        if isinstance(entry, str) and ":" in entry:
+            parts = entry.split(":", 1)
+            try:
+                rid = int(parts[0])
+                bonus = parts[1]
+                result.append([rid, bonus])
+            except (ValueError, IndexError):
+                continue
+        elif isinstance(entry, list) and len(entry) == 2:
+            result.append(entry)
+    return result
+
+async def serialize_boosted_roles(roles: list) -> list:
+    return [f"{r[0]}:{r[1]}" for r in roles if isinstance(r, list) and len(r) == 2]
 
 # ── minigame_cosmetics ──────────────────────────────────────────────────
 
@@ -1123,9 +1228,13 @@ _SETTINGS_FALLBACK = {
     "minigames_list": [],
     "minigames_frequency": 50,
     "chests_enabled": False,
+    "chat_enabled": False,
+    "chat_range": [19, 25],
+    "chat_boosted_roles": [],
+    "chat_msg_range": [15, 20],
 }
 
-_GUILD_CHEST_FALLBACK = {
+_GUILD_SETTINGS_FALLBACK = {
     "chests_base_upgrade_chances": 4,
     "chests_tier_names": ["Common", "Exquisite", "Precious", "Luxurious"],
     "chests_tier_rewards": [2500, 7500, 15000, 30000],
@@ -1135,6 +1244,7 @@ _GUILD_CHEST_FALLBACK = {
     "chests_spawn_req": [4, 6],
     "chests_emotes": ["<a:common:1371641883121680465>", "<a:exquisite:1371641856344985620>", "<a:precious:1371641871452995689>", "<a:luxurious:1371641841338023976>"],
     "chests_icons": ["https://i.imgur.com/2kOfLSC.png", "https://i.imgur.com/DBPQSAu.png", "https://i.imgur.com/zxOlrCo.png", "https://i.imgur.com/5nWwRdc.png"],
+    "chat_max_cap": 60,
 }
 
 async def get_channel_settings(pool, channel_id: int) -> dict:
@@ -1174,25 +1284,26 @@ async def upsert_channel_settings(pool, channel_id: int, **kwargs):
             ON CONFLICT (channel_id) DO UPDATE SET {updates}
         """, channel_id, *vals)
 
-async def get_guild_chest_config(pool, guild_id: int) -> dict:
+async def get_guild_settings(pool, guild_id: int) -> dict:
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM minigame_guild_chest_settings WHERE gid = $1", guild_id)
     if row:
         d = dict(row)
         return {
             "chests_base_upgrade_chances": d.get("chests_base_upgrade_chances", 4),
-            "chests_tier_names": list(d.get("chests_tier_names", _GUILD_CHEST_FALLBACK["chests_tier_names"])),
-            "chests_tier_rewards": list(d.get("chests_tier_rewards", _GUILD_CHEST_FALLBACK["chests_tier_rewards"])),
-            "chests_upgrade_chances": [float(x) for x in (d.get("chests_upgrade_chances", _GUILD_CHEST_FALLBACK["chests_upgrade_chances"]) or [])],
+            "chests_tier_names": list(d.get("chests_tier_names", _GUILD_SETTINGS_FALLBACK["chests_tier_names"])),
+            "chests_tier_rewards": list(d.get("chests_tier_rewards", _GUILD_SETTINGS_FALLBACK["chests_tier_rewards"])),
+            "chests_upgrade_chances": [float(x) for x in (d.get("chests_upgrade_chances", _GUILD_SETTINGS_FALLBACK["chests_upgrade_chances"]) or [])],
             "chests_streak_bonus": d.get("chests_streak_bonus", 100),
             "chests_max_streak_bonus": d.get("chests_max_streak_bonus", 10000),
             "chests_spawn_req": list(d.get("chests_spawn_req", [4, 6])),
-            "chests_emotes": list(d.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"])),
-            "chests_icons": list(d.get("chests_icons", _GUILD_CHEST_FALLBACK["chests_icons"])),
+            "chests_emotes": list(d.get("chests_emotes", _GUILD_SETTINGS_FALLBACK["chests_emotes"])),
+            "chests_icons": list(d.get("chests_icons", _GUILD_SETTINGS_FALLBACK["chests_icons"])),
+            "chat_max_cap": d.get("chat_max_cap", _GUILD_SETTINGS_FALLBACK["chat_max_cap"]),
         }
-    return dict(_GUILD_CHEST_FALLBACK)
+    return dict(_GUILD_SETTINGS_FALLBACK)
 
-async def upsert_guild_chest_config(pool, guild_id: int, **kwargs):
+async def upsert_guild_settings(pool, guild_id: int, **kwargs):
     cols = ", ".join(kwargs.keys())
     vals = list(kwargs.values())
     placeholders = ", ".join(f"${i+2}" for i in range(len(vals)))
@@ -1206,18 +1317,18 @@ async def upsert_guild_chest_config(pool, guild_id: int, **kwargs):
 
 async def get_channel_chest_config(pool, guild_id: int, channel_id: int) -> dict:
     s = await get_channel_settings(pool, channel_id)
-    gc = await get_guild_chest_config(pool, guild_id)
+    gc = await get_guild_settings(pool, guild_id)
     return {
         "chests_enabled": s.get("chests_enabled", False),
         "chests_base_upgrade_chances": gc.get("chests_base_upgrade_chances", 4),
-        "chests_tier_names": gc.get("chests_tier_names", _GUILD_CHEST_FALLBACK["chests_tier_names"]),
-        "chests_tier_rewards": gc.get("chests_tier_rewards", _GUILD_CHEST_FALLBACK["chests_tier_rewards"]),
-        "chests_upgrade_chances": gc.get("chests_upgrade_chances", _GUILD_CHEST_FALLBACK["chests_upgrade_chances"]),
+        "chests_tier_names": gc.get("chests_tier_names", _GUILD_SETTINGS_FALLBACK["chests_tier_names"]),
+        "chests_tier_rewards": gc.get("chests_tier_rewards", _GUILD_SETTINGS_FALLBACK["chests_tier_rewards"]),
+        "chests_upgrade_chances": gc.get("chests_upgrade_chances", _GUILD_SETTINGS_FALLBACK["chests_upgrade_chances"]),
         "chests_streak_bonus": gc.get("chests_streak_bonus", 100),
         "chests_max_streak_bonus": gc.get("chests_max_streak_bonus", 10000),
         "chests_spawn_req": gc.get("chests_spawn_req", [4, 6]),
-        "chests_emotes": gc.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"]),
-        "chests_icons": gc.get("chests_icons", _GUILD_CHEST_FALLBACK["chests_icons"]),
+        "chests_emotes": gc.get("chests_emotes", _GUILD_SETTINGS_FALLBACK["chests_emotes"]),
+        "chests_icons": gc.get("chests_icons", _GUILD_SETTINGS_FALLBACK["chests_icons"]),
     }
 
 # User minigame settings helpers (chest_disabled / minigame_disabled)
@@ -1226,12 +1337,13 @@ async def get_user_minigame_settings(pool, guild_id: int, user_id: int) -> dict:
     await ensure_progression_user(pool, guild_id, user_id)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT chest_disabled, minigame_disabled FROM minigame_progression WHERE gid = $1 AND uid = $2",
+            "SELECT chest_disabled, minigame_disabled, sigils_disabled FROM minigame_progression WHERE gid = $1 AND uid = $2",
             guild_id, user_id
         )
     return {
         "chest_disabled": bool(row["chest_disabled"]) if row else False,
         "minigame_disabled": bool(row["minigame_disabled"]) if row else False,
+        "sigils_disabled": bool(row["sigils_disabled"]) if row else False,
     }
 
 async def upsert_user_minigame_setting(pool, guild_id: int, user_id: int, column: str, value):
@@ -1363,8 +1475,9 @@ async def setup(bot) -> None:
     await ensure_minigame_progression_table(bot.pool)
     await ensure_minigame_mora_table(bot.pool)
     await ensure_minigame_inventory_table(bot.pool)
-    await ensure_minigame_guild_chest_settings_table(bot.pool)
+    await ensure_minigame_guild_settings_table(bot.pool)
     await ensure_minigame_elite_table(bot.pool)
     await ensure_minigame_chests_table(bot.pool)
     await ensure_cosmetics_table(bot.pool)
     await ensure_rewards_table(bot.pool)
+    await ensure_minigame_sigils_table(bot.pool)

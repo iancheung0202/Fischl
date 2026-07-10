@@ -4,8 +4,8 @@ import datetime
 from discord import app_commands
 from discord.ext import commands
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, DOT_EMOTE, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_UPGRADE_TIMES, EMOTE_STREAK, EMOTE_MAX_STREAK
-from commands.Events.helperFunctions import get_channel_settings, upsert_channel_settings, ensure_minigame_settings_table, ensure_minigame_guild_chest_settings_table, get_guild_chest_config, upsert_guild_chest_config, _GUILD_CHEST_FALLBACK
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, DOT_EMOTE, MINIGAME_TITLES, LETTER_LIST, LETTER_EMOTES, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_SPAWN_REQ, MORA_CHEST_UPGRADE_TIMES, EMOTE_STREAK, EMOTE_MAX_STREAK, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_RANGE, DEFAULT_CHAT_MAX_CAP, DEFAULT_CHAT_MSG_RANGE
+from commands.Events.helperFunctions import get_channel_settings, upsert_channel_settings, ensure_minigame_settings_table, ensure_minigame_guild_settings_table, get_guild_settings, upsert_guild_settings, _GUILD_SETTINGS_FALLBACK, parse_boosted_roles, serialize_boosted_roles, ensure_minigame_sigils_table
 
 letterString = "".join(LETTER_LIST)
 
@@ -108,10 +108,10 @@ class ChestTierNamesModal(discord.ui.Modal, title="Chest Tier Names"):
         names = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
         if len(names) < 2:
             return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 tier names.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_tier_names=names)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_tier_names=names)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -138,10 +138,10 @@ class ChestTierRewardsModal(discord.ui.Modal, title="Chest Tier Rewards"):
             return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer list.", ephemeral=True)
         if len(vals) < 2:
             return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 reward values.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_tier_rewards=vals)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_tier_rewards=vals)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -168,10 +168,10 @@ class ChestUpgradeChancesModal(discord.ui.Modal, title="Chest Upgrade Chances"):
             return await interaction.response.send_message(f"{NO_EMOTE} Invalid decimal list.", ephemeral=True)
         if any(v < 0 or v > 1 for v in vals):
             return await interaction.response.send_message(f"{NO_EMOTE} Each chance must be between 0 and 1.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_upgrade_chances=vals)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_upgrade_chances=vals)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -200,10 +200,10 @@ class ChestSpawnRangeModal(discord.ui.Modal, title="Chest Spawn Requirement"):
             return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer(s).", ephemeral=True)
         if len(vals) not in (1, 2) or any(v < 1 for v in vals):
             return await interaction.response.send_message(f"{NO_EMOTE} Provide 1 (exact) or 2 (min, max) positive integers.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_spawn_req=vals)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_spawn_req=vals)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -231,10 +231,10 @@ class ChestStreakBonusModal(discord.ui.Modal, title="Streak Bonus"):
             return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer.", ephemeral=True)
         if val < 0:
             return await interaction.response.send_message(f"{NO_EMOTE} Must be non-negative.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, **{self.column: val})
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, **{self.column: val})
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -261,10 +261,10 @@ class ChestBaseUpgradesModal(discord.ui.Modal, title="Base Upgrade Chances"):
             return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer.", ephemeral=True)
         if val < 0:
             return await interaction.response.send_message(f"{NO_EMOTE} Must be non-negative.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_base_upgrade_chances=val)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_base_upgrade_chances=val)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -288,10 +288,10 @@ class ChestEmotesModal(discord.ui.Modal, title="Chest Emotes"):
         emotes = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
         if len(emotes) < 2:
             return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 emotes.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_emotes=emotes)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_emotes=emotes)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -315,10 +315,10 @@ class ChestIconsModal(discord.ui.Modal, title="Chest Icons"):
         icons = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
         if len(icons) < 2:
             return await interaction.response.send_message(f"{NO_EMOTE} Provide at least 2 icon URLs.", ephemeral=True)
-        await upsert_guild_chest_config(interaction.client.pool, self.guild_id, chests_icons=icons)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chests_icons=icons)
         channel = interaction.guild.get_channel(parse_channel_id(interaction))
         settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
-        guild_config = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -327,19 +327,22 @@ class ChestIconsModal(discord.ui.Modal, title="Chest Icons"):
 
 
 class EventSettingsView(discord.ui.View):
-    def __init__(self, channel, settings: dict, guild_config: dict = None):
+    def __init__(self, channel, settings: dict, guild_config: dict = None, settings_interaction=None):
         super().__init__(timeout=300)
         self.channel = channel
         self.settings = settings
         self.guild_id = channel.guild.id
         self.guild_config = guild_config
+        self.settings_interaction = settings_interaction
         self.active_tab = "minigames"
+        self.selected_role_id = None
         self._build()
 
     def _build(self):
         self.clear_items()
         self.add_item(TabMinigamesButton(self.active_tab == "minigames"))
         self.add_item(TabChestsButton(self.active_tab == "chests"))
+        self.add_item(TabSigilsButton(self.active_tab == "sigils"))
 
         if self.active_tab == "minigames":
             s = self.settings
@@ -351,7 +354,7 @@ class EventSettingsView(discord.ui.View):
                 self.add_item(SetRewardsButton(self.channel.id, s.get("mora_multiplier", 1.0)))
             else:
                 self.add_item(MinigamesToggleButton(not enabled))
-        else:
+        elif self.active_tab == "chests":
             s = self.settings
             enabled = s.get("chests_enabled", False)
             self.add_item(ChestsToggleButton(not enabled))
@@ -365,6 +368,15 @@ class EventSettingsView(discord.ui.View):
                 self.add_item(EditUpgradeChancesButton(self.guild_id))
                 self.add_item(EditChestEmotesButton(self.guild_id))
                 self.add_item(EditChestIconsButton(self.guild_id))
+        else:
+            s = self.settings
+            enabled = s.get("chat_enabled", False)
+            self.add_item(ChatToggleButton(not enabled))
+            if enabled:
+                self.add_item(ChatRangeButton(self.channel.id))
+                self.add_item(ChatMsgRangeButton(self.channel.id))
+                self.add_item(ChatBoostedRolesSelect(self.channel.id, self.settings_interaction))
+                self.add_item(ChatMaxCapButton(self.guild_id))
 
 
 class TabMinigamesButton(discord.ui.Button):
@@ -402,11 +414,33 @@ class TabChestsButton(discord.ui.Button):
         )
         channel = interaction.guild.get_channel(channel_id)
         settings = await get_channel_settings(interaction.client.pool, channel_id)
-        guild_config = await get_guild_chest_config(interaction.client.pool, interaction.guild.id)
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
         view._build()
         embed = build_chests_embed(channel, settings, guild_config)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class TabSigilsButton(discord.ui.Button):
+    def __init__(self, active: bool):
+        super().__init__(
+            label="Configure Sigils",
+            style=discord.ButtonStyle.primary if active else discord.ButtonStyle.secondary,
+            custom_id="tab_sigils",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
+        view = EventSettingsView(channel, settings, guild_config, settings_interaction=interaction)
+        view.active_tab = "sigils"
+        view._build()
+        embed = build_sigils_embed(channel, settings, guild_config)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -448,7 +482,7 @@ def build_chests_embed(channel, settings: dict, guild_config: dict = None) -> di
         streak_bonus = gc.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
         max_streak = gc.get("chests_max_streak_bonus", MORA_CHEST_MAX_STREAK_BONUS)
         base_upgrades = gc.get("chests_base_upgrade_chances", MORA_CHEST_UPGRADE_TIMES)
-        emotes = gc.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"])
+        emotes = gc.get("chests_emotes", _GUILD_SETTINGS_FALLBACK["chests_emotes"])
 
         desc += f"**Base Upgrade Chances:** `{base_upgrades}`\n"
         spawn_str = f"`{spawn_req[0]}`" if len(spawn_req) == 1 else f"`{spawn_req[0]}–{spawn_req[1]}`"
@@ -470,6 +504,43 @@ def build_chests_embed(channel, settings: dict, guild_config: dict = None) -> di
         title="📦 Chest Configuration",
         description=desc,
         color=discord.Color.gold(),
+    )
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    return embed
+
+
+def build_sigils_embed(channel, settings: dict, guild_config: dict = None) -> discord.Embed:
+    enabled = bool(settings.get("chat_enabled", False))
+    desc = f"**Channel:** {channel.mention}\n**Status:** {'Enabled' if enabled else 'Disabled'}"
+    if enabled:
+        gc = guild_config or {}
+        chat_range = settings.get("chat_range", list(DEFAULT_CHAT_RANGE))
+        chat_max_cap = gc.get("chat_max_cap", DEFAULT_CHAT_MAX_CAP)
+        boosted = settings.get("chat_boosted_roles", [])
+
+        range_str = f"`{chat_range[0]}`" if len(chat_range) == 1 else f"`{chat_range[0]}–{chat_range[1]}`"
+        desc += f"\n**Earning Range (per-channel):** {range_str} {SIGIL_EMOTE} per batch"
+        chat_msg_range = settings.get("chat_msg_range", list(DEFAULT_CHAT_MSG_RANGE))
+        msg_range_str = f"`{chat_msg_range[0]}`" if len(chat_msg_range) == 1 else f"`{chat_msg_range[0]}–{chat_msg_range[1]}`"
+        desc += f"\n**Messages per Batch (per-channel):** {msg_range_str}"
+        desc += f"\n**Max Daily Cap (server-wide):** {SIGIL_EMOTE} `{chat_max_cap}`\n"
+
+        boosted_list = boosted if isinstance(boosted, list) else []
+        if boosted_list:
+            desc += "\n**Boosted Roles (per-channel):**\n"
+            for entry in boosted_list:
+                if isinstance(entry, str) and ":" in entry:
+                    parts = entry.split(":", 1)
+                    rid = parts[0]
+                    bonus = parts[1]
+                    desc += f"{DOT_EMOTE} <@&{rid}>: `{bonus}`\n"
+                elif isinstance(entry, list) and len(entry) == 2:
+                    desc += f"{DOT_EMOTE} <@&{entry[0]}>: `{entry[1]}`\n"
+
+    embed = discord.Embed(
+        title=f"{SIGIL_EMOTE} Sigils Configuration",
+        description=desc,
+        color=discord.Color.purple(),
     )
     embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
     return embed
@@ -572,9 +643,9 @@ class ChestsToggleButton(discord.ui.Button):
         await upsert_channel_settings(interaction.client.pool, channel_id, chests_enabled=self.enable)
         cog = interaction.client.get_cog('TheEventItself')
         if cog:
-            await cog.cache.invalidate_channel(channel_id)
+            cog.cache.invalidate_channel(channel_id)
         settings = await get_channel_settings(interaction.client.pool, channel_id)
-        guild_config = await get_guild_chest_config(interaction.client.pool, interaction.guild.id)
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
         embed = build_chests_embed(channel, settings, guild_config)
         view = EventSettingsView(channel, settings, guild_config)
         view.active_tab = "chests"
@@ -588,7 +659,7 @@ class EditTierNamesButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = gc.get("chests_tier_names", MORA_CHEST_TIERS)
         await interaction.response.send_modal(ChestTierNamesModal(self.guild_id, list(current)))
 
@@ -599,7 +670,7 @@ class EditTierRewardsButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = gc.get("chests_tier_rewards", MORA_CHEST_REWARDS)
         await interaction.response.send_modal(ChestTierRewardsModal(self.guild_id, list(current)))
 
@@ -610,7 +681,7 @@ class EditUpgradeChancesButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = gc.get("chests_upgrade_chances", MORA_CHEST_UPGRADE_CHANCES)
         await interaction.response.send_modal(ChestUpgradeChancesModal(self.guild_id, [float(x) for x in (current or [])]))
 
@@ -621,7 +692,7 @@ class EditSpawnRangeButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = list(gc.get("chests_spawn_req", [4, 6]))
         await interaction.response.send_modal(ChestSpawnRangeModal(self.guild_id, current))
 
@@ -632,7 +703,7 @@ class EditStreakBonusButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = gc.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
         await interaction.response.send_modal(ChestStreakBonusModal(self.guild_id, current, "Streak bonus per day", "chests_streak_bonus"))
 
@@ -643,7 +714,7 @@ class EditMaxStreakBonusButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = gc.get("chests_max_streak_bonus", MORA_CHEST_MAX_STREAK_BONUS)
         await interaction.response.send_modal(ChestStreakBonusModal(self.guild_id, current, "Maximum streak bonus", "chests_max_streak_bonus"))
 
@@ -654,7 +725,7 @@ class EditBaseUpgradeButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
         current = gc.get("chests_base_upgrade_chances", MORA_CHEST_UPGRADE_TIMES)
         await interaction.response.send_modal(ChestBaseUpgradesModal(self.guild_id, current))
 
@@ -665,8 +736,8 @@ class EditChestEmotesButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
-        current = gc.get("chests_emotes", _GUILD_CHEST_FALLBACK["chests_emotes"])
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_emotes", _GUILD_SETTINGS_FALLBACK["chests_emotes"])
         await interaction.response.send_modal(ChestEmotesModal(self.guild_id, list(current)))
 
 
@@ -676,9 +747,284 @@ class EditChestIconsButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction):
-        gc = await get_guild_chest_config(interaction.client.pool, self.guild_id)
-        current = gc.get("chests_icons", _GUILD_CHEST_FALLBACK["chests_icons"])
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
+        current = gc.get("chests_icons", _GUILD_SETTINGS_FALLBACK["chests_icons"])
         await interaction.response.send_modal(ChestIconsModal(self.guild_id, list(current)))
+
+
+class ChatToggleButton(discord.ui.Button):
+    def __init__(self, enable: bool):
+        label = "Enable Sigils" if enable else "Disable Sigils"
+        style = discord.ButtonStyle.green if enable else discord.ButtonStyle.red
+        super().__init__(label=label, style=style)
+        self.enable = enable
+
+    async def callback(self, interaction: discord.Interaction):
+        channel_id = int(
+            interaction.message.embeds[0].description.split("<#")[1].split(">")[0].strip()
+        )
+        channel = interaction.guild.get_channel(channel_id)
+        await upsert_channel_settings(interaction.client.pool, channel_id, chat_enabled=self.enable)
+        settings = await get_channel_settings(interaction.client.pool, channel_id)
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
+        embed = build_sigils_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "sigils"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChatRangeModal(discord.ui.Modal, title="Sigil Earning Range"):
+    def __init__(self, channel_id: int, current: list):
+        super().__init__()
+        self.channel_id = channel_id
+        display = ", ".join(str(x) for x in current) if current else "19, 25"
+        self.add_item(discord.ui.TextInput(
+            label="Exact OR min, max (sigils per batch)",
+            style=discord.TextStyle.short,
+            placeholder="19, 25",
+            default=display,
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        parts = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
+        try:
+            vals = [int(x) for x in parts]
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer(s).", ephemeral=True)
+        if len(vals) not in (1, 2) or any(v < 1 for v in vals):
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide 1 (exact) or 2 (min, max) positive integers.", ephemeral=True)
+        await upsert_channel_settings(interaction.client.pool, self.channel_id, chat_range=vals)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
+        embed = build_sigils_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "sigils"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChatMsgRangeModal(discord.ui.Modal, title="Messages per Batch"):
+    def __init__(self, channel_id: int, current: list):
+        super().__init__()
+        self.channel_id = channel_id
+        display = ", ".join(str(x) for x in current) if current else "15, 20"
+        self.add_item(discord.ui.TextInput(
+            label="Exact OR min, max (messages per batch)",
+            style=discord.TextStyle.short,
+            placeholder="15, 20",
+            default=display,
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        parts = [x.strip() for x in self.children[0].value.split(",") if x.strip()]
+        try:
+            vals = [int(x) for x in parts]
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer(s).", ephemeral=True)
+        if len(vals) not in (1, 2) or any(v < 1 for v in vals):
+            return await interaction.response.send_message(f"{NO_EMOTE} Provide 1 (exact) or 2 (min, max) positive integers.", ephemeral=True)
+        await upsert_channel_settings(interaction.client.pool, self.channel_id, chat_msg_range=vals)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
+        embed = build_sigils_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "sigils"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class SetBoostModal(discord.ui.Modal, title="Set Role Boost"):
+    def __init__(self, channel_id: int, role_id: int, current_value: str = None,
+                 settings_interaction=None):
+        super().__init__()
+        self.channel_id = channel_id
+        self.role_id = role_id
+        self.settings_interaction = settings_interaction
+        self.add_item(discord.ui.TextInput(
+            label="Boost value (e.g. +20 adds, 80 sets cap)",
+            style=discord.TextStyle.short,
+            placeholder="+20 or 80",
+            default=current_value or "",
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        val = self.children[0].value.strip()
+        if not val:
+            return await interaction.response.send_message(f"{NO_EMOTE} Value cannot be empty.", ephemeral=True)
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        current = settings.get("chat_boosted_roles", [])
+        parsed = await parse_boosted_roles(current)
+        new_roles = [entry for entry in parsed if not (isinstance(entry, list) and len(entry) == 2 and entry[0] == self.role_id)]
+        new_roles.append([self.role_id, val])
+        serialized = await serialize_boosted_roles(new_roles)
+        await upsert_channel_settings(interaction.client.pool, self.channel_id, chat_boosted_roles=serialized)
+        channel = interaction.guild.get_channel(self.channel_id)
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        guild_config = await get_guild_settings(interaction.client.pool, channel.guild.id if channel else interaction.guild_id)
+        role = interaction.guild.get_role(self.role_id)
+        role_desc = f"**Selected:** {role.mention}\n**Current Boost:** `{val}`\n"
+        role_desc += "*(adds to daily cap)*" if val.startswith("+") else "*(sets daily cap to this value)*"
+        role_embed = discord.Embed(title="Role Boost", description=role_desc, color=role.color if role.color.value else discord.Color.purple())
+        role_view = ChatBoostRoleView(self.channel_id, self.role_id, self.settings_interaction)
+        await interaction.response.edit_message(embed=role_embed, view=role_view)
+        if self.settings_interaction:
+            settings_embed = build_sigils_embed(channel, settings, guild_config)
+            settings_view = EventSettingsView(channel, settings, guild_config, settings_interaction=self.settings_interaction)
+            settings_view.active_tab = "sigils"
+            settings_view._build()
+            await self.settings_interaction.edit_original_response(embed=settings_embed, view=settings_view)
+
+
+class ChatBoostRoleView(discord.ui.View):
+    def __init__(self, channel_id: int, role_id: int, settings_interaction):
+        super().__init__()
+        self.channel_id = channel_id
+        self.role_id = role_id
+        self.settings_interaction = settings_interaction
+
+    @discord.ui.button(label="Set Boost", style=discord.ButtonStyle.primary)
+    async def set_boost(self, interaction: discord.Interaction, button: discord.ui.Button):
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        current = settings.get("chat_boosted_roles", [])
+        parsed = await parse_boosted_roles(current)
+        existing = None
+        for entry in parsed:
+            if isinstance(entry, list) and len(entry) == 2 and entry[0] == self.role_id:
+                existing = entry[1]
+                break
+        await interaction.response.send_modal(SetBoostModal(
+            self.channel_id, self.role_id, existing, self.settings_interaction
+        ))
+
+    @discord.ui.button(label="Remove Boost", style=discord.ButtonStyle.danger)
+    async def remove_boost(self, interaction: discord.Interaction, button: discord.ui.Button):
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        current = settings.get("chat_boosted_roles", [])
+        parsed = await parse_boosted_roles(current)
+        new_roles = [entry for entry in parsed if not (isinstance(entry, list) and len(entry) == 2 and entry[0] == self.role_id)]
+        serialized = await serialize_boosted_roles(new_roles)
+        await upsert_channel_settings(interaction.client.pool, self.channel_id, chat_boosted_roles=serialized)
+        channel = interaction.guild.get_channel(self.channel_id)
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        guild_config = await get_guild_settings(interaction.client.pool, channel.guild.id if channel else interaction.guild_id)
+        role = interaction.guild.get_role(self.role_id)
+        await interaction.response.edit_message(
+            content=f"{YES_EMOTE} Boost for {role.mention} has been removed.",
+            embed=None, view=None
+        )
+        if self.settings_interaction:
+            settings_embed = build_sigils_embed(channel, settings, guild_config)
+            settings_view = EventSettingsView(channel, settings, guild_config, settings_interaction=self.settings_interaction)
+            settings_view.active_tab = "sigils"
+            settings_view._build()
+            await self.settings_interaction.edit_original_response(embed=settings_embed, view=settings_view)
+
+
+class ChatBoostedRolesSelect(discord.ui.RoleSelect):
+    def __init__(self, channel_id: int, settings_interaction=None):
+        super().__init__(placeholder="Select a role to boost...", min_values=1, max_values=1, row=1)
+        self.channel_id = channel_id
+        self.settings_interaction = settings_interaction
+
+    async def callback(self, interaction: discord.Interaction):
+        role = self.values[0]
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        current = settings.get("chat_boosted_roles", [])
+        parsed = await parse_boosted_roles(current)
+
+        existing = None
+        for entry in parsed:
+            if isinstance(entry, list) and len(entry) == 2 and entry[0] == role.id:
+                existing = entry[1]
+                break
+
+        desc = f"**Selected:** {role.mention}\n"
+        if existing:
+            desc += f"**Current Boost:** `{existing}`\n"
+            if existing.startswith("+"):
+                desc += "*(adds to daily cap)*"
+            else:
+                desc += "*(sets daily cap to this value)*"
+        else:
+            desc += "No boost set for this role yet."
+
+        embed = discord.Embed(
+            title="Role Boost",
+            description=desc,
+            color=role.color if role.color.value else discord.Color.purple()
+        )
+
+        view = ChatBoostRoleView(self.channel_id, role.id, self.settings_interaction)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class ChatMaxCapModal(discord.ui.Modal, title="Max Daily Sigils"):
+    def __init__(self, guild_id: int, current: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.add_item(discord.ui.TextInput(
+            label="Maximum daily sigils (server-wide)",
+            style=discord.TextStyle.short,
+            placeholder=str(current),
+            default=str(current),
+            required=True,
+        ))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            val = int(self.children[0].value)
+        except ValueError:
+            return await interaction.response.send_message(f"{NO_EMOTE} Invalid integer.", ephemeral=True)
+        if val < 1:
+            return await interaction.response.send_message(f"{NO_EMOTE} Must be at least 1.", ephemeral=True)
+        await upsert_guild_settings(interaction.client.pool, self.guild_id, chat_max_cap=val)
+        channel = interaction.guild.get_channel(parse_channel_id(interaction))
+        settings = await get_channel_settings(interaction.client.pool, parse_channel_id(interaction))
+        guild_config = await get_guild_settings(interaction.client.pool, self.guild_id)
+        embed = build_sigils_embed(channel, settings, guild_config)
+        view = EventSettingsView(channel, settings, guild_config)
+        view.active_tab = "sigils"
+        view._build()
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ChatRangeButton(discord.ui.Button):
+    def __init__(self, channel_id: int):
+        super().__init__(label="Earning Range", style=discord.ButtonStyle.secondary, emoji=SIGIL_EMOTE, row=2)
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction):
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        current = list(settings.get("chat_range", [19, 25]))
+        await interaction.response.send_modal(ChatRangeModal(self.channel_id, current))
+
+
+class ChatMsgRangeButton(discord.ui.Button):
+    def __init__(self, channel_id: int):
+        super().__init__(label="Messages per Batch", style=discord.ButtonStyle.secondary, emoji="💬", row=2)
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction):
+        settings = await get_channel_settings(interaction.client.pool, self.channel_id)
+        current = list(settings.get("chat_msg_range", [15, 20]))
+        await interaction.response.send_modal(ChatMsgRangeModal(self.channel_id, current))
+
+
+class ChatMaxCapButton(discord.ui.Button):
+    def __init__(self, guild_id: int):
+        super().__init__(label="Max Daily Cap (Server)", style=discord.ButtonStyle.secondary, emoji="📊", row=2)
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        gc = await get_guild_settings(interaction.client.pool, self.guild_id)
+        current = gc.get("chat_max_cap", DEFAULT_CHAT_MAX_CAP)
+        await interaction.response.send_modal(ChatMaxCapModal(self.guild_id, current))
 
 
 @app_commands.guild_only()
@@ -702,10 +1048,12 @@ class EventSystem(commands.GroupCog, name="events"):
             channel = interaction.channel
 
         await ensure_minigame_settings_table(interaction.client.pool)
-        await ensure_minigame_guild_chest_settings_table(interaction.client.pool)
+        await ensure_minigame_guild_settings_table(interaction.client.pool)
+        await ensure_minigame_sigils_table(interaction.client.pool)
         settings = await get_channel_settings(interaction.client.pool, channel.id)
+        guild_config = await get_guild_settings(interaction.client.pool, interaction.guild.id)
         embed = build_minigames_embed(channel, settings)
-        view = EventSettingsView(channel, settings)
+        view = EventSettingsView(channel, settings, guild_config, settings_interaction=interaction)
         view.active_tab = "minigames"
         view._build()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
