@@ -85,17 +85,8 @@ class BasePaginationView(View):
                     child.disabled = is_last_page or is_single_page
 
     async def on_timeout(self) -> None:
-        for child in self.children:
-            if isinstance(child, Button) and child.style == discord.ButtonStyle.link:
-                continue
-            child.disabled = True
-            if isinstance(child, Select):
-                child.add_option(
-                    label="Disabled due to timeout",
-                    value="X",
-                    emoji=NO_EMOJI,
-                    default=True,
-                )
+        self.clear_items()
+        self.add_item(Button(label="Timed out", style=discord.ButtonStyle.grey, disabled=True))
 
         try:
             if self.message:

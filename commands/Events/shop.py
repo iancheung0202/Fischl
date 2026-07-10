@@ -1,20 +1,37 @@
 import discord
-import time
 
 from discord import app_commands
 from discord.ext import commands
 
-from commands.Events.helperFunctions import addMora, get_shop_items, set_shop_items, process_pending_stock_edits, update_shop_item_cost, update_shop_item_stock_by_name, add_shop_item, remove_shop_item_by_name, add_pending_edit, get_pending_shop_edits
+from commands.Events.helperFunctions import get_shop_items, get_shop_item_by_name, process_pending_stock_edits, update_shop_item_cost, update_shop_item_stock_by_name, add_shop_item, remove_shop_item_by_name, update_shop_item_field, add_pending_edit
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, REPLY_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS
+from commands.Events.config import NO_EMOTE, REPLY_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, SHOP_CURRENCY_FILTERS, CURRENCY_INFO, YES_EMOTE, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
+
+def get_currency_display(currency_type: str) -> str:
+    info = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])
+    return f"{info['emoji']}"
+
+def parse_cost(cost_str: str) -> int:
+    multiplier_map = {"k": 10**3, "m": 10**6, "b": 10**9, "t": 10**12}
+    cost_lower = cost_str.lower().strip()
+    if cost_lower[-1] in multiplier_map:
+        return int(float(cost_lower[:-1]) * multiplier_map[cost_lower[-1]])
+    return int(float(cost_lower))
 
 async def get_shop_embeds(
-    interaction, item_list, empty_condition, sort_by="cost", reverse=True
+    interaction, item_list, empty_condition, sort_by="cost", reverse=True, currency_filter="all"
 ):
     if empty_condition:
-        return [discord.Embed(title="This server has no purchasable items.")]
+        return [discord.Embed(title="This server has no purchasable items.")], []
+
+    if currency_filter != "all":
+        filtered = [item for item in item_list if len(item) > 5 and item[5] == currency_filter]
+        if not filtered:
+            currency_display = get_currency_display(currency_filter)
+            return [discord.Embed(title=f"No items found costing {currency_display}.")], []
+        item_list = filtered
 
     sort_index = {"cost": 2, "name": 0}
 
@@ -22,9 +39,9 @@ async def get_shop_embeds(
         if sort_by == "cost":
             return int(x[sort_index[sort_by]])
         else:
-            if isinstance(x[0], int) or x[0].isdigit():  # Check if it's a role ID
+            if isinstance(x[0], int) or x[0].isdigit():
                 role = interaction.guild.get_role(int(x[0]))
-                return role.name.lower() if role else ""  # Use role name for sorting
+                return role.name.lower() if role else ""
             return str(x[sort_index[sort_by]]).lower()
 
     order_text = "Descending" if reverse else "Ascending"
@@ -35,8 +52,7 @@ async def get_shop_embeds(
     embed = discord.Embed(
         title=f"{interaction.guild.name}'s Server Shop",
         description=(
-            f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-            f"{REPLY_EMOTE} *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
+            f"{REPLY_EMOTE} *To check your balances and inventory, use {SlashCommand('mora')}.*\n"
             f"{REPLY_EMOTE} *To purchase an item, use {SlashCommand('buy')}.*\n"
             f"{REPLY_EMOTE} *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
         ),
@@ -45,39 +61,70 @@ async def get_shop_embeds(
 
     for i, item in enumerate(sorted_items):
         count = i + 1
+        currency_type = item[5] if len(item) > 5 else "guild_mora"
+        currency_display = get_currency_display(currency_type)
         emote = f"{NO_STOCK_EMOTE} " if item[4] == 0 else ''
         stock_count = f"\n> **Remaining:** {emote}`{item[4]}`" if item[4] != -1 else None
+
         if isinstance(item[0], int) or item[0].isdigit():
             role = interaction.guild.get_role(int(item[0]))
             embed.add_field(
-                name=f"{count}ㅤ {MORA_EMOTE} {int(item[2]):,} • {role.name if role else 'Unknown Role'} {'🔄' if (len(item) > 3 and item[3]) else ''}",
+                name=f"{count}ㅤ {currency_display} {int(item[2]):,} • {role.name if role else 'Unknown Role'} {'🔄' if (len(item) > 3 and item[3]) else ''}",
                 value=f"> **Role:** {role.mention if role else 'N/A'}\n> **Description:** {item[1]}{stock_count if stock_count is not None else ''}",
                 inline=False,
             )
         else:
             embed.add_field(
-                name=f"{count}ㅤ {MORA_EMOTE} {int(item[2]):,} • {item[0]} {'🔄' if (len(item) > 3 and item[3]) else ''}",
+                name=f"{count}ㅤ {currency_display} {int(item[2]):,} • {item[0]} {'🔄' if (len(item) > 3 and item[3]) else ''}",
                 value=f"> **Description:** {item[1]}{stock_count if stock_count is not None else ''}",
                 inline=False,
             )
-            
+
         if (i + 1) % 5 == 0 or (i + 1) == len(sorted_items):
-            embed.set_footer(
-                text=f"Sorted by {sort_text} in {order_text} order"
-            )
+            embed.set_footer(text=f"Sorted by {sort_text} in {order_text} order")
             pages.append(embed)
             embed = discord.Embed(
                 title=f"{interaction.guild.name}'s Server Shop",
                 description=(
-                    f"You can use {MORA_EMOTE} earned in {interaction.guild.name} to purchase these items.\n"
-                    f"{REPLY_EMOTE} *To check your {MORA_EMOTE} balance and inventory, use {SlashCommand('mora')}.*\n"
+                    f"{REPLY_EMOTE} *To check your balances and inventory, use {SlashCommand('mora')}.*\n"
                     f"{REPLY_EMOTE} *To purchase an item, use {SlashCommand('buy')}.*\n"
                     f"{REPLY_EMOTE} *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
                 ),
                 color=discord.Color.gold(),
             )
 
-    return pages
+    return pages, sorted_items
+
+def build_reward_detail_embed(item, guild=None):
+    currency_type = item[5] if len(item) > 5 else "guild_mora"
+    currency_display = get_currency_display(currency_type)
+    description_text = f"> **Description:** {item[1] if item[1] else 'No description provided.'}"
+    stock_display = "`Unlimited`" if item[4] == -1 else f"`{item[4]}`"
+    multiple_display = "Yes 🔄" if item[3] else "No"
+
+    pending_change = item[6] if len(item) > 6 else None
+    pending_time = item[7] if len(item) > 7 else None
+    if pending_change is not None and pending_time is not None:
+        stock_display += f"\n⏰ Scheduled: `{pending_change}` <t:{int(pending_time)}:R>"
+
+    title_name = item[0]
+    if isinstance(item[0], int) or str(item[0]).isdigit():
+        if guild:
+            role_obj = guild.get_role(int(item[0]))
+            if role_obj:
+                title_name = role_obj.name
+                description_text = f"> **Role:** {role_obj.mention}\n> **Description:** {description_text}"
+
+    embed = discord.Embed(
+        title=f"Reward: {title_name}",
+        description=description_text,
+        color=discord.Color.gold(),
+    )
+    embed.add_field(name="Cost", value=f"{currency_display} `{int(item[2]):,}`", inline=True)
+    embed.add_field(name="Stock", value=f"{stock_display}", inline=True)
+    embed.add_field(name="Multiple Purchases", value=multiple_display, inline=True)
+    return embed
+
 
 class SortSelection(BaseSortSelect):
     def __init__(self, default="sort by cost (high to low)", initial_author=None):
@@ -85,519 +132,465 @@ class SortSelection(BaseSortSelect):
 
     async def callback(self, interaction: discord.Interaction):
         originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
-
-        if interaction.data["values"][0] == "sort by cost (low to high)":
-            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=False)
-        elif interaction.data["values"][0] == "sort by cost (high to low)":
-            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=True)
-        elif interaction.data["values"][0] == "sort by name (a-z)":
-            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="name", reverse=False)
-        elif interaction.data["values"][0] == "sort by name (z-a)":
-            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="name", reverse=True)
+        currency_filter = getattr(self.view, "currency_filter", "all")
+        sort_val = interaction.data["values"][0]
+        if sort_val == "sort by cost (low to high)":
+            pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=False, currency_filter=currency_filter)
+        elif sort_val == "sort by cost (high to low)":
+            pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=True, currency_filter=currency_filter)
+        elif sort_val == "sort by name (a-z)":
+            pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="name", reverse=False, currency_filter=currency_filter)
+        elif sort_val == "sort by name (z-a)":
+            pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="name", reverse=True, currency_filter=currency_filter)
         else:
-            pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
+            pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, currency_filter=currency_filter)
 
-        view = ShopView(default=interaction.data["values"][0], pages=pages, initial_author=self.initial_author, is_admin=interaction.user.guild_permissions.administrator)
+        view = ShopView(pages=pages, items=items, default=sort_val, initial_author=self.initial_author, is_admin=interaction.user.guild_permissions.administrator, currency_filter=currency_filter, guild_id=interaction.guild.id, pool=interaction.client.pool, guild=interaction.guild)
         view.message = await interaction.response.edit_message(embed=pages[0], view=view)
 
 
+class CurrencyFilterSelect(discord.ui.Select):
+    def __init__(self, current_filter="all", initial_author=None):
+        self.initial_author = initial_author
+        options = []
+        for label, emoji in SHOP_CURRENCY_FILTERS:
+            filter_key = "all"
+            if label != "All currencies":
+                filter_key = {"Guild Mora": "guild_mora", "Global Mora": "global_mora", "Guild Sigils": "guild_sigils", "Global Sigils": "global_sigils"}.get(label, "all")
+            is_default = (current_filter == filter_key)
+            options.append(
+                discord.SelectOption(label=label, emoji=emoji, default=is_default)
+            )
+        super().__init__(placeholder="Filter by currency...", max_values=1, min_values=1, options=options, custom_id="currencyfilter")
+
+    async def callback(self, interaction: discord.Interaction):
+        label = self.values[0]
+        filter_map = {
+            "All currencies": "all",
+            "Guild Mora": "guild_mora",
+            "Global Mora": "global_mora",
+            "Guild Sigils": "guild_sigils",
+            "Global Sigils": "global_sigils",
+        }
+        new_filter = filter_map.get(label, "all")
+        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
+        pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, currency_filter=new_filter)
+        view = ShopView(pages=pages, items=items, default="sort by cost (high to low)", initial_author=self.initial_author, is_admin=interaction.user.guild_permissions.administrator, currency_filter=new_filter, guild_id=interaction.guild.id, pool=interaction.client.pool, guild=interaction.guild)
+        view.message = await interaction.response.edit_message(embed=pages[0], view=view)
+
+
+class ShopItemSelect(discord.ui.Select):
+    def __init__(self, items_page, all_items, guild_id, pool, initial_author, current_page=0, guild=None):
+        self.initial_author = initial_author
+        self.all_items = all_items
+        self.guild_id = guild_id
+        self.pool = pool
+        self.current_page = current_page
+        options = []
+        for item in items_page:
+            display = item[0]
+            if isinstance(display, int) or str(display).isdigit():
+                role = guild.get_role(int(display)) if guild else None
+                display = role.name if role else "Unknown Role"
+            if len(str(display)) > 90:
+                display = str(display)[:87] + "..."
+            currency_type = item[5] if len(item) > 5 else "guild_mora"
+            currency_emoji = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])["emoji"]
+            cost = int(item[2])
+            options.append(
+                discord.SelectOption(
+                    label=f"{cost:,} • {display}",
+                    description=f"Stock: {'∞' if item[4] == -1 else item[4]}",
+                    emoji=currency_emoji,
+                    value=str(item[0]),
+                )
+            )
+        placeholder = f"Select an item to edit (page {current_page+1})..."
+        super().__init__(placeholder=placeholder, max_values=1, min_values=1, options=options, row=3)
+
+    async def callback(self, interaction: discord.Interaction):
+        item_name = self.values[0]
+        item = await get_shop_item_by_name(self.pool, self.guild_id, item_name)
+        if not item:
+            return await interaction.response.send_message(f"{NO_EMOTE} Item not found.", ephemeral=True)
+        embed = build_reward_detail_embed(item, guild=interaction.guild)
+        view = RewardDetailView(item, self.all_items, self.guild_id, self.pool, 0, initial_author=self.initial_author, parent_message=interaction.message)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
 class ShopView(BasePaginationView):
-    def __init__(self, pages=None, initial_author=None, default="sort by cost (high to low)", is_admin=False, *, timeout=300):
+    def __init__(self, pages=None, items=None, initial_author=None, default="sort by cost (high to low)", is_admin=False, currency_filter="all", guild_id=None, pool=None, guild=None, *, timeout=300):
         self.is_admin = is_admin
+        self.currency_filter = currency_filter
+        self.guild_id = guild_id
+        self.pool = pool
+        self.guild = guild
+        self.items = items or []
         super().__init__(pages=pages, initial_author=initial_author, timeout=timeout)
         self.add_item(SortSelection(default, initial_author))
+        self.add_item(CurrencyFilterSelect(currency_filter, initial_author))
 
     def _update_button_states(self) -> None:
         super()._update_button_states()
-        
-        if not self.is_admin:
-            admin_buttons = ("addreward", "removereward", "editcost", "editstock")
-            for child in list(self.children):
-                if isinstance(child, discord.ui.Button) and child.custom_id in admin_buttons:
-                    self.remove_item(child)
-
-    @discord.ui.button(
-        label="Add Reward",
-        style=discord.ButtonStyle.green,
-        custom_id="addreward",
-        row=1,
-    )
-    async def add_reward(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        addRewardModel = AddRewardModel(title=f"Add a Custom Reward")
-        if interaction.user.guild_permissions.administrator:
-            await interaction.response.send_modal(addRewardModel)
-            response = await addRewardModel.wait()
-            pages = addRewardModel.pages
-            if pages is not None:
-                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await addRewardModel.on_submit_interaction.response.send_message(
-                embed=addRewardModel.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
-            )
-
-    @discord.ui.button(
-        label="Remove Reward",
-        style=discord.ButtonStyle.red,
-        custom_id="removereward",
-        row=1,
-    )
-    async def remove_reward(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        removeRewardModel = RemoveRewardModel(title=f"Remove a Custom Reward")
-        if interaction.user.guild_permissions.administrator:
-            await interaction.response.send_modal(removeRewardModel)
-            response = await removeRewardModel.wait()
-            pages = removeRewardModel.pages
-            if pages is not None:
-                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await removeRewardModel.on_submit_interaction.response.send_message(
-                embed=removeRewardModel.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
-            )
-
-    @discord.ui.button(
-        label="Edit Cost",
-        style=discord.ButtonStyle.grey,
-        custom_id="editcost",
-        row=1,
-    )
-    async def edit_cost(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.guild_permissions.administrator:
-            edit_cost_model = EditCostModel()
-            await interaction.response.send_modal(edit_cost_model)
-            response = await edit_cost_model.wait()
-            pages = edit_cost_model.pages
-            if pages is not None:
-                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await edit_cost_model.on_submit_interaction.response.send_message(
-                embed=edit_cost_model.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
-            )
-        
-    @discord.ui.button(
-        label="Edit Stock",
-        style=discord.ButtonStyle.grey,
-        custom_id="editstock",
-        row=1,
-    )
-    async def edit_stock(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.guild_permissions.administrator:
-            edit_stock_model = EditStockModel()
-            await interaction.response.send_modal(edit_stock_model)
-            response = await edit_stock_model.wait()
-            pages = edit_stock_model.pages
-            if pages is not None:
-                view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
-                view.message = await interaction.edit_original_response(embed=pages[0], view=view)
-            await edit_stock_model.on_submit_interaction.response.send_message(
-                embed=edit_stock_model.update, ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"{NO_EMOTE} You are missing `Administrator` permissions.", ephemeral=True
-            )
+        to_remove = []
+        for child in self.children:
+            if isinstance(child, ShopItemSelect) or (isinstance(child, discord.ui.Button) and child.label == "Add Reward"):
+                to_remove.append(child)
+        for child in to_remove:
+            self.remove_item(child)
+        if self.is_admin:
+            start = self.page * 5
+            end = start + 5
+            page_items = self.items[start:end]
+            if page_items:
+                self.add_item(ShopItemSelect(page_items, self.items, self.guild_id, self.pool, self.initial_author, current_page=self.page, guild=self.guild))
+            self.add_item(ShopAddRewardButton(self.guild_id, self.pool, self.initial_author, self.items))
 
 
-class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
-    name = discord.ui.TextInput(
-        label="Role ID / Reward Title",
-        style=discord.TextStyle.short,
-        placeholder="Pick one or the other to add",
-        required=True,
-        max_length=50,
-    )
-    desc = discord.ui.TextInput(
-        label="Description / Perk",
-        style=discord.TextStyle.short,
-        placeholder="Enter a short description of the reward",
-        required=True,
-        max_length=150,
-    )
-    cost = discord.ui.TextInput(
-        label="Cost of Reward",
-        style=discord.TextStyle.short,
-        placeholder="Must be a reasonable integer",
-        required=True,
-        max_length=10,
-    )
-    multiple = discord.ui.TextInput(
-        label="Enable multiple purchases? (Titles only)",
-        style=discord.TextStyle.short,
-        placeholder="Enter 'yes' or 'no'",
-        required=False,
-        max_length=3,
-    )
-    stock = discord.ui.TextInput(
-        label="Stock Count (optional)",
-        style=discord.TextStyle.short,
-        placeholder="Leave blank for unlimited.",
-        required=False,
-        max_length=10,
-    )
+class ShopAddRewardButton(discord.ui.Button):
+    def __init__(self, guild_id, pool, initial_author=None, items=None):
+        super().__init__(label="Add Reward", style=discord.ButtonStyle.green, row=0)
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.items = items or []
+
+    async def callback(self, interaction: discord.Interaction):
+        import time
+        temp_name = f"_new_{int(time.time())}"
+        await add_shop_item(self.pool, self.guild_id, temp_name, "", "0", False, -1, "guild_mora")
+        item = await get_shop_item_by_name(self.pool, self.guild_id, temp_name)
+        if not item:
+            return await interaction.response.send_message(f"{NO_EMOTE} Failed to create reward.", ephemeral=True)
+        items = await get_shop_items(self.pool, self.guild_id)
+        embed = build_reward_detail_embed(item, guild=interaction.guild)
+        view = RewardDetailView(item, items, self.guild_id, self.pool, 0, initial_author=self.initial_author, parent_message=interaction.message)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class RewardDetailView(discord.ui.View):
+    def __init__(self, item, all_items, guild_id, pool, item_index, initial_author=None, parent_message=None, *, timeout=300):
+        super().__init__(timeout=timeout)
+        self.item = item
+        self.all_items = all_items
+        self.guild_id = guild_id
+        self.pool = pool
+        self.item_index = item_index
+        self.initial_author = initial_author
+        self.parent_message = parent_message
+        self._build()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if self.initial_author and self.initial_author != interaction.user:
+            await interaction.response.send_message(f"{NO_EMOTE} You are not the author of this command", ephemeral=True)
+            return False
+        return True
+
+    def _build(self):
+        self.clear_items()
+        item = self.item
+        self.add_item(EditFieldButton("Edit Name", "name", str(item[0]), "Role ID / Reward Title", self.guild_id, self.pool, self.initial_author, max_length=50, row=0, item_name=str(item[0])))
+        self.add_item(EditFieldButton("Edit Description", "description", str(item[1]), "Description / Perk", self.guild_id, self.pool, self.initial_author, max_length=150, row=0, item_name=str(item[0])))
+        self.add_item(EditFieldButton("Edit Cost", "cost", str(item[2]), "Cost of Reward", self.guild_id, self.pool, self.initial_author, max_length=10, row=0, item_name=str(item[0])))
+        self.add_item(ShopItemCurrencySelect(self.guild_id, self.pool, self.initial_author, self.item, row=1))
+        self.add_item(ToggleMultipleButton(self.guild_id, self.pool, self.initial_author, row=2, item_name=str(item[0])))
+        self.add_item(EditFieldButton("Edit Stock", "stock", str(item[4]) if item[4] != -1 else "", "Stock Value", self.guild_id, self.pool, self.initial_author, max_length=20, required=False, row=2, item_name=str(item[0])))
+        self.add_item(DeleteRewardButton(self.guild_id, self.pool, self.initial_author, row=2, item_name=str(item[0])))
+        self.add_item(BackToShopButton(self.guild_id, self.pool, self.initial_author, row=2, item_name=str(item[0])))
+
+    async def refresh(self, interaction):
+        updated = await get_shop_item_by_name(self.pool, self.guild_id, self.item[0])
+        if updated:
+            self.item = updated
+        self.all_items = await get_shop_items(self.pool, self.guild_id)
+        self.item_index = next((i for i, it in enumerate(self.all_items) if it[0] == self.item[0]), 0)
+        embed = build_reward_detail_embed(self.item, guild=interaction.guild)
+        self._build()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def on_timeout(self):
+        self.clear_items()
+        self.add_item(discord.ui.Button(label="Expired", style=discord.ButtonStyle.grey, emoji="<a:clock:1382887924273774754>", disabled=True))
+        try:
+            if self.parent_message:
+                await self.parent_message.edit(view=self)
+        except discord.NotFound:
+            pass
+
+
+class ShopItemCurrencySelect(discord.ui.Select):
+    def __init__(self, guild_id, pool, initial_author, item, row=1):
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.item_name = str(item[0])
+        current_currency = item[5] if len(item) > 5 else "guild_mora"
+        currency_options = [
+            discord.SelectOption(label="Guild Mora", value="guild_mora", emoji=GUILD_MORA_EMOTE, default=(current_currency == "guild_mora")),
+            discord.SelectOption(label="Global Mora", value="global_mora", emoji=GLOBAL_MORA_EMOTE, default=(current_currency == "global_mora")),
+            discord.SelectOption(label="Guild Sigils", value="guild_sigils", emoji=GUILD_SIGIL_EMOTE, default=(current_currency == "guild_sigils")),
+            discord.SelectOption(label="Global Sigils", value="global_sigils", emoji=GLOBAL_SIGIL_EMOTE, default=(current_currency == "global_sigils")),
+        ]
+        super().__init__(placeholder="Select a currency...", max_values=1, min_values=1, options=currency_options, row=row)
+
+    async def callback(self, interaction: discord.Interaction):
+        new_currency = self.values[0]
+        await update_shop_item_field(self.pool, self.guild_id, self.item_name, "currency_type", new_currency)
+        updated_item = await get_shop_item_by_name(self.pool, self.guild_id, self.item_name)
+        if updated_item:
+            items = await get_shop_items(self.pool, self.guild_id)
+            embed = build_reward_detail_embed(updated_item, guild=interaction.guild)
+            view = RewardDetailView(updated_item, items, self.guild_id, self.pool, 0, initial_author=self.initial_author)
+            await interaction.response.edit_message(embed=embed, view=view)
+
+
+class EditFieldButton(discord.ui.Button):
+    def __init__(self, label, field_name, current_value, field_label, guild_id, pool, initial_author, max_length=50, required=True, row=0, item_name=None):
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, row=row)
+        self.field_name = field_name
+        self.current_value = current_value
+        self.field_label = field_label
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.edit_max_length = max_length
+        self.edit_required = required
+        self.item_name = item_name or current_value
+
+    async def callback(self, interaction: discord.Interaction):
+        modal = EditFieldModal(self.field_name, self.current_value, self.field_label, self.guild_id, self.pool, self.initial_author, self.edit_max_length, self.edit_required, self.item_name)
+        await interaction.response.send_modal(modal)
+
+
+class EditFieldModal(discord.ui.Modal):
+    def __init__(self, field_name, current_value, field_label, guild_id, pool, initial_author, max_length=50, required=True, item_name=None):
+        title_map = {
+            "name": "Edit Name",
+            "description": "Edit Description",
+            "cost": "Edit Cost",
+            "stock": "Edit Stock",
+        }
+        modal_title = title_map.get(field_name, f"Edit {field_name.capitalize()}")
+        super().__init__(title=modal_title)
+        self.field_name = field_name
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.item_name = item_name
+        self.input = discord.ui.TextInput(
+            label=field_label,
+            style=discord.TextStyle.short,
+            placeholder=current_value or "Enter new value",
+            required=required,
+            max_length=max_length,
+            default=str(current_value) if current_value else "",
+        )
+        self.add_item(self.input)
+        self.time_input = None
+        if field_name == "stock":
+            self.time_input = discord.ui.TextInput(
+                label="Schedule Unix Timestamp (optional)",
+                style=discord.TextStyle.short,
+                placeholder="Leave blank to apply immediately",
+                required=False,
+                max_length=15,
+            )
+            self.add_item(self.time_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
+        new_value = str(self.input.value).strip()
+        old_name = self.item_name
 
-        duplicate = False
-        for item in originalList:
-            if item[0] == str(self.name):
-                duplicate = True
+        if self.field_name == "cost":
+            try:
+                parsed = parse_cost(new_value)
+                if parsed <= 0:
+                    raise ValueError
+                new_value = str(parsed)
+            except (ValueError, IndexError):
+                return await interaction.response.send_message(
+                    embed=discord.Embed(description=f"{NO_EMOTE} Cost must be a valid positive integer.", color=discord.Color.red()),
+                    ephemeral=True
+                )
+        elif self.field_name == "stock":
+            stock_part = new_value
+            timestamp_str = str(self.time_input.value).strip() if self.time_input else ""
 
-        multiplier_map = {"k": 10**3, "m": 10**6, "b": 10**9, "t": 10**12}
-        cost_lower = str(self.cost).lower()
-        self.cost = int(
-            float(str(self.cost)[:-1]) * multiplier_map.get(cost_lower[-1], 1)
-            if cost_lower[-1] in multiplier_map
-            else float(str(self.cost))
+            if stock_part == "" or stock_part == "-1":
+                stock_val = -1
+            else:
+                try:
+                    sv = int(stock_part)
+                    if sv < -1:
+                        raise ValueError
+                    stock_val = sv
+                except ValueError:
+                    return await interaction.response.send_message(
+                        embed=discord.Embed(description=f"{NO_EMOTE} Stock must be -1 (unlimited) or a non-negative integer.", color=discord.Color.red()),
+                        ephemeral=True
+                    )
+
+            if timestamp_str:
+                try:
+                    scheduled_ts = int(timestamp_str)
+                    await add_pending_edit(self.pool, self.guild_id, old_name, stock_part, scheduled_ts)
+                except (ValueError, IndexError):
+                    return await interaction.response.send_message(
+                        embed=discord.Embed(description=f"{NO_EMOTE} Invalid timestamp. Provide a valid Unix timestamp.", color=discord.Color.red()),
+                        ephemeral=True
+                    )
+            else:
+                await update_shop_item_stock_by_name(self.pool, self.guild_id, old_name, stock_val)
+
+            lookup_name = old_name
+            updated_item = await get_shop_item_by_name(self.pool, self.guild_id, lookup_name)
+            if updated_item:
+                items = await get_shop_items(self.pool, self.guild_id)
+                embed = build_reward_detail_embed(updated_item, guild=interaction.guild)
+                view = RewardDetailView(updated_item, items, self.guild_id, self.pool, 0, initial_author=self.initial_author)
+                await interaction.response.edit_message(embed=embed, view=view)
+            return
+        elif self.field_name == "name":
+            if not new_value:
+                return await interaction.response.send_message(
+                    embed=discord.Embed(description=f"{NO_EMOTE} Name cannot be empty.", color=discord.Color.red()),
+                    ephemeral=True
+                )
+
+        if self.field_name == "cost":
+            await update_shop_item_cost(self.pool, self.guild_id, old_name, new_value)
+        elif self.field_name != "stock":
+            await update_shop_item_field(self.pool, self.guild_id, old_name, self.field_name, new_value)
+
+        lookup_name = new_value if self.field_name == "name" else old_name
+        updated_item = await get_shop_item_by_name(self.pool, self.guild_id, lookup_name)
+        if updated_item:
+            items = await get_shop_items(self.pool, self.guild_id)
+            embed = build_reward_detail_embed(updated_item, guild=interaction.guild)
+            view = RewardDetailView(updated_item, items, self.guild_id, self.pool, 0, initial_author=self.initial_author)
+            await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ToggleMultipleButton(discord.ui.Button):
+    def __init__(self, guild_id, pool, initial_author, row=1, item_name=None):
+        super().__init__(label="Toggle Allow Multiple", style=discord.ButtonStyle.secondary, row=row)
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.item_name = item_name
+
+    async def callback(self, interaction: discord.Interaction):
+        name_to_update = self.item_name or interaction.message.embeds[0].title.replace("Reward: ", "")
+        current_raw = await get_shop_item_by_name(self.pool, self.guild_id, name_to_update)
+        if not current_raw:
+            return await interaction.response.send_message(f"{NO_EMOTE} Reward not found.", ephemeral=True)
+        new_val = not current_raw[3]
+        await update_shop_item_field(self.pool, self.guild_id, name_to_update, "multiple", new_val)
+        updated_item = await get_shop_item_by_name(self.pool, self.guild_id, name_to_update)
+        if updated_item:
+            items = await get_shop_items(self.pool, self.guild_id)
+            embed = build_reward_detail_embed(updated_item, guild=interaction.guild)
+            view = RewardDetailView(updated_item, items, self.guild_id, self.pool, 0, initial_author=self.initial_author)
+            await interaction.response.edit_message(embed=embed, view=view)
+
+
+class DeleteRewardButton(discord.ui.Button):
+    def __init__(self, guild_id, pool, initial_author, row=2, item_name=None):
+        super().__init__(label="Delete Reward", style=discord.ButtonStyle.danger, row=row)
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.item_name = item_name
+
+    async def callback(self, interaction: discord.Interaction):
+        name_to_update = self.item_name or interaction.message.embeds[0].title.replace("Reward: ", "")
+        view = ConfirmDeleteView(name_to_update, self.guild_id, self.pool, self.initial_author, parent_message=interaction.message)
+        await interaction.response.send_message(
+            embed=discord.Embed(description=f"Are you sure you want to delete **{name_to_update}**? This cannot be undone.", color=discord.Color.red()),
+            view=view,
+            ephemeral=True
         )
 
-        costNotInteger = False
-        if not (str(self.cost).isdigit()):
-            duplicate = True
-            costNotInteger = True
 
-        if str(self.multiple).lower() == "yes":
-            multiple = True
-        else:
-            multiple = False
-            
-        stock_val = -1
-        if self.stock.value.strip() != "":
+class ConfirmDeleteView(discord.ui.View):
+    def __init__(self, item_name, guild_id, pool, initial_author, parent_message=None):
+        super().__init__(timeout=30)
+        self.item_name = item_name
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.parent_message = parent_message
+
+    @discord.ui.button(label="Yes", style=discord.ButtonStyle.danger)
+    async def confirm_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await remove_shop_item_by_name(self.pool, self.guild_id, self.item_name)
+        items = await get_shop_items(self.pool, self.guild_id)
+        pages, sorted_items = await get_shop_embeds(interaction, items, len(items) == 0)
+        is_admin = interaction.user.guild_permissions.administrator
+        view = ShopView(pages=pages, items=sorted_items, initial_author=self.initial_author, is_admin=is_admin, guild_id=self.guild_id, pool=self.pool, guild=interaction.guild)
+        await interaction.response.edit_message(
+            content=f"{YES_EMOTE} Reward **{self.item_name}** has been deleted.",
+            embed=None, view=None
+        )
+        if self.parent_message:
             try:
-                stock_val = int(str(self.stock))
-                if stock_val < 0:
-                    raise ValueError
-            except ValueError:
-                self.update = discord.Embed(
-                    description=f"Stock must be a non-negative integer {NO_EMOTE}",
-                    color=discord.Color.red(),
-                )
-
-        if duplicate is not True:
-            originalList.append(
-                [str(self.name), str(self.desc), str(self.cost), multiple, stock_val]
-            )
-
-            await set_shop_items(interaction.client.pool, interaction.guild.id, originalList)
-            self.update = discord.Embed(
-                description=f"Added reward :slight_smile:", color=discord.Color.green()
-            )
-        else:
-            if costNotInteger:
-                self.update = discord.Embed(
-                    description=f"Cost must be a reasonable integer {NO_EMOTE}",
-                    color=discord.Color.red(),
-                )
-            else:
-                self.update = discord.Embed(
-                    description=f"Found duplicate entry {NO_EMOTE}", color=discord.Color.red()
-                )
-        
-        if self.cost <= 0:
-            self.update = discord.Embed(
-                description=f"Cost must be greater than zero {NO_EMOTE}",
-                color=discord.Color.red(),
-            )
-
-        self.pages = await get_shop_embeds(interaction, originalList, originalList == 0)
-
-        self.on_submit_interaction = interaction
-        self.stop()
+                await self.parent_message.edit(embed=pages[0], view=view)
+            except (discord.HTTPException, discord.NotFound):
+                pass
 
 
-class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
-    name = discord.ui.TextInput(
-        label="Role ID / Reward Title",
-        style=discord.TextStyle.short,
-        placeholder="Pick one or the other to remove",
-        required=True,
-        max_length=50,
-    )
+class BackToShopButton(discord.ui.Button):
+    def __init__(self, guild_id, pool, initial_author, row=2, item_name=None):
+        super().__init__(label="Back to Shop", style=discord.ButtonStyle.blurple, row=row)
+        self.guild_id = guild_id
+        self.pool = pool
+        self.initial_author = initial_author
+        self.item_name = item_name
 
-    remove = discord.ui.TextInput(
-        label="Remove this item from all and compensate?",
-        style=discord.TextStyle.short,
-        placeholder="Type 'yes' or 'no'",
-        required=True,
-        max_length=3,
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
-
-        if len(originalList) == 0:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description=f"Put on your glasses. What are you trying to delete? You haven't previously added any rewards at all yet... {NO_EMOTE}",
-                    color=discord.Color.red(),
-                ),
-                ephemeral=True,
-            )
-            return
-
-        itemToDelete = None
-        for item in originalList:
-            if item[0] == str(self.name):
-                itemToDelete = item
-
-        if itemToDelete is not None:
-            originalList.remove(itemToDelete)
-            self.update = discord.Embed(
-                description=f"Removed reward :slight_smile:",
-                color=discord.Color.green(),
-            )
-        else:
-            self.update = discord.Embed(
-                description=f"Reward not found {NO_EMOTE}", color=discord.Color.red()
-            )
-
-        ref.set(originalList)
-
-        if str(self.remove).lower() == "yes":
-            async with interaction.client.pool.acquire() as conn:
-                affected_users = await conn.fetch("""
-                    SELECT uid, SUM(cost) as total_refund
-                    FROM minigame_inventory
-                    WHERE title = $1 AND gid = $2
-                    GROUP BY uid
-                """, str(self.name), interaction.guild.id)
-            
-            async with interaction.client.pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM minigame_inventory WHERE title = $1 AND gid = $2",
-                    str(self.name), interaction.guild.id
-                )
-            
-            for user_record in affected_users:
-                uid = user_record['uid']
-                total_refund = user_record['total_refund'] or 0
-                
-                try:
-                    member = await interaction.guild.fetch_member(uid)
-                    
-                    if total_refund > 0:
-                        text, addedMora = await addMora(interaction.client.pool, uid, total_refund, 1, interaction.guild.id, interaction.client)
-                        
-                        await member.send(
-                            f"**Notice:** One or more items from your guild inventory in **{interaction.guild.name}** have been deleted from the shop. The total original cost of {MORA_EMOTE} `{text}` has been refunded to your inventory."
-                        )
-                    
-                    try:
-                        role = interaction.guild.get_role(int(self.name))
-                        if role is not None and role in member.roles:
-                            await member.remove_roles(role)
-                    except (ValueError, TypeError):
-                        pass
-                except discord.NotFound:
-                    pass
-                except Exception:
-                    pass
-
-        self.pages = await get_shop_embeds(interaction, originalList, originalList == 0)
-
-        self.on_submit_interaction = interaction
-        self.stop()
-
-class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
-    item = discord.ui.TextInput(
-        label="Role ID / Reward Title",
-        style=discord.TextStyle.short,
-        placeholder="Pick one or the other to edit",
-        required=True,
-        max_length=50,
-    )
-    
-    cost = discord.ui.TextInput(
-        label="New Cost",
-        style=discord.TextStyle.short,
-        placeholder="Enter new cost value",
-        required=True,
-        max_length=20,
-    )
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
-            
-        item_found = False
-        multiplier_map = {"k": 10**3, "m": 10**6, "b": 10**9, "t": 10**12}
-        
-        for item in originalList:
-            if item[0] == str(self.item):
-                item_found = True
-                try:
-                    cost_str = str(self.cost).lower().strip()
-                    
-                    if not cost_str:
-                        raise ValueError("Cost cannot be empty")
-                    
-                    if cost_str[-1] in multiplier_map:
-                        new_cost = float(cost_str[:-1]) * multiplier_map[cost_str[-1]]
-                    else:
-                        new_cost = float(cost_str)
-                    
-                    if new_cost <= 0:
-                        raise ValueError("Cost must be positive")
-                    
-                    item[2] = str(int(new_cost))
-                    self.update = discord.Embed(
-                        description=f"Updated cost for **{item[0]}** to {MORA_EMOTE} `{int(new_cost):,}`",
-                        color=discord.Color.green(),
-                    )
-                except Exception:
-                    self.update = discord.Embed(
-                        description=f"Invalid cost value {NO_EMOTE}\nMust be a positive number (e.g. 5000 or 5k)",
-                        color=discord.Color.red(),
-                    )
-                break
-                
-        if not item_found:
-            self.update = discord.Embed(
-                description=f"Item **{self.item}** not found {NO_EMOTE}",
-                color=discord.Color.red(),
-            )
-            
-        if item_found and "Updated" in getattr(self.update, "description", ""):
-            await set_shop_items(interaction.client.pool, interaction.guild.id, originalList)
-
-        self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
-        self.on_submit_interaction = interaction
-        self.stop()
-
-class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
-    item = discord.ui.TextInput(
-        label="Role ID / Reward Title",
-        style=discord.TextStyle.short,
-        placeholder="Pick one or the other to edit",
-        required=True,
-        max_length=50,
-    )
-    
-    stock = discord.ui.TextInput(
-        label="New Stock Count",
-        style=discord.TextStyle.short,
-        placeholder="'10', '+5', '-3', or leave blank for unlimited",
-        required=False,
-        max_length=10,
-    )
-    
-    schedule = discord.ui.TextInput(
-        label="Timestamp for Optional Scheduled Update",
-        style=discord.TextStyle.short,
-        placeholder="Visit unixtimestamp.com (e.g. 1754021240)",
-        required=False,
-        max_length=10,
-    )
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
-        found_key = None
-        
-        await process_pending_stock_edits(interaction.client.pool, interaction.guild.id)
-            
-        for i, item in enumerate(originalList):
-            if len(item) < 5:
-                originalList[i] = item + [-1]
-                
-        item_found = False
-        stock_value = str(self.stock).strip()
-        schedule_value = str(self.schedule).strip()
-        
-        if schedule_value:
+    async def callback(self, interaction: discord.Interaction):
+        item = await get_shop_item_by_name(self.pool, self.guild_id, self.item_name) if self.item_name else None
+        if item:
+            name = str(item[0]).strip()
+            desc = str(item[1]).strip()
             try:
-                scheduled_time = float(schedule_value)
-                current_time = time.time()
-                
-                if scheduled_time <= current_time:
-                    immediate = True
-                else:
-                    immediate = False
-                    
-                    await add_pending_edit(interaction.client.pool, interaction.guild.id, str(self.item), stock_value, scheduled_time)
-                    
-                    self.update = discord.Embed(
-                        description=f"Scheduled stock update for **{self.item}** at <t:{int(scheduled_time)}>.",
-                        color=discord.Color.green(),
-                    )
-            except ValueError:
-                immediate = True
-                self.update = discord.Embed(
-                    description=f"Invalid timestamp format {NO_EMOTE}",
-                    color=discord.Color.red(),
+                cost = int(item[2])
+            except (ValueError, TypeError):
+                cost = 0
+            currency_type = item[5] if len(item) > 5 else "guild_mora"
+            valid_currencies = {"guild_mora", "global_mora", "guild_sigils", "global_sigils"}
+
+            errors = []
+            if not name or name.startswith("_new_"):
+                errors.append("Reward title/role ID is required")
+            if not desc:
+                errors.append("Description is required")
+            if cost <= 0:
+                errors.append("Cost must be a positive number")
+            if currency_type not in valid_currencies:
+                errors.append("Currency type is invalid")
+
+            if errors:
+                return await interaction.response.send_message(
+                    embed=discord.Embed(
+                        title="Cannot return to shop yet",
+                        description="\n".join(f"{NO_EMOTE} {e}" for e in errors),
+                        color=discord.Color.red()
+                    ),
+                    ephemeral=True
                 )
-        else:
-            immediate = True
-        
-        if immediate:
-            for item in originalList:
-                if item[0] == str(self.item):
-                    item_found = True
-                    current_stock = item[4]
-                    
-                    if not stock_value:
-                        new_stock = -1
-                    elif stock_value.startswith(('+', '-')):
-                        if current_stock == -1:
-                            current_stock = 0
-                        
-                        try:
-                            change = int(stock_value)
-                            new_stock = current_stock + change
-                        except ValueError:
-                            sign = stock_value[0]
-                            num_str = stock_value[1:].strip()
-                            if not num_str:
-                                num = 0
-                            else:
-                                num = int(num_str)
-                            new_stock = current_stock + num if sign == '+' else current_stock - num
-                    else:
-                        try:
-                            new_stock = int(stock_value)
-                        except ValueError:
-                            self.update = discord.Embed(
-                                description=f"Invalid stock value {NO_EMOTE}",
-                                color=discord.Color.red(),
-                            )
-                            break
-                    
-                    if new_stock < 0 and new_stock != -1:
-                        new_stock = 0
-                    
-                    item[4] = new_stock
-                    self.update = discord.Embed(
-                        description=f"Updated stock for **{item[0]}** to `{'Unlimited' if new_stock == -1 else new_stock}`",
-                        color=discord.Color.green(),
-                    )
-                    break
-                    
-            if not item_found:
-                self.update = discord.Embed(
-                    description=f"Item **{self.item}** not found {NO_EMOTE}",
-                    color=discord.Color.red(),
-                )
-            
-            if item_found and "Updated" in getattr(self.update, "description", ""):
-                await set_shop_items(interaction.client.pool, interaction.guild.id, originalList)
-        
+
+        processed = await process_pending_stock_edits(self.pool, self.guild_id)
+        if processed > 0:
+            print(f"Processed {processed} scheduled stock edits for guild {self.guild_id}")
+
+        foundGuild = await get_shop_items(self.pool, self.guild_id)
+        pages, sorted_items = await get_shop_embeds(interaction, foundGuild, len(foundGuild) == 0)
+
+        is_admin = interaction.user.guild_permissions.administrator
+        view = ShopView(pages=pages, items=sorted_items, initial_author=self.initial_author, is_admin=is_admin, guild_id=self.guild_id, pool=self.pool, guild=interaction.guild)
+        view.message = await interaction.response.edit_message(embed=pages[0], view=view)
+
+
 class Shop(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -610,25 +603,22 @@ class Shop(commands.Cog):
         interaction: discord.Interaction,
     ) -> None:
         await interaction.response.defer(thinking=True)
-        
+
         processed = await process_pending_stock_edits(interaction.client.pool, interaction.guild.id)
         if processed > 0:
             print(f"Processed {processed} scheduled stock edits for guild {interaction.guild.id}")
-        
-        
+
         foundGuild = await get_shop_items(interaction.client.pool, interaction.guild.id)
 
-        pages = await get_shop_embeds(
+        pages, sorted_items = await get_shop_embeds(
             interaction, foundGuild, len(foundGuild) == 0
         )
 
-        if interaction.user.guild_permissions.administrator:
-            view = ShopView(pages=pages, initial_author=interaction.user, is_admin=True)
-        else:
-            view = ShopView(pages=pages, initial_author=interaction.user, is_admin=False)
+        is_admin = interaction.user.guild_permissions.administrator
+        view = ShopView(pages=pages, items=sorted_items, initial_author=interaction.user, is_admin=is_admin, guild_id=interaction.guild.id, pool=interaction.client.pool, guild=interaction.guild)
 
         view.message = await interaction.followup.send(embed=pages[0], view=view)
-        
-            
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Shop(bot))

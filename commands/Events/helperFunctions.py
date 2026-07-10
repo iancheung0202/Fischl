@@ -7,7 +7,11 @@ import asyncpg
 
 from typing import Optional
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED, CURRENCY_INFO
+
+def get_currency_display(currency_type: str) -> str:
+    info = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])
+    return f"{info['emoji']}"
 
 # Progression helper functions
 
@@ -326,6 +330,51 @@ async def get_users_by_mora_threshold(pool: asyncpg.Pool, gid: int, threshold: i
         """, gid, threshold)
     return [(row['uid'], row['total']) for row in rows]
 
+async def get_users_by_global_mora_threshold(pool: asyncpg.Pool, threshold: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, SUM(count) as total
+            FROM minigame_mora
+            GROUP BY uid
+            HAVING SUM(count) >= $1
+            ORDER BY total DESC
+        """, threshold)
+    return [(row['uid'], row['total']) for row in rows]
+
+async def get_users_by_guild_sigils_threshold(pool: asyncpg.Pool, gid: int, threshold: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, SUM(earnings) as total
+            FROM minigame_sigils
+            WHERE gid = $1
+            GROUP BY uid
+            HAVING SUM(earnings) >= $2
+            ORDER BY total DESC
+        """, gid, threshold)
+    return [(row['uid'], row['total']) for row in rows]
+
+async def get_users_by_global_sigils_threshold(pool: asyncpg.Pool, threshold: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uid, SUM(earnings) as total
+            FROM minigame_sigils
+            GROUP BY uid
+            HAVING SUM(earnings) >= $1
+            ORDER BY total DESC
+        """, threshold)
+    return [(row['uid'], row['total']) for row in rows]
+
+async def get_users_by_currency_threshold(pool: asyncpg.Pool, gid: int, threshold: int, currency_type: str) -> list:
+    """Dispatch to the right threshold query depending on a milestone's currency_type."""
+    if currency_type == "global_mora":
+        return await get_users_by_global_mora_threshold(pool, threshold)
+    elif currency_type == "guild_sigils":
+        return await get_users_by_guild_sigils_threshold(pool, gid, threshold)
+    elif currency_type == "global_sigils":
+        return await get_users_by_global_sigils_threshold(pool, threshold)
+    else:  # guild_mora (default/fallback)
+        return await get_users_by_mora_threshold(pool, gid, threshold)
+
 async def get_user_mora_history(
     pool: asyncpg.Pool,
     uid: int,
@@ -450,6 +499,35 @@ async def subtractGuildMora(pool: asyncpg.Pool, userID: int, subtractMora: int, 
         """, userID, guildID, channelID, timestamp, -subtractMora)
 
     return total_available - subtractMora
+
+async def subtract_global_mora(pool: asyncpg.Pool, userID: int, amount: int, channelID: int, guildID: int) -> bool:
+    total = await get_total_mora(pool, userID)
+    if amount > total:
+        return False
+    remaining = amount
+    guild_bal = await get_guild_mora(pool, userID, guildID)
+    if guild_bal > 0:
+        deduct = min(guild_bal, remaining)
+        await subtractGuildMora(pool, userID, deduct, channelID, guildID)
+        remaining -= deduct
+    if remaining > 0:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT gid, SUM(count) as bal
+                FROM minigame_mora
+                WHERE uid = $1 AND gid != $2
+                GROUP BY gid
+                HAVING SUM(count) > 0
+            """, userID, guildID)
+        for row in rows:
+            if remaining <= 0:
+                break
+            other_gid = row['gid']
+            other_bal = row['bal']
+            deduct = min(other_bal, remaining)
+            await subtractGuildMora(pool, userID, deduct, channelID, other_gid)
+            remaining -= deduct
+    return remaining <= 0
 
 # Inventory helper functions
 
@@ -684,6 +762,25 @@ async def get_guild_sigils_leaderboard(pool: asyncpg.Pool, gid: int, limit: int 
             """, gid)
     return [(row['uid'], row['total']) for row in rows]
 
+async def get_global_sigils_leaderboard(pool: asyncpg.Pool, limit: int = None) -> list:
+    async with pool.acquire() as conn:
+        if limit:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(earnings) as total
+                FROM minigame_sigils
+                GROUP BY uid
+                ORDER BY total DESC
+                LIMIT $1
+            """, limit)
+        else:
+            rows = await conn.fetch("""
+                SELECT uid, SUM(earnings) as total
+                FROM minigame_sigils
+                GROUP BY uid
+                ORDER BY total DESC
+            """)
+    return [(row['uid'], row['total']) for row in rows]
+
 async def ensure_minigame_settings_table(pool):
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -708,7 +805,7 @@ async def ensure_minigame_settings_table(pool):
 async def ensure_minigame_guild_settings_table(pool):
     async with pool.acquire() as conn:
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS minigame_guild_chest_settings (
+            CREATE TABLE IF NOT EXISTS minigame_guild_settings (
                 gid                         BIGINT PRIMARY KEY,
                 chests_base_upgrade_chances INTEGER DEFAULT 4,
                 chests_tier_names           TEXT[] DEFAULT ARRAY['Common','Exquisite','Precious','Luxurious'],
@@ -722,7 +819,7 @@ async def ensure_minigame_guild_settings_table(pool):
                 chat_max_cap                INTEGER DEFAULT 60
             )
         """)
-        await conn.execute("ALTER TABLE minigame_guild_chest_settings ADD COLUMN IF NOT EXISTS chat_max_cap INTEGER DEFAULT 60")
+        await conn.execute("ALTER TABLE minigame_guild_settings ADD COLUMN IF NOT EXISTS chat_max_cap INTEGER DEFAULT 60")
 
 async def ensure_minigame_progression_table(pool):
     async with pool.acquire() as conn:
@@ -925,7 +1022,59 @@ async def upsert_daily_sigils(pool, uid: int, gid: int, date: str, earnings: int
                 earnings = EXCLUDED.earnings
         """, uid, gid, date, earnings)
 
-async def add_sigils(pool, uid: int, gid: int, amount: int) -> int:
+async def get_global_sigils_balance(pool, uid: int) -> int:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT COALESCE(SUM(earnings), 0) FROM minigame_sigils WHERE uid = $1",
+            uid
+        )
+    return val or 0
+
+async def subtract_guild_sigils(pool, uid: int, gid: int, amount: int) -> bool:
+    bal = await get_sigils_balance(pool, uid, gid)
+    if amount > bal:
+        return False
+    import datetime
+    date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_sigils (uid, gid, date, earnings)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (uid, gid, date) DO UPDATE SET
+                earnings = minigame_sigils.earnings + EXCLUDED.earnings
+        """, uid, gid, date, -amount)
+    return True
+
+async def subtract_global_sigils(pool, uid: int, gid: int, amount: int) -> bool:
+    total = await get_global_sigils_balance(pool, uid)
+    if amount > total:
+        return False
+    remaining = amount
+    guild_bal = await get_sigils_balance(pool, uid, gid)
+    if guild_bal > 0:
+        deduct = min(guild_bal, remaining)
+        await subtract_guild_sigils(pool, uid, gid, deduct)
+        remaining -= deduct
+    if remaining > 0:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT gid, SUM(earnings) as bal
+                FROM minigame_sigils
+                WHERE uid = $1 AND gid != $2
+                GROUP BY gid
+                HAVING SUM(earnings) > 0
+            """, uid, gid)
+        for row in rows:
+            if remaining <= 0:
+                break
+            other_gid = row['gid']
+            other_bal = row['bal']
+            deduct = min(other_bal, remaining)
+            await subtract_guild_sigils(pool, uid, other_gid, deduct)
+            remaining -= deduct
+    return remaining <= 0
+
+async def add_sigils(pool, uid: int, gid: int, amount: int, channel_id=None, client=None) -> int:
     import datetime
     date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     async with pool.acquire() as conn:
@@ -936,6 +1085,10 @@ async def add_sigils(pool, uid: int, gid: int, amount: int) -> int:
                 earnings = minigame_sigils.earnings + EXCLUDED.earnings
             RETURNING earnings
         """, uid, gid, date, amount)
+
+    if amount > 0 and channel_id is not None and client is not None:
+        asyncio.create_task(delayed_check_milestones(pool, uid, gid, channel_id, client))
+
     return row["earnings"] if row else amount
 
 async def parse_boosted_roles(raw: list) -> list:
@@ -998,7 +1151,7 @@ async def get_cosmetics(pool, gid: int, uid: int) -> dict | None:
 
 async def upsert_cosmetics(pool, gid: int, uid: int, **kwargs):
     cols = ", ".join(kwargs.keys())
-    placeholders = ", ".join(f"${i+1}" for i in range(len(kwargs)))
+    placeholders = ", ".join(f"${i+3}" for i in range(len(kwargs)))
     updates = ", ".join(f"{k} = EXCLUDED.{k}" for k in kwargs)
     vals = list(kwargs.values())
     async with pool.acquire() as conn:
@@ -1053,6 +1206,7 @@ async def ensure_rewards_table(pool):
                 created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await conn.execute("ALTER TABLE minigame_rewards ADD COLUMN IF NOT EXISTS currency_type TEXT DEFAULT 'guild_mora'")
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_rewards_gid_type ON minigame_rewards (gid, item_type)
         """)
@@ -1078,10 +1232,20 @@ async def ensure_minigame_mora_table(pool):
 async def get_shop_items(pool, gid: int) -> list:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT name, description, cost, multiple, stock FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item' ORDER BY id",
+            "SELECT name, description, cost, multiple, stock, COALESCE(currency_type, 'guild_mora') as currency_type, pending_stock_change, pending_scheduled_time FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item' ORDER BY id",
             gid
         )
-    return [[r["name"], r["description"], r["cost"], r["multiple"], r["stock"]] for r in rows]
+    return [[r["name"], r["description"], r["cost"], r["multiple"], r["stock"], r["currency_type"], r["pending_stock_change"], r["pending_scheduled_time"]] for r in rows]
+
+async def get_shop_item_by_name(pool, gid: int, name: str) -> list | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT name, description, cost, multiple, stock, COALESCE(currency_type, 'guild_mora') as currency_type, pending_stock_change, pending_scheduled_time FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item' AND name = $2",
+            gid, name
+        )
+    if row:
+        return [row["name"], row["description"], row["cost"], row["multiple"], row["stock"], row["currency_type"], row["pending_stock_change"], row["pending_scheduled_time"]]
+    return None
 
 async def set_shop_items(pool, gid: int, items: list):
     async with pool.acquire() as conn:
@@ -1089,18 +1253,29 @@ async def set_shop_items(pool, gid: int, items: list):
             await conn.execute("DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item'", gid)
             for item in items:
                 name, desc, cost, multiple, stock = item[0], item[1], str(item[2]), item[3], item[4]
+                currency_type = item[5] if len(item) > 5 else 'guild_mora'
                 await conn.execute(
-                    "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock) VALUES ($1, 'shop_item', $2, $3, $4, $5, $6)",
-                    gid, name, desc, cost, multiple, stock
+                    "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock, currency_type) VALUES ($1, 'shop_item', $2, $3, $4, $5, $6, $7)",
+                    gid, name, desc, cost, multiple, stock, currency_type
                 )
 
 async def get_milestones_list(pool, gid: int) -> list:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT description, name, threshold FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' ORDER BY id",
+            "SELECT description, name, threshold, COALESCE(currency_type, 'guild_mora') as currency_type FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' ORDER BY id",
             gid
         )
-    return [[r["description"], r["name"], r["threshold"]] for r in rows]
+    return [[r["description"], r["name"], r["threshold"], r["currency_type"]] for r in rows]
+
+async def get_milestone_by_name(pool, gid: int, name: str) -> list | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT description, name, threshold, COALESCE(currency_type, 'guild_mora') as currency_type FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' AND name = $2",
+            gid, name
+        )
+    if row:
+        return [row["description"], row["name"], row["threshold"], row["currency_type"]]
+    return None
 
 async def set_milestones(pool, gid: int, milestones: list):
     async with pool.acquire() as conn:
@@ -1108,10 +1283,43 @@ async def set_milestones(pool, gid: int, milestones: list):
             await conn.execute("DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone'", gid)
             for ms in milestones:
                 desc, reward, threshold = ms[0], ms[1], ms[2]
+                currency_type = ms[3] if len(ms) > 3 else 'guild_mora'
                 await conn.execute(
-                    "INSERT INTO minigame_rewards (gid, item_type, name, description, threshold) VALUES ($1, 'milestone', $2, $3, $4)",
-                    gid, reward, desc, threshold
+                    "INSERT INTO minigame_rewards (gid, item_type, name, description, threshold, currency_type) VALUES ($1, 'milestone', $2, $3, $4, $5)",
+                    gid, reward, desc, threshold, currency_type
                 )
+
+async def add_milestone(pool, gid: int, name: str, description: str, threshold: int, currency_type: str = 'guild_mora'):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO minigame_rewards (gid, item_type, name, description, threshold, currency_type) VALUES ($1, 'milestone', $2, $3, $4, $5)",
+            gid, name, description, threshold, currency_type
+        )
+
+async def remove_milestone_by_name(pool, gid: int, name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' AND name = $2",
+            gid, name
+        )
+
+_MILESTONE_EDITABLE_FIELDS = {"name", "description", "threshold", "currency_type"}
+
+async def update_milestone_field(pool, gid: int, name: str, field: str, value):
+    if field not in _MILESTONE_EDITABLE_FIELDS:
+        raise ValueError(f"Field '{field}' is not editable on a milestone")
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"UPDATE minigame_rewards SET {field} = $1 WHERE gid = $2 AND item_type = 'milestone' AND name = $3",
+            value, gid, name
+        )
+
+async def update_milestone_threshold(pool, gid: int, name: str, new_threshold: int):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_rewards SET threshold = $1 WHERE gid = $2 AND item_type = 'milestone' AND name = $3",
+            new_threshold, gid, name
+        )
 
 async def process_pending_stock_edits(pool, gid: int) -> int:
     current_time = time.time()
@@ -1166,11 +1374,11 @@ async def get_pending_shop_edits(pool, gid: int) -> dict:
         for r in rows
     }
 
-async def add_shop_item(pool, gid: int, name: str, description: str, cost: str, multiple: bool, stock: int):
+async def add_shop_item(pool, gid: int, name: str, description: str, cost: str, multiple: bool, stock: int, currency_type: str = 'guild_mora'):
     async with pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock) VALUES ($1, 'shop_item', $2, $3, $4, $5, $6)",
-            gid, name, description, cost, multiple, stock
+            "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock, currency_type) VALUES ($1, 'shop_item', $2, $3, $4, $5, $6, $7)",
+            gid, name, description, cost, multiple, stock, currency_type
         )
 
 async def remove_shop_item_by_name(pool, gid: int, name: str):
@@ -1192,6 +1400,13 @@ async def update_shop_item_stock_by_name(pool, gid: int, name: str, new_stock: i
         await conn.execute(
             "UPDATE minigame_rewards SET stock = $1 WHERE gid = $2 AND item_type = 'shop_item' AND name = $3",
             new_stock, gid, name
+        )
+
+async def update_shop_item_field(pool, gid: int, name: str, field: str, value):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"UPDATE minigame_rewards SET {field} = $1 WHERE gid = $2 AND item_type = 'shop_item' AND name = $3",
+            value, gid, name
         )
 
 async def add_pending_edit(pool, gid: int, name: str, stock_change: str, scheduled_time: float):
@@ -1216,10 +1431,132 @@ async def delete_pending_edit_by_name(pool, gid: int, name: str):
 async def get_milestones_flat(pool, gid: int) -> list:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT description, name, threshold FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' ORDER BY id",
+            "SELECT description, name, threshold, COALESCE(currency_type, 'guild_mora') as currency_type FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' ORDER BY id",
             gid
         )
-    return [[r["description"], r["name"], r["threshold"]] for r in rows]
+    return [[r["description"], r["name"], r["threshold"], r["currency_type"]] for r in rows]
+
+# Milestone reconciliation helpers
+# These keep who-holds-what in sync with live balances whenever an admin
+# adds, edits, or deletes a milestone.
+
+async def get_milestone_holders(pool, gid: int, name: str) -> list:
+    """Return the uids of everyone in this guild currently holding this milestone's reward."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT DISTINCT uid FROM minigame_inventory WHERE gid = $1 AND title = $2 AND cost = 0",
+            gid, str(name)
+        )
+    return [row['uid'] for row in rows]
+
+async def remove_milestone_inventory_item(pool, uid: int, gid: int, name: str) -> None:
+    """Take a milestone reward back out of a user's inventory (milestones are always cost = 0)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND title = $3 AND cost = 0",
+            uid, gid, str(name)
+        )
+
+async def migrate_milestone_reward(pool, guild, old_name: str, new_name: str) -> None:
+    """Carry existing holders (and their role, if the reward is a role) over when a
+    milestone's name/reward is renamed, instead of leaving stale items under the old name."""
+    old_name, new_name = str(old_name), str(new_name)
+    if old_name == new_name:
+        return
+
+    holders = await get_milestone_holders(pool, guild.id, old_name)
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_inventory SET title = $1 WHERE gid = $2 AND title = $3 AND cost = 0",
+            new_name, guild.id, old_name
+        )
+
+    old_role = guild.get_role(int(old_name)) if old_name.isdigit() else None
+    new_role = guild.get_role(int(new_name)) if new_name.isdigit() else None
+    if old_role == new_role:
+        return
+
+    for uid in holders:
+        try:
+            member = await guild.fetch_member(uid)
+        except discord.HTTPException:
+            continue
+        if not member:
+            continue
+        if old_role and old_role in member.roles:
+            try:
+                await member.remove_roles(old_role)
+            except discord.HTTPException:
+                pass
+        if new_role:
+            try:
+                await member.add_roles(new_role)
+            except discord.HTTPException:
+                pass
+
+async def revoke_all_milestone_holders(pool, guild, name: str) -> int:
+    """Strip a milestone's reward (item + role) from every member who currently has it.
+    Used when the milestone itself is deleted."""
+    holders = await get_milestone_holders(pool, guild.id, name)
+    role = guild.get_role(int(name)) if str(name).isdigit() else None
+
+    for uid in holders:
+        await remove_milestone_inventory_item(pool, uid, guild.id, name)
+        if role:
+            try:
+                member = await guild.fetch_member(uid)
+                if member and role in member.roles:
+                    await member.remove_roles(role)
+            except discord.HTTPException:
+                pass
+
+    return len(holders)
+
+async def sync_milestone_holders(pool, guild, milestone: list) -> dict:
+    """Recheck every member's balance against a single milestone and reconcile who holds it:
+    awards it to anyone newly over the threshold, and revokes it from anyone who no longer
+    qualifies (e.g. after the threshold was raised or the tracked currency was changed)."""
+    description = milestone[0]
+    reward = str(milestone[1])
+    currency_type = milestone[3] if len(milestone) > 3 else "guild_mora"
+    try:
+        threshold = int(milestone[2])
+    except (TypeError, ValueError):
+        threshold = 0
+
+    if not reward or reward.startswith("_new_") or threshold <= 0:
+        return {"awarded": 0, "revoked": 0}
+
+    qualifying = await get_users_by_currency_threshold(pool, guild.id, threshold, currency_type)
+    qualifying_uids = {uid for uid, _amount in qualifying}
+    holder_uids = set(await get_milestone_holders(pool, guild.id, reward))
+
+    to_award = qualifying_uids - holder_uids
+    to_revoke = holder_uids - qualifying_uids
+    role = guild.get_role(int(reward)) if reward.isdigit() else None
+
+    for uid in to_award:
+        await add_inventory_item(pool, uid, guild.id, reward, description, 0, int(time.time()), pinned=False)
+        if role:
+            try:
+                member = await guild.fetch_member(uid)
+                if member:
+                    await member.add_roles(role)
+            except discord.HTTPException:
+                pass
+
+    for uid in to_revoke:
+        await remove_milestone_inventory_item(pool, uid, guild.id, reward)
+        if role:
+            try:
+                member = await guild.fetch_member(uid)
+                if member and role in member.roles:
+                    await member.remove_roles(role)
+            except discord.HTTPException:
+                pass
+
+    return {"awarded": len(to_award), "revoked": len(to_revoke)}
 
 _SETTINGS_FALLBACK = {
     "channel_id": 0,
@@ -1286,7 +1623,7 @@ async def upsert_channel_settings(pool, channel_id: int, **kwargs):
 
 async def get_guild_settings(pool, guild_id: int) -> dict:
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM minigame_guild_chest_settings WHERE gid = $1", guild_id)
+        row = await conn.fetchrow("SELECT * FROM minigame_guild_settings WHERE gid = $1", guild_id)
     if row:
         d = dict(row)
         return {
@@ -1310,7 +1647,7 @@ async def upsert_guild_settings(pool, guild_id: int, **kwargs):
     updates = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs.keys()))
     async with pool.acquire() as conn:
         await conn.execute(f"""
-            INSERT INTO minigame_guild_chest_settings (gid, {cols})
+            INSERT INTO minigame_guild_settings (gid, {cols})
             VALUES ($1, {placeholders})
             ON CONFLICT (gid) DO UPDATE SET {updates}
         """, guild_id, *vals)
@@ -1369,32 +1706,51 @@ async def delayed_check_milestones(pool: asyncpg.Pool, userID, guildID, channelI
     await check_milestones(pool, userID, guildID, channelID, client)
 
 async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, client):
-    """Check and award milestones for a user when mora threshold is reached."""
+    """Check and award milestones for a user, evaluating each milestone against
+    whichever currency (guild/global mora or guild/global sigils) it was set up for."""
     try:
         channel_id = int(channel_id)
     except (TypeError, ValueError):
         channel_id = None
-    
-    total_mora = await get_guild_mora(pool, user_id, guild_id)
 
     milestones = await get_milestones_flat(pool, guild_id)
-    
+    if not milestones:
+        return
+
     user_inventory = await get_user_inventory(pool, user_id, guild_id)
     user_items = [item[0] for item in user_inventory]  # item[0] is title
-    
+
+    balance_cache = {}
+    async def get_balance(currency_type):
+        if currency_type not in balance_cache:
+            if currency_type == "global_mora":
+                balance_cache[currency_type] = await get_total_mora(pool, user_id)
+            elif currency_type == "guild_sigils":
+                balance_cache[currency_type] = await get_sigils_balance(pool, user_id, guild_id)
+            elif currency_type == "global_sigils":
+                balance_cache[currency_type] = await get_global_sigils_balance(pool, user_id)
+            else:  # guild_mora (default/fallback)
+                balance_cache[currency_type] = await get_guild_mora(pool, user_id, guild_id)
+        return balance_cache[currency_type]
+
     for milestone in milestones:
         if not isinstance(milestone, list) or len(milestone) < 3:
             continue
         description = milestone[0]  # index 0
         reward = milestone[1]  # index 1
         threshold = milestone[2]  # index 2
-        
-        if reward in user_items or total_mora < threshold:
+        currency_type = milestone[3] if len(milestone) > 3 else "guild_mora"
+
+        if reward in user_items:
             continue
-        
+
+        balance = await get_balance(currency_type)
+        if balance < threshold:
+            continue
+
         # Award the milestone by adding it to inventory (cost = 0 for milestones)
         await add_inventory_item(pool, user_id, guild_id, reward, description, 0, int(time.time()), pinned=False)
-        
+
         if isinstance(reward, int) or str(reward).isdigit():
             guild = client.get_guild(guild_id)
             if guild:
@@ -1405,22 +1761,24 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
                         await member.add_roles(role)
                     except:
                         pass
-        
-        channel = client.get_channel(channel_id)
+
+        channel = client.get_channel(channel_id) if channel_id else None
         if channel:
             if isinstance(reward, int) or str(reward).isdigit():
                 reward_display = f"<@&{reward}>"
             else:
                 reward_display = reward
-            
+
             from commands.Events.event import userAndTitle
+
+            currency_display = get_currency_display(currency_type)
 
             await channel.send(
                 embed=discord.Embed(
                     title="🏆 Milestone Achieved!",
                     description=(
-                        f"Congratulations, {userAndTitle(user_id, guild_id)}! \n"
-                        f"You've reached {MORA_EMOTE} `{threshold}` and earned **{reward_display}**\n"
+                        f"Congratulations, {(await userAndTitle(user_id, guild_id, pool))}! \n"
+                        f"You've reached {currency_display} `{threshold:,}` and earned **{reward_display}**\n"
                     ),
                     color=discord.Color.gold()
                 )

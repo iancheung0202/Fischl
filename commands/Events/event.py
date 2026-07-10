@@ -4130,9 +4130,7 @@ class MoraChestView(discord.ui.View):
 class PersistentChestInfoView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
-        self.profile_button = Button(label="Earn Daily Mora & Summons", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>")
-        self.add_item(self.profile_button)
+        self.add_item(PROFILE_LINK_BUTTON)
 
     @discord.ui.button(
         label="What is this?",
@@ -4480,7 +4478,7 @@ class DailySigilSystem:
                         continue
         return max_sigils
 
-    async def process_chat_sigils(self, message, csettings: dict):
+    async def process_chat_sigils(self, message, csettings: dict, client=None):
         if message.author.bot or not message.guild:
             return
 
@@ -4526,7 +4524,7 @@ class DailySigilSystem:
         if sigils_earned <= 0:
             return
 
-        balance = await add_sigils(self.pool, user_id, message.guild.id, sigils_earned)
+        balance = await add_sigils(self.pool, user_id, message.guild.id, sigils_earned, message.channel.id, client)
         new_daily = daily_earned + sigils_earned
         reset_ts = get_next_reset_unix()
 
@@ -4624,7 +4622,7 @@ class TheEventItself(commands.Cog):
         if csettings.get("chat_enabled", False):
             flags_data = await self.user_flags.get(message.guild.id, message.author.id)
             if not flags_data.get("sigils_disabled", False):
-                await self.sigil_system.process_chat_sigils(message, csettings)
+                await self.sigil_system.process_chat_sigils(message, csettings, self.client)
 
         mg_channels = await self.cache.get_mg_channels()
         if message.channel.id not in mg_channels:
@@ -4666,7 +4664,9 @@ class TheEventItself(commands.Cog):
         )
 
         view = View()
-        view.add_item(PROFILE_LINK_BUTTON)
+        btn = PROFILE_LINK_BUTTON
+        btn.disabled = False
+        view.add_item(btn)
 
         await message.channel.send(embed=embed, view=view)
 

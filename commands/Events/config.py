@@ -10,8 +10,11 @@ except ImportError:
             return f"`/{self.name}`"
 
 CURRENCY_NAME = "Mora"
-
 MORA_EMOTE = "<:MORA:1364030973611610205>"
+
+SIGIL_CURRENCY_NAME = "Sigils"
+SIGIL_EMOTE = "<a:sigils:1402736987902967850>"
+
 YES_EMOTE = "<:yes:1036811164891480194>"    
 NO_EMOTE = "<:no:1036810470860013639>"
 YES_EMOTE_2 = "<:BunnyYes:1224838535979204748>"
@@ -29,8 +32,14 @@ DOT_EMOTE = "<:dot:1357188726047899760>"
 CONFUSED_EMOTE = "<:PinkConfused:1204614149628498010>"
 REPLY_EMOTE = "<:reply:1036792837821435976>"
 
-SIGIL_EMOTE = "<a:sigils:1402736987902967850>"
-SIGIL_CURRENCY_NAME = "Sigils"
+GUILD_MORA_EMOTE = MORA_EMOTE
+GLOBAL_MORA_EMOTE = "<:global_mora:1525244303784542301>"
+GUILD_SIGIL_EMOTE = SIGIL_EMOTE
+GLOBAL_SIGIL_EMOTE = "<:global_sigils:1525244339213566102>"
+
+MORA_TO_XP_RATIO = 0.01
+SIGILS_TO_XP_RATIO = 1000
+
 DEFAULT_CHAT_RANGE = (19, 25)
 DEFAULT_CHAT_MAX_CAP = 60
 DEFAULT_CHAT_MSG_RANGE = (15, 20)
@@ -66,6 +75,19 @@ PRICE_DOWN_EMOTE = "<:price_descending:1346329080462577725>"
 NAME_UP_EMOTE = "<:name_ascending:1346329053455585324>"
 NAME_DOWN_EMOTE = "<:name_descending:1346329054634053703>"
 SHOP_SORT_OPTIONS = [("sort by cost (low to high)", PRICE_UP_EMOTE), ("sort by cost (high to low)", PRICE_DOWN_EMOTE), ("sort by name (a-z)", NAME_UP_EMOTE), ("sort by name (z-a)", NAME_DOWN_EMOTE),]
+SHOP_CURRENCY_FILTERS = [
+    ("All currencies", "<:FischlRiot:1335609183885590629>"),
+    ("Guild Mora", GUILD_MORA_EMOTE),
+    ("Global Mora", GLOBAL_MORA_EMOTE),
+    ("Guild Sigils", GUILD_SIGIL_EMOTE),
+    ("Global Sigils", GLOBAL_SIGIL_EMOTE),
+]
+CURRENCY_INFO = {
+    "guild_mora": {"emoji": GUILD_MORA_EMOTE, "label": "Guild Mora", "filter_label": "Guild Mora"},
+    "global_mora": {"emoji": GLOBAL_MORA_EMOTE, "label": "Global Mora", "filter_label": "Global Mora"},
+    "guild_sigils": {"emoji": GUILD_SIGIL_EMOTE, "label": "Guild Sigils", "filter_label": "Guild Sigils"},
+    "global_sigils": {"emoji": GLOBAL_SIGIL_EMOTE, "label": "Global Sigils", "filter_label": "Global Sigils"},
+}
 MILESTONE_SORT_OPTIONS = [("sort by threshold (low to high)", PRICE_UP_EMOTE), ("sort by threshold (high to low)", PRICE_DOWN_EMOTE), ("sort by name (a-z)", NAME_UP_EMOTE), ("sort by name (z-a)", NAME_DOWN_EMOTE),]
 
 DROP_TIERS = ["Tiny", "Small", "Medium", "Large", "Huge", "Mega"]

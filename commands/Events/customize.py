@@ -334,33 +334,33 @@ class Customize(commands.Cog):
     )
     @app_commands.describe(
         background="Your desired inventory background (auto cropped and scaled to 720x256px)",
-        pin_item="Title/role name to pin (displayed next to your name in mini-games)",
-        animated_background="Elite Track only: upload a GIF to use as your animated inventory background",
+        pin_inventory="Guild inventory reward to pin (displayed next to your name in mini-games)",
         profile_frame="Your desried inventory profile frame (static or animated)",
+        profile_title="Free Track: Select owned titles from autocomplete; Elite Track: Enter any custom title",
+        animated_background="Elite Track only: upload a GIF to use as your animated inventory background",
         custom_accent_color="Elite Track only: your custom accent color in hex code (e.g. #ff0000)",
-        font="Elite Track only: your profile card font preset",
-        title="Elite Track only for freeform text; owned titles can still be selected from autocomplete"
+        profile_font="Elite Track only: your profile card font preset",
     )
     @app_commands.autocomplete(
-        pin_item=pin_title_autocomplete,
-        font=font_autocomplete,
+        pin_inventory=pin_title_autocomplete,
         profile_frame=frame_autocomplete,
-        title=title_autocomplete
+        profile_title=title_autocomplete,
+        profile_font=font_autocomplete,
     )
     async def customize(
         self,
         interaction: discord.Interaction,
         background: discord.Attachment = None,
-        pin_item: str = None,
-        animated_background: discord.Attachment = None,
+        pin_inventory: str = None,
         profile_frame: str = None,
+        profile_title: str = None,
+        animated_background: discord.Attachment = None,
         custom_accent_color: str = None,
-        font: str = None,
-        title: str = None
+        profile_font: str = None,
     ) -> None:
         await interaction.response.defer(thinking=True)
         
-        if not any([background, pin_item, animated_background, profile_frame, custom_accent_color, font, title]):
+        if not any([background, pin_inventory, animated_background, profile_frame, custom_accent_color, profile_font, profile_title]):
             return await interaction.followup.send(
                 f"{NO_EMOTE} Please specify at least one customization option!"
             )
@@ -371,21 +371,21 @@ class Customize(commands.Cog):
             )
         
         processed_pin = False
-        preview_needed = any([background, animated_background, profile_frame, font])
+        preview_needed = any([background, animated_background, profile_frame, profile_font])
         cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
         current_selected = dict(cosmetics) if cosmetics else {}
         pending_font = None
 
-        if font:
-            if font not in FONT_PRESETS:
+        if profile_font:
+            if profile_font not in FONT_PRESETS:
                 return await interaction.followup.send(
                     f"{NO_EMOTE} Invalid font preset. Choose one of the available presets."
                 )
-            if font != "Default" and not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and current_selected.get("selected_font_unlocked")):
+            if profile_font != "Default" and not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and current_selected.get("selected_font_unlocked")):
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You have not unlocked **custom font preset** on the Elite Track!"
                 )
-            pending_font = font
+            pending_font = profile_font
 
         # Custom embed color
         if custom_accent_color:
@@ -421,12 +421,12 @@ class Customize(commands.Cog):
             )
             
         # Server title
-        if title:
-            await self.process_title(interaction, title)
+        if profile_title:
+            await self.process_title(interaction, profile_title)
             
         # Pin item
-        if pin_item:
-            processed_pin = await self.process_pin_item(interaction, pin_item)
+        if pin_inventory:
+            processed_pin = await self.process_pin_item(interaction, pin_inventory)
         
         # Backgrounds and profile frame
         if preview_needed:
@@ -439,7 +439,7 @@ class Customize(commands.Cog):
                 pending_font
             )
         
-        if custom_accent_color or title or pin_item or font:
+        if custom_accent_color or profile_title or pin_inventory or profile_font:
              await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"customize_profile": 1}, interaction.client)
 
     async def process_animated_background(self, interaction: discord.Interaction, animated_background: discord.Attachment) -> str:
@@ -455,10 +455,10 @@ class Customize(commands.Cog):
         await process_animated_background_upload(animated_background, output_path)
         return output_path
 
-    async def process_pin_item(self, interaction: discord.Interaction, pin_item: str):
+    async def process_pin_item(self, interaction: discord.Interaction, pin_inventory: str):
         pool = interaction.client.pool
         
-        if pin_item == "unpin":
+        if pin_inventory == "unpin":
             from commands.Events.helperFunctions import get_pinned_item
             unpinned = await get_pinned_item(pool, interaction.user.id, interaction.guild.id)
             
@@ -485,10 +485,10 @@ class Customize(commands.Cog):
             return True
         else:
             inventory = await get_user_inventory(pool, interaction.user.id, interaction.guild.id)
-            exists = any(item[0] == str(pin_item) for item in inventory)
+            exists = any(item[0] == str(pin_inventory) for item in inventory)
             
             if not exists:
-                role_mention = f"<@&{pin_item}>" if str(pin_item).isdigit() else pin_item
+                role_mention = f"<@&{pin_inventory}>" if str(pin_inventory).isdigit() else pin_inventory
                 await interaction.followup.send(
                     embed=discord.Embed(
                         title=f"{NO_EMOTE} Invalid Item",
@@ -499,9 +499,9 @@ class Customize(commands.Cog):
                 return False
             
             from commands.Events.helperFunctions import pin_item as pin_item_func
-            await pin_item_func(pool, interaction.user.id, interaction.guild.id, pin_item)
+            await pin_item_func(pool, interaction.user.id, interaction.guild.id, pin_inventory)
                 
-            role_mention = f"<@&{pin_item}>" if str(pin_item).isdigit() else pin_item
+            role_mention = f"<@&{pin_inventory}>" if str(pin_inventory).isdigit() else pin_inventory
             await interaction.followup.send(
                 embed=discord.Embed(
                     title="📌 Item Pinned",

@@ -12,11 +12,11 @@ from commands.Events.helperFunctions import (
     get_global_minigame_wins_leaderboard, get_guild_minigame_wins_leaderboard,
     get_global_active_days_leaderboard, get_guild_active_days_leaderboard,
     get_global_prestige_leaderboard, get_guild_prestige_leaderboard,
-    get_guild_sigils_leaderboard
+    get_guild_sigils_leaderboard, get_global_sigils_leaderboard
 )
 from utils.pagination import BasePaginationView
 
-from commands.Events.config import MORA_EMOTE, CURRENCY_NAME, SIGIL_CURRENCY_NAME, SIGIL_EMOTE
+from commands.Events.config import CURRENCY_NAME, SIGIL_CURRENCY_NAME, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
         
 
 class Leaderboard(commands.Cog):
@@ -61,7 +61,7 @@ class Leaderboard(commands.Cog):
                 "wins": (get_global_minigame_wins_leaderboard, get_guild_minigame_wins_leaderboard),
                 "actively": (get_global_active_days_leaderboard, get_guild_active_days_leaderboard),
                 "prestige": (get_global_prestige_leaderboard, get_guild_prestige_leaderboard),
-                "sigils": (None, get_guild_sigils_leaderboard),
+                "sigils": (get_global_sigils_leaderboard, get_guild_sigils_leaderboard),
             }
             
             if type.value in leaderboard_types:
@@ -95,7 +95,8 @@ class Leaderboard(commands.Cog):
         
         styling_config = {
             "mora": {
-                "icon": MORA_EMOTE,
+                "icon_global": GLOBAL_MORA_EMOTE,
+                "icon_server": GUILD_MORA_EMOTE,
                 "color_global": 0xFFD700,
                 "color_server": 0x2A7E19,
                 "title": f"{CURRENCY_NAME} Leaderboard",
@@ -143,7 +144,8 @@ class Leaderboard(commands.Cog):
                 "has_rank_title": False,
             },
             "sigils": {
-                "icon": SIGIL_EMOTE,
+                "icon_global": GLOBAL_SIGIL_EMOTE,
+                "icon_server": GUILD_SIGIL_EMOTE,
                 "color_global": 0x9B59B6,
                 "color_server": 0x9B59B6,
                 "title": f"{SIGIL_CURRENCY_NAME} Leaderboard",
@@ -153,11 +155,11 @@ class Leaderboard(commands.Cog):
         }
         
         config = styling_config.get(type.value, {})
-        icon = config.get("icon", "")
-        color = config.get("color_global") if scope.value == "global" else config.get("color_server")
+        is_global = scope.value == "global"
+        icon = config.get("icon_global" if is_global else "icon_server", config.get("icon", ""))
+        color = config.get("color_global") if is_global else config.get("color_server")
         has_rank_title = config.get("has_rank_title", False)
         
-        is_global = scope.value == "global"
         title_prefix = "Global " if is_global else f"{interaction.guild.name}'s "
         title = title_prefix + config.get("title", "")
         

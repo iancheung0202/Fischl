@@ -569,7 +569,7 @@ def generate_mora_graph(user_id, guild_id, display_name):
         # Get guild chest config for dynamic tier names / emotes / icons
         try:
             cursor.execute(
-                "SELECT chests_tier_names, chests_emotes, chests_icons FROM minigame_guild_chest_settings WHERE gid = %s",
+                "SELECT chests_tier_names, chests_emotes, chests_icons FROM minigame_guild_settings WHERE gid = %s",
                 (guild_id,)
             )
             gc_row = cursor.fetchone()

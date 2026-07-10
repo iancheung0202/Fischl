@@ -13,13 +13,13 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track, is_elite_active
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_settings, get_channel_settings, get_chest_counts, get_chest_streaks, get_cosmetics, get_milestones_list, get_sigils_balance, get_daily_sigils, add_sigils, parse_boosted_roles
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_settings, get_channel_settings, get_chest_counts, get_chest_streaks, get_cosmetics, get_milestones_list, get_sigils_balance, get_daily_sigils, parse_boosted_roles, get_global_sigils_balance, get_guild_sigils_leaderboard, get_global_sigils_leaderboard
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-from commands.Events.config import DOT_EMOTE, MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, NO_EMOTE_2, REPLY_EMOTE, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_MSG_RANGE, DEFAULT_CHAT_MAX_CAP, YES_EMOTE_2
+from commands.Events.config import DOT_EMOTE, MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, NO_EMOTE_2, REPLY_EMOTE, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_MSG_RANGE, DEFAULT_CHAT_MAX_CAP, YES_EMOTE_2, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -702,11 +702,17 @@ class Mora(commands.Cog):
         global_ranking = await get_global_leaderboard(interaction.client.pool, limit=10000)
         global_total = next((mora for uid, mora in global_ranking if uid == user.id), 0)
         global_rank = next((i+1 for i, (uid, _) in enumerate(global_ranking) if uid == user.id), "N/A")
+        global_sigils = await get_global_sigils_balance(interaction.client.pool, user.id)
+        global_sigils_leaderboard = await get_global_sigils_leaderboard(interaction.client.pool, limit=10000)
+        global_sigils_rank = next((i+1 for i, (uid, _) in enumerate(global_sigils_leaderboard) if uid == user.id), "N/A")
 
-        # Get guild ranking - fetch top 50 for this guild then find user's position
+        # Get guild ranking 
         guild_leaderboard = await get_guild_leaderboard(interaction.client.pool, interaction.guild.id, limit=10000)
         guild_total = next((mora for uid, mora in guild_leaderboard if uid == user.id), 0)
         guild_rank = next((i+1 for i, (uid, _) in enumerate(guild_leaderboard) if uid == user.id), "N/A")
+        guild_sigils = await get_sigils_balance(interaction.client.pool, user.id, interaction.guild.id)
+        guild_sigils_leaderboard = await get_guild_sigils_leaderboard(interaction.client.pool, interaction.guild.id, limit=10000)
+        guild_sigils_rank = next((i+1 for i, (uid, _) in enumerate(guild_sigils_leaderboard) if uid == user.id), "N/A")
 
         def word(n):
             if n == "N/A":
@@ -801,14 +807,24 @@ class Mora(commands.Cog):
         if guild_rank != "N/A":
             embed.add_field(
                 name=interaction.guild.name,
-                value=f"{CURRENCY_NAME}: {MORA_EMOTE} `{int(guild_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(guild_rank)}**",
+                value=(
+                    f"{CURRENCY_NAME}: {GUILD_MORA_EMOTE} `{int(guild_total):,}`\n"
+                    f"-# <:rank:1364439165189488854> Rank: **{word(guild_rank)}**\n"
+                    f"{SIGIL_CURRENCY_NAME}: {GUILD_SIGIL_EMOTE} `{int(guild_sigils):,}`\n"
+                    f"-# <:rank:1364439165189488854> Rank: **{word(guild_sigils_rank)}**"
+                ),
                 inline=True,
             )
 
         if global_rank != "N/A":
             embed.add_field(
                 name="Global",
-                value=f"{CURRENCY_NAME}: {MORA_EMOTE} `{int(global_total):,}`\n-# <:rank:1364439165189488854> Rank: **{word(global_rank)}**",
+                value=(
+                    f"{CURRENCY_NAME}: {GLOBAL_MORA_EMOTE} `{int(global_total):,}`\n"
+                    f"-# <:rank:1364439165189488854> Rank: **{word(global_rank)}**\n"
+                    f"{SIGIL_CURRENCY_NAME}: {GLOBAL_SIGIL_EMOTE} `{int(global_sigils):,}`\n"
+                    f"-# <:rank:1364439165189488854> Rank: **{word(global_sigils_rank)}**"
+                ),
                 inline=True,
             )
 

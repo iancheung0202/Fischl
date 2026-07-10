@@ -144,13 +144,13 @@ def configure_minigames(guild_id):
           <h3 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Minigames Configuration</h3>
           <div class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-xl p-6 text-center">
             <p class="text-gray-700 dark:text-gray-300 text-lg mb-2">
-              Use <code class="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono text-sm">/events settings</code> slash command on Discord to configure everything with ease.
+              <b>This area is under construction.</b> Use <code class="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono text-sm">/events settings</code>, <code class="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono text-sm">/shop</code>, or <code class="bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded font-mono text-sm">/milestones</code> <b>slash command on Discord to configure everything with ease for now.</b>
             </p>
           </div>
         </div>
 
         <!-- Shop Management Section -->
-        <div class="mt-12">
+        <div class="mt-12" style="display: none !important; visibility: hidden !important;">
           <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Shop Management</h2>
           
           <!-- Shop Tab Navigation -->
@@ -216,7 +216,7 @@ def configure_minigames(guild_id):
         </div>
 
         <!-- Milestones Management Section -->
-        <div class="mt-12">
+        <div class="mt-12" style="display: none !important; visibility: hidden !important;">
           <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-6">Milestones Management</h2>
           
           <!-- Milestones Tab Navigation -->
