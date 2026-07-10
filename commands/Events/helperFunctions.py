@@ -6,7 +6,6 @@ import math
 import asyncpg
 
 from typing import Optional
-from firebase_admin import db
 
 from commands.Events.config import MORA_EMOTE, NO_EMOTE, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
 
@@ -14,11 +13,6 @@ from commands.Events.config import MORA_EMOTE, NO_EMOTE, MORA_CHEST_UPGRADE_TIME
 
 async def ensure_progression_user(pool: asyncpg.Pool, gid: int, uid: int) -> None:
     async with pool.acquire() as conn:
-        for col in ["chest_disabled BOOLEAN DEFAULT FALSE", "minigame_disabled BOOLEAN DEFAULT FALSE"]:
-            await conn.execute(f"ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS {col}")
-        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS shop_discount INTEGER DEFAULT 0")
-        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS domain_discount INTEGER DEFAULT 0")
-        await conn.execute("ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS express_daily_chests BOOLEAN DEFAULT FALSE")
         await conn.execute("""
             INSERT INTO minigame_progression 
             (gid, uid, kingdom_schloss, kingdom_theater, kingdom_bibliothek, kingdom_garten,
@@ -681,8 +675,6 @@ async def ensure_minigame_settings_table(pool):
                 chests_enabled      BOOLEAN DEFAULT FALSE
             )
         """)
-        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS mora_multiplier NUMERIC(4,2) DEFAULT 1.00")
-        await conn.execute("ALTER TABLE minigame_settings ADD COLUMN IF NOT EXISTS chests_enabled BOOLEAN DEFAULT FALSE")
 
 async def ensure_minigame_guild_chest_settings_table(pool):
     async with pool.acquire() as conn:
@@ -700,13 +692,40 @@ async def ensure_minigame_guild_chest_settings_table(pool):
                 chests_icons                TEXT[] DEFAULT ARRAY['https://i.imgur.com/2kOfLSC.png','https://i.imgur.com/DBPQSAu.png','https://i.imgur.com/zxOlrCo.png','https://i.imgur.com/5nWwRdc.png']
             )
         """)
-        await conn.execute("ALTER TABLE minigame_guild_chest_settings ADD COLUMN IF NOT EXISTS chests_emotes TEXT[] DEFAULT ARRAY['<a:common:1371641883121680465>','<a:exquisite:1371641856344985620>','<a:precious:1371641871452995689>','<a:luxurious:1371641841338023976>']")
-        await conn.execute("ALTER TABLE minigame_guild_chest_settings ADD COLUMN IF NOT EXISTS chests_icons TEXT[] DEFAULT ARRAY['https://i.imgur.com/2kOfLSC.png','https://i.imgur.com/DBPQSAu.png','https://i.imgur.com/zxOlrCo.png','https://i.imgur.com/5nWwRdc.png']")
 
-async def ensure_minigame_progression_columns(pool):
+async def ensure_minigame_progression_table(pool):
     async with pool.acquire() as conn:
-        for col in ["chest_disabled BOOLEAN DEFAULT FALSE", "minigame_disabled BOOLEAN DEFAULT FALSE"]:
-            await conn.execute(f"ALTER TABLE minigame_progression ADD COLUMN IF NOT EXISTS {col}")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_progression (
+                gid                     BIGINT NOT NULL,
+                uid                     BIGINT NOT NULL,
+
+                xp                      INTEGER DEFAULT 0,
+                prestige                INTEGER DEFAULT 0,
+                bonus_tier              INTEGER DEFAULT 0,
+
+                kingdom_schloss         INTEGER DEFAULT 0,
+                kingdom_theater         INTEGER DEFAULT 0,
+                kingdom_bibliothek      INTEGER DEFAULT 0,
+                kingdom_garten          INTEGER DEFAULT 0,
+
+                mora_boost              INTEGER DEFAULT 0,
+                chest_upgrades          INTEGER DEFAULT 4,
+                gift_tax                INTEGER,
+                minigame_summons        INTEGER DEFAULT 0,
+
+                shop_discount           INTEGER DEFAULT 0,
+                domain_discount         INTEGER DEFAULT 0,
+                express_daily_chests    BOOLEAN DEFAULT FALSE,
+
+                chest_disabled          BOOLEAN DEFAULT FALSE,
+                minigame_disabled       BOOLEAN DEFAULT FALSE,
+
+                updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                PRIMARY KEY (gid, uid)
+            )
+        """)
 
 async def ensure_minigame_elite_table(pool):
     async with pool.acquire() as conn:
@@ -724,9 +743,22 @@ async def ensure_minigame_elite_table(pool):
             )
         """)
 
-async def ensure_minigame_inventory_columns(pool):
+async def ensure_minigame_inventory_table(pool):
     async with pool.acquire() as conn:
-        await conn.execute("ALTER TABLE minigame_inventory ADD COLUMN IF NOT EXISTS link TEXT DEFAULT NULL")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_inventory (
+                uid         BIGINT NOT NULL,
+                gid         BIGINT NOT NULL,
+                title       TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                cost        TEXT DEFAULT '0',
+                timestamp   BIGINT DEFAULT 0,
+                pinned      BOOLEAN DEFAULT FALSE,
+                link        TEXT DEFAULT NULL,
+
+                PRIMARY KEY (uid, gid, title)
+            )
+        """)
 
 async def ensure_minigame_chests_table(pool):
     async with pool.acquire() as conn:
@@ -922,6 +954,20 @@ async def ensure_rewards_table(pool):
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_rewards_pending ON minigame_rewards (pending_scheduled_time)
                 WHERE pending_scheduled_time IS NOT NULL
+        """)
+
+async def ensure_minigame_mora_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_mora (
+                uid         BIGINT NOT NULL,
+                gid         BIGINT NOT NULL,
+                cid         BIGINT NOT NULL,
+                timestamp   BIGINT NOT NULL,
+                count       INTEGER DEFAULT 0,
+
+                PRIMARY KEY (gid, uid, cid, timestamp)
+            )
         """)
 
 async def get_shop_items(pool, gid: int) -> list:
@@ -1314,8 +1360,9 @@ class TierRewardsView(discord.ui.View):
             
 async def setup(bot) -> None:
     await ensure_minigame_settings_table(bot.pool)
-    await ensure_minigame_progression_columns(bot.pool)
-    await ensure_minigame_inventory_columns(bot.pool)
+    await ensure_minigame_progression_table(bot.pool)
+    await ensure_minigame_mora_table(bot.pool)
+    await ensure_minigame_inventory_table(bot.pool)
     await ensure_minigame_guild_chest_settings_table(bot.pool)
     await ensure_minigame_elite_table(bot.pool)
     await ensure_minigame_chests_table(bot.pool)

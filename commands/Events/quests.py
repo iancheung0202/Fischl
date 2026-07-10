@@ -8,16 +8,6 @@ import asyncpg
 from discord.ext import commands
 
 try:
-    from utils.commands import SlashCommand
-except ImportError:
-    class SlashCommand:
-        def __init__(self, name):
-            self.name = name
-
-        def __str__(self):
-            return f"`/{self.name}`"
-
-try:
     from commands.Events.config import YES_EMOTE
 except ImportError as e:
     YES_EMOTE = "✅"
@@ -275,4 +265,4 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
             )
         
 async def setup(bot: commands.Bot) -> None:
-    pass
+    await ensure_quests_table(bot.pool)

@@ -7,6 +7,19 @@ from discord import app_commands
 from discord.ui import Button, View
 from commands.Events.quests import update_quest
 
+
+async def ensure_minigame_hugs_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS hugs (
+                target_id   BIGINT NOT NULL,
+                hugger_id   BIGINT NOT NULL,
+                count       INTEGER DEFAULT 1,
+
+                PRIMARY KEY (target_id, hugger_id)
+            )
+        """)
+
 class Hug(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -121,4 +134,5 @@ class Hug(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
+    await ensure_minigame_hugs_table(bot.pool)
     await bot.add_cog(Hug(bot))

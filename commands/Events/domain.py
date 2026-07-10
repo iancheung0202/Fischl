@@ -1,5 +1,4 @@
 import discord
-from firebase_admin import db
 from commands.Events.helperFunctions import subtractGuildMora, get_building_level, increment_building_level, apply_discount, get_domain_discount
 
 from commands.Events.config import MORA_EMOTE, BUILDINGS, DOMAIN_NAME, DOMAIN_DESCRIPTION, get_rank_title, calculate_cost, perk_info
