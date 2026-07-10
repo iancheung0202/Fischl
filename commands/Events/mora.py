@@ -14,13 +14,13 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track, is_elite_active
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_channel_settings, upsert_channel_settings, ensure_minigame_settings_table, ensure_minigame_progression_columns, ensure_minigame_guild_chest_settings_table, upsert_guild_chest_config, get_guild_chest_config
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_chest_config, get_chest_counts, get_chest_streaks
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MONEYDANCE_EMOTE, DOT_EMOTE, COSMETICS_DB, REWARDS_DB, CHEST_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, COSMETICS_DB, REWARDS_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -46,12 +46,10 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     tier_emotes_list = gc.get("chests_emotes", [])
     tier_emotes = dict(zip(tier_names, tier_emotes_list)) if tier_emotes_list else {}
 
-    ref_counts = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/counts")
-    chest_counts = ref_counts.get() or {}
-    total_chests = sum(chest_counts.values())
+    counts = await get_chest_counts(pool, guild_id, user_id)
+    total_chests = sum(counts)
 
-    ref_streak = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/streaks")
-    streak_data = ref_streak.get() or {}
+    streak_data = await get_chest_streaks(pool, guild_id, user_id)
     last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
     current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
     max_streak = streak_data.get("max_streak", current_streak)
@@ -59,7 +57,7 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     chest_info = ""
     for i, name in enumerate(tier_names):
         emote = tier_emotes.get(name, EMOTE_BLANK)
-        count = chest_counts.get(name, 0)
+        count = counts[i] if i < len(counts) else 0
         chest_info += f"{emote} `{count}` {EMOTE_BLANK}"
     chest_info += (
         f"\n**Total:** `{total_chests}` {EMOTE_BLANK}"

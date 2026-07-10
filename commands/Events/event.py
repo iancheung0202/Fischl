@@ -8,7 +8,6 @@ import pandas as pd
 import io
 import aiohttp
 
-from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands, tasks
 from discord.ui import Button, View
@@ -17,10 +16,10 @@ from essential_generators import DocumentGenerator
 from difflib import SequenceMatcher
 
 from commands.Events.trackData import get_current_track, check_tier_rewards, is_elite_active
-from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, get_guild_chest_config
+from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, get_guild_chest_config, get_chest_progress, upsert_chest_progress, get_chest_streaks, upsert_chest_streaks, get_chest_counts, upsert_chest_counts
 from commands.Events.quests import update_quest
 
-from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, CHEST_DB, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS
+from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS
 from commands.Events.config import build_chest_description
 
 
@@ -4050,9 +4049,7 @@ class MoraChestView(discord.ui.View):
                         view.guild_id, view.user_id
                     )
 
-            streak_path = f"{CHEST_DB}/{view.guild_id}/{view.user_id}/streaks"
-            streak_ref = db.reference(streak_path)
-            streak_data = streak_ref.get() or {}
+            streak_data = await get_chest_streaks(interaction.client.pool, view.guild_id, view.user_id)
             max_streak = streak_data.get("max_streak", 0)
 
             new_max_streak = max(max_streak, view.streak)
@@ -4077,19 +4074,20 @@ class MoraChestView(discord.ui.View):
                 inline=True
             )
 
-            counts_path = f"{CHEST_DB}/{view.guild_id}/{view.user_id}/counts"
-            counts_ref = db.reference(counts_path)
             tiers_for_counts = list(view._tier_map.keys())
-            chest_counts = counts_ref.get() or {t: 0 for t in tiers_for_counts}
-            chest_counts[view.tier] = chest_counts.get(view.tier, 0) + 1
-            total_chests = sum(chest_counts.values())
+            counts = await get_chest_counts(interaction.client.pool, view.guild_id, view.user_id)
+            while len(counts) < len(tiers_for_counts):
+                counts.append(0)
+            tier_index = tiers_for_counts.index(view.tier)
+            counts[tier_index] += 1
+            total_chests = sum(counts)
 
             def _tier_icon(t):
                 return view._tier_emotes.get(t, EMOTE_BLANK)
 
             chest_info = "".join(
-                f"{_tier_icon(t)} `{chest_counts.get(t, 0)}` {EMOTE_BLANK}"
-                for t in tiers_for_counts
+                f"{_tier_icon(t)} `{counts[i] if i < len(counts) else 0}` {EMOTE_BLANK}"
+                for i, t in enumerate(tiers_for_counts)
             )
             chest_info += (
                 f"\n📦 **Total:** `{total_chests}` {EMOTE_BLANK}"
@@ -4101,12 +4099,12 @@ class MoraChestView(discord.ui.View):
 
             await interaction.response.edit_message(content=interaction.user.mention, embed=embed, view=PersistentChestInfoView())
 
-            streak_ref.set({
-                "streak": view.streak,
-                "max_streak": new_max_streak,
-                "last_claimed": datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-            })
-            counts_ref.set(chest_counts)
+            await upsert_chest_streaks(
+                interaction.client.pool, view.guild_id, view.user_id,
+                view.streak, new_max_streak,
+                datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+            )
+            await upsert_chest_counts(interaction.client.pool, view.guild_id, view.user_id, counts)
             view.cog.pending_chests.discard((view.user_id, view.guild_id))
             view.completed = True
             view.update_buttons()
@@ -4317,7 +4315,7 @@ class DailyChestSystem:
         spawn_req = channel_chest_config.get("chests_spawn_req", [4, 6])
 
         if key not in self.user_states or self.user_states[key]['current_date'] != today:
-            db_state = self.load_from_db(guild_id, user_id)
+            db_state = await self.load_from_db(cog.client.pool, guild_id, user_id)
             if db_state and db_state['current_date'] == today:
                 self.user_states[key] = db_state
                 if db_state['chest_triggered']:
@@ -4361,7 +4359,7 @@ class DailyChestSystem:
         state['last_content'] = message.content
 
         if not state['chest_triggered']:
-            self.save_to_db(guild_id, user_id, state)
+            await self.save_to_db(cog.client.pool, guild_id, user_id, state)
 
         if (not state['chest_triggered'] and
             state['message_count'] >= state['threshold'] and
@@ -4369,16 +4367,14 @@ class DailyChestSystem:
 
             state['chest_triggered'] = True
             self.claimed_today.add(key)
-            self.save_to_db(guild_id, user_id, state)
+            await self.save_to_db(cog.client.pool, guild_id, user_id, state)
             await self.trigger_chest(message, cog, channel_chest_config)
 
-    def load_from_db(self, guild_id, user_id):
-        ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/progress")
-        return ref.get()
+    async def load_from_db(self, pool, guild_id, user_id):
+        return await get_chest_progress(pool, guild_id, user_id)
         
-    def save_to_db(self, guild_id, user_id, state):
-        ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/progress")
-        ref.set(state)
+    async def save_to_db(self, pool, guild_id, user_id, state):
+        await upsert_chest_progress(pool, guild_id, user_id, state)
     
     def invalidate_flag_cache(self, guild_id, user_id):
         self.flags.invalidate(guild_id, user_id)
@@ -4410,8 +4406,7 @@ class DailyChestSystem:
         streak_bonus = ccfg.get("chests_streak_bonus", MORA_CHEST_STREAK_BONUS)
         spawn_req = ccfg.get("chests_spawn_req", [4, 6])
         
-        ref = db.reference(f"{CHEST_DB}/{guild_id}/{user_id}/streaks")
-        streak_data = ref.get() or {}
+        streak_data = await get_chest_streaks(cog.client.pool, guild_id, user_id)
         last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
         current_streak = streak_data.get("streak", 0)
 
@@ -4433,7 +4428,7 @@ class DailyChestSystem:
             color=discord.Color.random()
         )
         embed.set_thumbnail(url=ccfg.get("chests_icons", [None])[0] if ccfg.get("chests_icons") else "")
-        embed.set_footer(text=f"A chest spawns after sending {self.user_states[(guild_id, user_id)]['threshold']} effortful messages in minigame channels each day")
+        embed.set_footer(text=f"This chest spawned after you sent {self.user_states[(guild_id, user_id)]['threshold']} effortful messages in minigame channels today")
         chest_msg = await message.channel.send(
             content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + MORA_CHEST_TIMEOUT}:R>!",
             embed=embed,

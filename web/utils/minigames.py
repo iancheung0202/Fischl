@@ -7,7 +7,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 
-from firebase_admin import db
 from config.settings import BOT_TOKEN, API_BASE, MORA_EMOTE, POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 from utils.request import requests_session
 
@@ -543,17 +542,29 @@ def generate_mora_graph(user_id, guild_id, display_name):
         # Days the user actively earned Mora
         days_active = len(daily_earnings)
         
-        # Get chest counts
-        ref_counts = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/counts")
-        chest_counts = ref_counts.get() or {}
-        total_chests = sum(chest_counts.values())
-
-        # Get streak data
-        ref_streak = db.reference(f"/Chat Minigames Chests/{guild_id}/{user_id}/streaks")
-        streak_data = ref_streak.get() or {}
-        last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
-        current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
-        max_streak = streak_data.get("max_streak", current_streak)
+        # Get chest counts and streak data from PostgreSQL
+        try:
+            cursor.execute(
+                "SELECT counts, streak, max_streak, last_claimed FROM minigame_chests WHERE gid = %s AND uid = %s",
+                (guild_id, user_id)
+            )
+            chest_row = cursor.fetchone()
+        except Exception:
+            chest_row = None
+        if chest_row:
+            counts = list(chest_row[0]) if chest_row[0] else []
+            raw_streak = chest_row[1] or 0
+            raw_max_streak = chest_row[2] or 0
+            last_claimed_str = chest_row[3]
+        else:
+            counts = []
+            raw_streak = 0
+            raw_max_streak = 0
+            last_claimed_str = None
+        total_chests = sum(counts)
+        last_claimed = datetime.datetime.fromisoformat(last_claimed_str).date() if last_claimed_str else None
+        current_streak = raw_streak if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
+        max_streak = max(raw_max_streak, current_streak)
 
         # Get guild chest config for dynamic tier names / emotes / icons
         try:
@@ -576,7 +587,7 @@ def generate_mora_graph(user_id, guild_id, display_name):
         chest_info = ""
         for i, name in enumerate(tier_names):
             emoji_id = emotes[i].split(":")[-1].rstrip(">") if i < len(emotes) else ""
-            count = chest_counts.get(name, 0)
+            count = counts[i] if i < len(counts) else 0
             chest_info += (
                 f"<img src='https://cdn.discordapp.com/emojis/{emoji_id}.png?size=20' "
                 f"style='line-height: 1em; display: inline; vertical-align: baseline;'> "

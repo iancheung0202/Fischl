@@ -4,7 +4,6 @@ import traceback
 
 from discord.ext import commands
 from discord import app_commands
-from typing import Optional
 
 class DatabaseCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
@@ -15,7 +14,7 @@ class DatabaseCog(commands.Cog):
         description="Execute raw SQL queries"
     )
     @app_commands.describe(
-        query="minigame_inventory/mora/progression/settings/guild_chest_settings/rewards/elite"
+        query="minigame_inventory/mora/progression/chests/rewards/elite/settings/guild_chest_settings"
     )
     async def database_query(
         self,

@@ -728,6 +728,99 @@ async def ensure_minigame_inventory_columns(pool):
     async with pool.acquire() as conn:
         await conn.execute("ALTER TABLE minigame_inventory ADD COLUMN IF NOT EXISTS link TEXT DEFAULT NULL")
 
+async def ensure_minigame_chests_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_chests (
+                gid                  BIGINT NOT NULL,
+                uid                  BIGINT NOT NULL,
+                chest_triggered      BOOLEAN DEFAULT FALSE,
+                chest_date           TEXT DEFAULT '',
+                last_message_content TEXT DEFAULT '',
+                last_message_time    BIGINT DEFAULT 0,
+                message_count        INTEGER DEFAULT 0,
+                threshold            INTEGER DEFAULT 0,
+                streak               INTEGER DEFAULT 0,
+                max_streak           INTEGER DEFAULT 0,
+                last_claimed         TEXT DEFAULT NULL,
+                counts               INTEGER[] DEFAULT '{}',
+                PRIMARY KEY (gid, uid)
+            )
+        """)
+
+async def get_chest_progress(pool, gid: int, uid: int):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT chest_triggered, chest_date, last_message_content, last_message_time, message_count, threshold FROM minigame_chests WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    if row:
+        return {
+            "chest_triggered": row["chest_triggered"],
+            "current_date": row["chest_date"],
+            "last_content": row["last_message_content"],
+            "last_time": row["last_message_time"],
+            "message_count": row["message_count"],
+            "threshold": row["threshold"],
+        }
+    return None
+
+async def upsert_chest_progress(pool, gid: int, uid: int, state: dict):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_chests (gid, uid, chest_triggered, chest_date, last_message_content, last_message_time, message_count, threshold)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (gid, uid) DO UPDATE SET
+                chest_triggered = EXCLUDED.chest_triggered,
+                chest_date = EXCLUDED.chest_date,
+                last_message_content = EXCLUDED.last_message_content,
+                last_message_time = EXCLUDED.last_message_time,
+                message_count = EXCLUDED.message_count,
+                threshold = EXCLUDED.threshold
+        """, gid, uid, state["chest_triggered"], state["current_date"], state["last_content"], state["last_time"], state["message_count"], state["threshold"])
+
+async def get_chest_streaks(pool, gid: int, uid: int) -> dict:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT streak, max_streak, last_claimed FROM minigame_chests WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    if row:
+        return {
+            "streak": row["streak"] or 0,
+            "max_streak": row["max_streak"] or 0,
+            "last_claimed": row["last_claimed"],
+        }
+    return {}
+
+async def upsert_chest_streaks(pool, gid: int, uid: int, streak: int, max_streak: int, last_claimed: str):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_chests (gid, uid, streak, max_streak, last_claimed)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (gid, uid) DO UPDATE SET
+                streak = EXCLUDED.streak,
+                max_streak = EXCLUDED.max_streak,
+                last_claimed = EXCLUDED.last_claimed
+        """, gid, uid, streak, max_streak, last_claimed)
+
+async def get_chest_counts(pool, gid: int, uid: int) -> list:
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT counts FROM minigame_chests WHERE gid = $1 AND uid = $2",
+            gid, uid
+        )
+    return list(val) if val else []
+
+async def upsert_chest_counts(pool, gid: int, uid: int, counts: list):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO minigame_chests (gid, uid, counts)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (gid, uid) DO UPDATE SET
+                counts = EXCLUDED.counts
+        """, gid, uid, counts)
+
 _SETTINGS_FALLBACK = {
     "channel_id": 0,
     "mora_multiplier": 1.00,
@@ -977,3 +1070,4 @@ async def setup(bot) -> None:
     await ensure_minigame_inventory_columns(bot.pool)
     await ensure_minigame_guild_chest_settings_table(bot.pool)
     await ensure_minigame_elite_table(bot.pool)
+    await ensure_minigame_chests_table(bot.pool)
