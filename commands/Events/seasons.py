@@ -2,9 +2,8 @@ import asyncio
 import time
 
 from discord.ext import commands
-from firebase_admin import db
 
-from commands.Events.config import COSMETICS_DB, SEASONS
+from commands.Events.config import SEASONS
 
 def get_current_season():
     now = time.time()
@@ -60,12 +59,11 @@ class SeasonCog(commands.Cog):
         
         async with pool.acquire() as conn:
             await conn.execute("UPDATE minigame_elite SET claimed_tiers = '{}'")
-        
-        rewards_ref = db.reference(COSMETICS_DB)
-        for guild_id, guild_data in (rewards_ref.get() or {}).items():
-            for user_id, user_data in guild_data.items():
-                rewards_ref.child(guild_id).child(user_id).child("embed_color").delete()
-                rewards_ref.child(guild_id).child(user_id).child("selected").update({"embed_color_hex": None})
+            await conn.execute("""
+                UPDATE minigame_cosmetics
+                SET embed_color = FALSE,
+                    selected_embed_color_hex = NULL
+            """)
         
         async with pool.acquire() as conn:
             try:

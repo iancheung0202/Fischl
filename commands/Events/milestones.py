@@ -3,13 +3,12 @@ import time
 
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
-from commands.Events.helperFunctions import get_users_by_mora_threshold
+from commands.Events.helperFunctions import get_users_by_mora_threshold, get_milestones_list, set_milestones
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MILESTONE_SORT_OPTIONS, REWARDS_DB
+from commands.Events.config import MORA_EMOTE, YES_EMOTE, NO_EMOTE, MILESTONE_SORT_OPTIONS
 
 def get_milestone_embeds(interaction: discord.Interaction, milestones: list, sort_by="threshold", reverse=True) -> list:
     if not milestones:
@@ -132,12 +131,12 @@ class MilestoneModal(discord.ui.Modal, title="Add a Milestone"):
                 await interaction.followup.send("That role ID doesn't exist in this server!", ephemeral=True)
                 return
         
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
-        milestones = ref.get() or []
+        ref = await get_milestones_list(interaction.client.pool, interaction.guild.id)
+        milestones = ref
         # New format: [description, reward, threshold]
         milestone_data = [description, reward, threshold]
         milestones.append(milestone_data)
-        ref.set(milestones)
+        await set_milestones(interaction.client.pool, interaction.guild.id, milestones)
         
         count = 0
         qualified_users = await get_users_by_mora_threshold(interaction.client.pool, interaction.guild.id, threshold)
@@ -170,8 +169,7 @@ class MilestoneModal(discord.ui.Modal, title="Add a Milestone"):
                     except Exception:
                         pass
         
-        milestones_ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
-        updated_milestones = milestones_ref.get() or []
+        updated_milestones = await get_milestones_list(interaction.client.pool, interaction.guild.id)
         self.pages = get_milestone_embeds(interaction, updated_milestones) 
         
         await interaction.followup.send(
@@ -189,8 +187,7 @@ class RemoveMilestoneModal(discord.ui.Modal, title="Remove a Milestone"):
 
     async def on_submit(self, interaction: discord.Interaction):
         name = self.milestone_name.value.strip()
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
-        milestones = ref.get() or []
+        milestones = await get_milestones_list(interaction.client.pool, interaction.guild.id)
         removed = False
         
         new_milestones = []
@@ -201,7 +198,7 @@ class RemoveMilestoneModal(discord.ui.Modal, title="Remove a Milestone"):
                 removed = True
         
         if removed:
-            ref.set(new_milestones)
+            await set_milestones(interaction.client.pool, interaction.guild.id, new_milestones)
             self.pages = get_milestone_embeds(interaction, new_milestones)
             await interaction.response.send_message(f"{YES_EMOTE} Milestone removed successfully.", ephemeral=True)
         else:
@@ -213,8 +210,7 @@ class MilestoneSort(BaseSortSelect):
         super().__init__(MILESTONE_SORT_OPTIONS, default, initial_author, custom_id="milestonesorting")
 
     async def callback(self, interaction: discord.Interaction):
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
-        milestones = ref.get() or []
+        milestones = await get_milestones_list(interaction.client.pool, interaction.guild.id)
 
         sort_mapping = {
             "sort by threshold (low to high)": ("threshold", False),
@@ -287,8 +283,7 @@ class Milestones(commands.Cog):
         interaction: discord.Interaction,
     ) -> None:
         await interaction.response.defer(thinking=True)
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
-        milestones = ref.get() or []
+        milestones = await get_milestones_list(interaction.client.pool, interaction.guild.id)
         
         pages = get_milestone_embeds(interaction, milestones)
         

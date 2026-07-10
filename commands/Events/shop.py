@@ -3,13 +3,12 @@ import time
 
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
-from commands.Events.helperFunctions import addMora
+from commands.Events.helperFunctions import addMora, get_shop_items, set_shop_items, process_pending_stock_edits, update_shop_item_cost, update_shop_item_stock_by_name, add_shop_item, remove_shop_item_by_name, add_pending_edit, get_pending_shop_edits
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, REWARDS_DB, SHOP_EDITS_PENDING_DB
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS
 
 async def get_shop_embeds(
     interaction, item_list, empty_condition, sort_by="cost", reverse=True
@@ -84,8 +83,7 @@ class SortSelection(BaseSortSelect):
         super().__init__(SHOP_SORT_OPTIONS, default, initial_author, custom_id="sortselection")
 
     async def callback(self, interaction: discord.Interaction):
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        originalList = ref.get() or []
+        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
 
         if interaction.data["values"][0] == "sort by cost (low to high)":
             pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0, sort_by="cost", reverse=False)
@@ -256,8 +254,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        originalList = ref.get() or []
+        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
 
         duplicate = False
         for item in originalList:
@@ -299,7 +296,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
                 [str(self.name), str(self.desc), str(self.cost), multiple, stock_val]
             )
 
-            ref.set(originalList)
+            await set_shop_items(interaction.client.pool, interaction.guild.id, originalList)
             self.update = discord.Embed(
                 description=f"Added reward :slight_smile:", color=discord.Color.green()
             )
@@ -344,8 +341,7 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        originalList = ref.get() or []
+        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
 
         if len(originalList) == 0:
             await interaction.response.send_message(
@@ -438,8 +434,7 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        originalList = ref.get() or []
+        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
             
         item_found = False
         multiplier_map = {"k": 10**3, "m": 10**6, "b": 10**9, "t": 10**12}
@@ -480,81 +475,11 @@ class EditCostModel(discord.ui.Modal, title="Edit Item Cost"):
             )
             
         if item_found and "Updated" in getattr(self.update, "description", ""):
-            ref.set(originalList)
+            await set_shop_items(interaction.client.pool, interaction.guild.id, originalList)
 
         self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
         self.on_submit_interaction = interaction
         self.stop()
-
-async def process_pending_stock_edits(guild_id: int):
-    current_time = time.time()
-    ref = db.reference(f"{SHOP_EDITS_PENDING_DB}/{guild_id}")
-    pending_edits = ref.get() or {}
-    
-    processed_count = 0
-    for key, edit in list(pending_edits.items()):
-        scheduled_time = edit.get('scheduled_time', 0)
-        
-        if scheduled_time > current_time:
-            continue
-
-        guild_ref = db.reference(f"{REWARDS_DB}/{guild_id}/shop")
-        rewards_list = guild_ref.get() or []
-        guild_key = None
-        
-        if not rewards_list:
-            ref.child(key).delete()
-            continue
-            
-        for i, reward in enumerate(rewards_list):
-            if len(reward) < 5:
-                rewards_list[i] = reward + [-1]
-        
-        item_found = False
-        for i, item in enumerate(rewards_list):
-            if item[0] == edit['item_identifier']:
-                current_stock = item[4]
-                stock_change = edit['stock_change']
-                
-                if stock_change.startswith(('+', '-')):
-                    if current_stock == -1:
-                        current_stock = 0
-                    
-                    try:
-                        change = int(stock_change)
-                        new_stock = current_stock + change
-                    except ValueError:
-                        sign = stock_change[0]
-                        num_str = stock_change[1:].strip()
-                        if not num_str:
-                            num = 0
-                        else:
-                            num = int(num_str)
-                        new_stock = current_stock + num if sign == '+' else current_stock - num
-                else:
-                    try:
-                        new_stock = int(stock_change)
-                    except ValueError:
-                        continue
-                
-                if new_stock < 0:
-                    new_stock = 0
-                
-                rewards_list[i][4] = new_stock
-                item_found = True
-                print(f"Updated stock for {item[0]} from {current_stock} to {new_stock}")
-                break
-        
-        if item_found:
-            guild_ref.set(rewards_list)
-            processed_count += 1
-        else:
-            continue
-        
-        ref.child(key).delete()
-    
-    print(f"Processed {processed_count} pending edits for guild {guild_id}")
-    return processed_count
 
 class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
     item = discord.ui.TextInput(
@@ -582,11 +507,10 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        originalList = ref.get() or []
+        originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
         found_key = None
         
-        await process_pending_stock_edits(interaction.guild.id)
+        await process_pending_stock_edits(interaction.client.pool, interaction.guild.id)
             
         for i, item in enumerate(originalList):
             if len(item) < 5:
@@ -606,13 +530,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                 else:
                     immediate = False
                     
-                    pending_ref = db.reference(f"{SHOP_EDITS_PENDING_DB}/{interaction.guild.id}")
-                    new_edit = {
-                        'item_identifier': str(self.item),
-                        'stock_change': stock_value,
-                        'scheduled_time': scheduled_time
-                    }
-                    pending_ref.push().set(new_edit)
+                    await add_pending_edit(interaction.client.pool, interaction.guild.id, str(self.item), stock_value, scheduled_time)
                     
                     self.update = discord.Embed(
                         description=f"Scheduled stock update for **{self.item}** at <t:{int(scheduled_time)}>.",
@@ -677,11 +595,7 @@ class EditStockModel(discord.ui.Modal, title="Edit Item Stock"):
                 )
             
             if item_found and "Updated" in getattr(self.update, "description", ""):
-                ref.set(originalList)
-            
-        self.pages = await get_shop_embeds(interaction, originalList, len(originalList) == 0)
-        self.on_submit_interaction = interaction
-        self.stop()
+                await set_shop_items(interaction.client.pool, interaction.guild.id, originalList)
         
 class Shop(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
@@ -696,13 +610,12 @@ class Shop(commands.Cog):
     ) -> None:
         await interaction.response.defer(thinking=True)
         
-        processed = await process_pending_stock_edits(interaction.guild.id)
+        processed = await process_pending_stock_edits(interaction.client.pool, interaction.guild.id)
         if processed > 0:
             print(f"Processed {processed} scheduled stock edits for guild {interaction.guild.id}")
         
         
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        foundGuild = ref.get() or []
+        foundGuild = await get_shop_items(interaction.client.pool, interaction.guild.id)
 
         pages = await get_shop_embeds(
             interaction, foundGuild, len(foundGuild) == 0

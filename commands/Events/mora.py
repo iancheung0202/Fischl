@@ -14,13 +14,13 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track, is_elite_active
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_chest_config, get_chest_counts, get_chest_streaks
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_chest_config, get_chest_counts, get_chest_streaks, get_cosmetics, get_milestones_list
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, COSMETICS_DB, REWARDS_DB, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
+from commands.Events.config import MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -321,13 +321,12 @@ class ToggleView(discord.ui.View):
         embed.add_field(name="🏷️ Shop Discount", value=f"`{stats.get('shop_discount', 0)}%`", inline=True)
         embed.add_field(name="🏰 Domain Discount", value=f"`{stats.get('domain_discount', 0)}%`", inline=True)
 
-        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{self.user_id}/selected")
-        selected = ref_selected.get() or {}
-        ref_color = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{self.user_id}/embed_color")
-        color_unlocked = ref_color.get() or False
+        cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, self.user_id)
+        selected = dict(cosmetics) if cosmetics else {}
+        color_unlocked = cosmetics["embed_color"] if cosmetics else False
         color_status = "`Not unlocked`"
         if color_unlocked:
-            custom_color = selected.get("embed_color_hex")
+            custom_color = selected.get("selected_embed_color_hex")
             color_status = f"`{custom_color}`" if custom_color else "`Unlocked but not set`"
         embed.add_field(name="🎨 Custom Accent Color", value=color_status, inline=True)
         embed.add_field(name="<:PRIMOGEM:1364031230357540894> Prestige", value=f"`{prestige}`")
@@ -750,10 +749,10 @@ class Mora(commands.Cog):
             except Exception as e:
                 print(e)
             
-        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/selected")
-        selected = ref_selected.get() or {}
+        cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, user.id)
+        selected = dict(cosmetics) if cosmetics else {}
         elite_active = await is_elite_active(interaction.client.pool, user.id, interaction.guild.id)
-        custom_color_hex = selected.get("embed_color_hex") if elite_active else None
+        custom_color_hex = selected.get("selected_embed_color_hex") if elite_active else None
         custom_color = discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
         
         embed = discord.Embed(
@@ -778,8 +777,7 @@ class Mora(commands.Cog):
 
         embed.add_field(name="Guild Inventory", value=inv, inline=False)
         
-        milestones_ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/milestones")
-        milestones = milestones_ref.get() or []
+        milestones = await get_milestones_list(interaction.client.pool, interaction.guild.id)
 
         user_milestones = []
         try:
@@ -816,27 +814,22 @@ class Mora(commands.Cog):
 
         embed.add_field(name="Guild Milestones", value=milestones_text, inline=False)
 
-        animated_background = selected.get("animated_background") if elite_active else None
-        profile_frame = selected.get("profile_frame")
+        animated_background = selected.get("selected_animated_background") if elite_active else None
+        profile_frame = selected.get("selected_profile_frame")
         
         customized = os.path.isfile(f"{INVENTORY_BG_PATH}/{user.id}.png") or bool(profile_frame) or bool(animated_background)
             
-        custom_title = selected.get("custom_title")
-        title_key = selected.get("title")
+        custom_title = selected.get("selected_custom_title")
+        title_key = selected.get("selected_title")
         title_display = None
         if custom_title:
             title_display = f"### {custom_title}"
         elif title_key:
-            title_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{user.id}/titles")
-            titles = title_ref.get() or {}
+            titles = cosmetics["titles"] if cosmetics else []
             
-            if title_key in titles:
-                title_data = titles[title_key]
-                # Title data is just the name or a simple dict with name
-                if isinstance(title_data, dict):
-                    title_name = title_data.get("name", "Unknown")
-                else:
-                    title_name = str(title_data)
+            title_entry = next((e for e in titles if len(e) >= 2 and e[0] == title_key), None)
+            if title_entry:
+                title_name = title_entry[1]
                 
                 pin = ":round_pushpin:" if "<a:" not in title_name else ""
                 title_display = (
@@ -960,6 +953,190 @@ class Mora(commands.Cog):
             quest_dict["gift_mora_poorer"] = 1
         
         await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_dict, interaction.client)
+
+    @app_commands.command(name="migrate_cosmetics_and_rewards", description="Migrate COSMETICS_DB, REWARDS_DB, SHOP_EDITS_PENDING_DB from Firebase to PostgreSQL for all guilds")
+    @app_commands.default_permissions(administrator=True)
+    async def migrate_cosmetics_and_rewards(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        from firebase_admin import db as firebase_db
+
+        pool = interaction.client.pool
+        stats = {"guilds": 0, "cosmetics": 0, "shop_items": 0, "milestones": 0, "pending_edits": 0}
+
+        # Collect all guild IDs across all three paths
+        guild_ids: set[int] = set()
+        for path in ("/Chat Minigames Cosmetics", "/Chat Minigames Rewards", "/Pending Shop Edits"):
+            root = (firebase_db.reference(path).get() or {})
+            for key in root:
+                try:
+                    guild_ids.add(int(key))
+                except (ValueError, TypeError):
+                    pass
+
+        if not guild_ids:
+            await interaction.followup.send("No guild data found in Firebase for any of the three paths.")
+            return
+
+        for guild_id in sorted(guild_ids):
+            # ── 1. COSMETICS_DB ──────────────────────────────────────────────────
+            cos_ref = firebase_db.reference(f"/Chat Minigames Cosmetics/{guild_id}")
+            cos_data = cos_ref.get() or {}
+            for uid_str, data in cos_data.items():
+                try:
+                    uid = int(uid_str)
+                except (ValueError, TypeError):
+                    continue
+
+                raw_titles = data.get("titles") or {}
+                titles = []
+                if isinstance(raw_titles, dict):
+                    for ts, val in raw_titles.items():
+                        if isinstance(val, dict):
+                            titles.append([ts, val.get("name", "")])
+                        else:
+                            titles.append([ts, str(val)])
+
+                raw_bgs = data.get("animated_backgrounds") or []
+                backgrounds = [str(b) for b in (raw_bgs if isinstance(raw_bgs, list) else [])]
+
+                raw_frames = data.get("profile_frames") or []
+                frames = [str(f) for f in (raw_frames if isinstance(raw_frames, list) else [])]
+
+                selected = data.get("selected") or {}
+                embed_color = data.get("embed_color", False)
+
+                async with pool.acquire() as conn:
+                    existing = await conn.fetchrow(
+                        "SELECT uid FROM minigame_cosmetics WHERE gid = $1 AND uid = $2",
+                        guild_id, uid
+                    )
+                    if existing:
+                        await conn.execute("""
+                            UPDATE minigame_cosmetics SET
+                                titles = $1, backgrounds = $2, frames = $3,
+                                embed_color = $4,
+                                selected_title = $5,
+                                selected_custom_title = $6,
+                                selected_animated_background = $7,
+                                selected_profile_frame = $8,
+                                selected_font = $9,
+                                selected_embed_color_hex = $10,
+                                selected_animated_background_unlocked = $11,
+                                selected_font_unlocked = $12,
+                                selected_custom_title_unlocked = $13
+                            WHERE gid = $14 AND uid = $15
+                        """,
+                            titles, backgrounds, frames,
+                            embed_color,
+                            selected.get("title"),
+                            selected.get("custom_title"),
+                            selected.get("animated_background"),
+                            selected.get("profile_frame"),
+                            selected.get("font"),
+                            selected.get("embed_color_hex"),
+                            selected.get("animated_background_unlocked", False),
+                            selected.get("font_unlocked", False),
+                            selected.get("custom_title_unlocked", False),
+                            guild_id, uid
+                        )
+                    else:
+                        await conn.execute("""
+                            INSERT INTO minigame_cosmetics
+                                (gid, uid, titles, backgrounds, frames,
+                                 embed_color,
+                                 selected_title, selected_custom_title,
+                                 selected_animated_background, selected_profile_frame,
+                                 selected_font, selected_embed_color_hex,
+                                 selected_animated_background_unlocked,
+                                 selected_font_unlocked,
+                                 selected_custom_title_unlocked)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                        """,
+                            guild_id, uid, titles, backgrounds, frames,
+                            embed_color,
+                            selected.get("title"),
+                            selected.get("custom_title"),
+                            selected.get("animated_background"),
+                            selected.get("profile_frame"),
+                            selected.get("font"),
+                            selected.get("embed_color_hex"),
+                            selected.get("animated_background_unlocked", False),
+                            selected.get("font_unlocked", False),
+                            selected.get("custom_title_unlocked", False)
+                        )
+                stats["cosmetics"] += 1
+
+            # ── 2. REWARDS_DB — shop items ───────────────────────────────────────
+            shop_ref = firebase_db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
+            shop_items = shop_ref.get() or []
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item'",
+                    guild_id
+                )
+                for item in shop_items:
+                    if len(item) < 3:
+                        continue
+                    await conn.execute("""
+                        INSERT INTO minigame_rewards
+                            (gid, item_type, name, description, cost, multiple, stock)
+                        VALUES ($1, 'shop_item', $2, $3, $4, $5, $6)
+                    """,
+                        guild_id, str(item[0]), str(item[1]), str(item[2]),
+                        bool(item[3]) if len(item) > 3 else False,
+                        int(item[4]) if len(item) > 4 else -1
+                    )
+                    stats["shop_items"] += 1
+
+            # ── 3. REWARDS_DB — milestones ───────────────────────────────────────
+            mil_ref = firebase_db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
+            milestones = mil_ref.get() or []
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone'",
+                    guild_id
+                )
+                for entry in milestones:
+                    if not isinstance(entry, list) or len(entry) < 3:
+                        continue
+                    await conn.execute("""
+                        INSERT INTO minigame_rewards
+                            (gid, item_type, name, description, threshold)
+                        VALUES ($1, 'milestone', $2, $3, $4)
+                    """,
+                        guild_id, str(entry[1]), str(entry[0]), int(entry[2])
+                    )
+                    stats["milestones"] += 1
+
+            # ── 4. SHOP_EDITS_PENDING_DB ─────────────────────────────────────────
+            pending_ref = firebase_db.reference(f"/Pending Shop Edits/{guild_id}")
+            pending_edits = pending_ref.get() or {}
+            for key, edit in pending_edits.items():
+                item_id = edit.get("item_identifier")
+                stock_change = edit.get("stock_change")
+                scheduled_time = edit.get("scheduled_time")
+                if not item_id or stock_change is None or scheduled_time is None:
+                    continue
+                async with pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE minigame_rewards
+                        SET pending_stock_change = $1, pending_scheduled_time = $2
+                        WHERE gid = $3 AND item_type = 'shop_item' AND name = $4
+                    """, stock_change, float(scheduled_time), guild_id, str(item_id))
+                stats["pending_edits"] += 1
+
+            stats["guilds"] += 1
+
+        msg = (
+            f"**Global migration complete**\n"
+            f"• Guilds processed: `{stats['guilds']}`\n"
+            f"• Cosmetics migrated: `{stats['cosmetics']}`\n"
+            f"• Shop items migrated: `{stats['shop_items']}`\n"
+            f"• Milestones migrated: `{stats['milestones']}`\n"
+            f"• Pending edits migrated: `{stats['pending_edits']}`"
+        )
+        await interaction.followup.send(msg)
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Mora(bot))

@@ -2,13 +2,12 @@ import discord
 import os
 import time
 
-from firebase_admin import db
-
 from commands.Events.dropPack import create_drop_pack
 from commands.Events.seasons import get_current_season
+from commands.Events.helperFunctions import add_title_to_cosmetics, add_background_to_cosmetics, add_frame_to_cosmetics, get_cosmetics, upsert_cosmetics
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, COSMETICS_DB, REWARD_TYPES, CURRENCY_NAME
+from commands.Events.config import MORA_EMOTE, REWARD_TYPES, CURRENCY_NAME
 
 def get_current_track():
     season = get_current_season()
@@ -55,65 +54,44 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
         description += f"You can claim your drop pack [here]({message.jump_url})!"
         
     elif reward_type == "animated_background":
-        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/animated_backgrounds")
-        backgrounds = ref.get() or []
         reward_file_name = reward_str.split('|')[1].strip()
         background_name = f"{reward_file_name.split('/')[2].split('.')[0].strip()}"
-        if background_name not in backgrounds:
-            backgrounds.append(background_name)
-            ref.set(backgrounds)
-            title = f"{'Elite Reward: ' if is_elite else ''} Animated Inventory Background Unlocked 🖼️"
-            description = f"**Tier `{tier}`:** You have unlocked **{background_name}**! Use {SlashCommand('customize')} to equip it in this server!"
+        await add_background_to_cosmetics(pool, guild_id, user_id, background_name)
+        title = f"{'Elite Reward: ' if is_elite else ''} Animated Inventory Background Unlocked 🖼️"
+        description = f"**Tier `{tier}`:** You have unlocked **{background_name}**! Use {SlashCommand('customize')} to equip it in this server!"
 
     elif reward_type == "custom_gif_background":
-        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/selected")
-        selected = ref.get() or {}
-        selected["animated_background_unlocked"] = True
-        ref.set(selected)
+        await upsert_cosmetics(pool, guild_id, user_id, selected_animated_background_unlocked=True)
         title = f"{'Elite Reward: ' if is_elite else ''} Custom GIF Background Unlocked 🖼️"
         description = f"**Tier `{tier}`:** You can now upload and use a custom animated GIF background with {SlashCommand('customize')}!"
 
     elif reward_type == "font_unlock":
-        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/selected")
-        selected = ref.get() or {}
-        selected["font_unlocked"] = True
-        ref.set(selected)
+        await upsert_cosmetics(pool, guild_id, user_id, selected_font_unlocked=True)
         title = f"{'Elite Reward: ' if is_elite else ''} Custom Card Font Unlocked 🔤"
         description = f"**Tier `{tier}`:** You can now select an Elite Track font preset with {SlashCommand('customize')}!"
         
     elif reward_type == "title":
         title_parts = reward_str.split('|')
         title_name = title_parts[1].strip() if len(title_parts) > 1 else reward_str
-        cosmetics_ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/titles")
-        titles = cosmetics_ref.get() or {}
         timestamp = str(int(time.time() * 1000))
-        titles[timestamp] = {"name": title_name}
-        cosmetics_ref.set(titles)
+        await add_title_to_cosmetics(pool, guild_id, user_id, timestamp, title_name)
         title = f"{'Elite Reward: ' if is_elite else ''} Server Title Unlocked 📍"
         description = f"**Tier `{tier}`:** You have unlocked **{title_name}**! Use {SlashCommand('customize')} to equip it in this server!"
             
     elif reward_type == "static_frame" or reward_type == "animated_frame":
-        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/profile_frames")
-        profile_frames = ref.get() or []
         reward_file_name = reward_str.split('|')[1].strip()
         frame_name = os.path.basename(reward_file_name)
-        if frame_name not in profile_frames:
-            profile_frames.append(frame_name)
-            ref.set(profile_frames)
-            title = f"{'Elite Reward: ' if is_elite else ''} {'Static' if 'static' in reward_type else '**Animated**'} Profile Frame Unlocked 👤"
-            description = f"**Tier `{tier}`:** You have unlocked **{frame_name.split('.')[0]}**! Use {SlashCommand('customize')} to equip it in this server!"
+        await add_frame_to_cosmetics(pool, guild_id, user_id, frame_name)
+        title = f"{'Elite Reward: ' if is_elite else ''} {'Static' if 'static' in reward_type else '**Animated**'} Profile Frame Unlocked 👤"
+        description = f"**Tier `{tier}`:** You have unlocked **{frame_name.split('.')[0]}**! Use {SlashCommand('customize')} to equip it in this server!"
             
     elif reward_type == "accent_color" or reward_type == "embed_color":
-        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/embed_color")
-        ref.set(True)
+        await upsert_cosmetics(pool, guild_id, user_id, embed_color=True)
         title = f"{'Elite Reward: ' if is_elite else ''} Custom Accent Color Unlocked 🎨"
         description = f"**Tier `{tier}`:** You can have a custom accent color on your inventory and profile card! Use {SlashCommand('customize')} to edit your favorite color!"
 
     elif reward_type == "custom_title":
-        ref = db.reference(f"{COSMETICS_DB}/{guild_id}/{user_id}/selected")
-        selected = ref.get() or {}
-        selected["custom_title_unlocked"] = True
-        ref.set(selected)
+        await upsert_cosmetics(pool, guild_id, user_id, selected_custom_title_unlocked=True)
         title = f"{'Elite Reward: ' if is_elite else ''} Custom Title Unlocked 📍"
         description = f"**Tier `{tier}`:** You can now set a custom text title with {SlashCommand('customize')}!"
 

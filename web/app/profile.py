@@ -1259,8 +1259,26 @@ def profile_inventory(guild_id):
         guild_rank = "N/A"
     
     # Get selected cosmetics for profile card
-    ref_selected = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/selected")
-    selected = ref_selected.get() or {}
+    selected = {}
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT selected_embed_color_hex, selected_animated_background, selected_profile_frame, selected_font FROM minigame_cosmetics WHERE gid = %s AND uid = %s",
+            (int(guild_id), int(user_id))
+        )
+        row = cursor.fetchone()
+        if row:
+            selected = {
+                "embed_color_hex": row[0],
+                "animated_background": row[1],
+                "profile_frame": row[2],
+                "font": row[3],
+            }
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error fetching cosmetics: {e}")
     
     # Generate profile card
     try:
@@ -1394,8 +1412,19 @@ def profile_inventory(guild_id):
         inv_content = "No shop items purchased yet"
     
     # Get milestones like in Discord bot
-    milestones_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
-    milestones = milestones_ref.get() or []
+    milestones = []
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT description, name, threshold FROM minigame_rewards WHERE gid = %s AND item_type = 'milestone' ORDER BY id",
+            (int(guild_id),)
+        )
+        milestones = [[r[0], r[1], r[2]] for r in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error fetching milestones: {e}")
     
     # Fetch user's earned milestones from PostgreSQL
     user_milestones = []
@@ -1638,10 +1667,28 @@ def profile_track(guild_id):
     season = get_current_season()
     is_elite = is_elite_active(user_id, guild_id)
 
-    ref_selected = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/selected")
-    selected = ref_selected.get() or {}
-    ref_color = db.reference(f"/Chat Minigames Cosmetics/{guild_id}/{user_id}/embed_color")
-    color_unlocked = ref_color.get() or False
+    selected = {}
+    color_unlocked = False
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT selected_embed_color_hex, selected_animated_background, selected_profile_frame, selected_font, embed_color FROM minigame_cosmetics WHERE gid = %s AND uid = %s",
+            (int(guild_id), int(user_id))
+        )
+        row = cursor.fetchone()
+        if row:
+            selected = {
+                "embed_color_hex": row[0],
+                "animated_background": row[1],
+                "profile_frame": row[2],
+                "font": row[3],
+            }
+            color_unlocked = row[4] or False
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error fetching cosmetics: {e}")
     color_status = "Not unlocked"
     if color_unlocked:
         custom_color = selected.get("embed_color_hex")

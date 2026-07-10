@@ -5,11 +5,10 @@ import asyncio
 
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
-from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory, apply_discount, get_shop_discount
+from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, subtractGuildMora, add_inventory_item, get_user_inventory, apply_discount, get_shop_discount, get_shop_items, set_shop_items, process_pending_stock_edits as process_pending_stock_edits_helper, get_pending_shop_edits
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, REWARDS_DB, SHOP_EDITS_PENDING_DB, BALANCE_COMMAND, CONFUSED_EMOTE
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, BALANCE_COMMAND, CONFUSED_EMOTE
 
 global_purchase_queue = asyncio.Queue()
 
@@ -33,82 +32,17 @@ async def purchase_worker():
         finally:
             global_purchase_queue.task_done()
 
-async def process_pending_stock_edits(guild_id: int):
-    current_time = time.time()
-    ref = db.reference(f"{SHOP_EDITS_PENDING_DB}/{guild_id}")
-    pending_edits = ref.get() or {}
-
-    guild_key = str(guild_id)
-    
-    processed_count = 0
-    for key, edit in list(pending_edits.items()):
-        scheduled_time = edit.get('scheduled_time', 0)
-        
-        if scheduled_time > current_time:
-            continue
-        
-        guild_ref = db.reference(f"{REWARDS_DB}/{guild_id}/shop")
-        rewards_list = guild_ref.get() or []
-        
-        if not rewards_list:
-            ref.child(key).delete()
-            continue
-            
-        for i, reward in enumerate(rewards_list):
-            if len(reward) < 5:
-                rewards_list[i] = reward + [-1]
-        
-        item_found = False
-        for i, item in enumerate(rewards_list):
-            if item[0] == edit['item_identifier']:
-                current_stock = item[4]
-                stock_change = edit['stock_change']
-                
-                if stock_change.startswith(('+', '-')):
-                    if current_stock == -1:
-                        current_stock = 0
-                    
-                    try:
-                        change = int(stock_change)
-                        new_stock = current_stock + change
-                    except ValueError:
-                        sign = stock_change[0]
-                        num_str = stock_change[1:].strip()
-                        if not num_str:
-                            num = 0
-                        else:
-                            num = int(num_str)
-                        new_stock = current_stock + num if sign == '+' else current_stock - num
-                else:
-                    try:
-                        new_stock = int(stock_change)
-                    except ValueError:
-                        continue
-                
-                if new_stock < 0:
-                    new_stock = 0
-                
-                rewards_list[i][4] = new_stock
-                item_found = True
-                print(f"Updated stock for {item[0]} from {current_stock} to {new_stock}")
-                break
-        
-        if item_found:
-            guild_ref.set(rewards_list) 
-            processed_count += 1
-        else:
-            continue
-        
-        ref.child(key).delete()
-    
-    return processed_count
+async def process_pending_stock_edits(guild_id: int, pool=None):
+    if pool is None:
+        return 0
+    return await process_pending_stock_edits_helper(pool, guild_id)
 
 async def purchase_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-    rewards_data = ref.get() or []
+    ref = await get_shop_items(interaction.client.pool, interaction.guild.id)
+    rewards_data = ref
     choices = []
 
     if isinstance(rewards_data, dict):
@@ -183,7 +117,7 @@ class ConfirmPurchaseView(discord.ui.View):
             )
             return await interaction.edit_original_response(embed=embed)
         
-        processed = await process_pending_stock_edits(interaction.guild.id)
+        processed = await process_pending_stock_edits(interaction.guild.id, interaction.client.pool)
         if processed > 0:
             print(f"Processed {processed} scheduled stock updates for guild {interaction.guild.id}")
             await asyncio.sleep(1)  # Give a moment for DB to stabilize
@@ -223,8 +157,8 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=None)
             return
 
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        rewards_data = ref.get() or []
+        ref = await get_shop_items(interaction.client.pool, interaction.guild.id)
+        rewards_data = ref
         
         if isinstance(rewards_data, dict):
             rewards = list(rewards_data.values())
@@ -348,9 +282,8 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=TierRewardsView(free_embed, elite_embed) if xp_earned != "" else None)
             
             if len(ogRewards[x]) > 4 and ogRewards[x][4] > 0:
-                ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
                 ogRewards[x][4] -= 1
-                ref.set(ogRewards)
+                await set_shop_items(interaction.client.pool, interaction.guild.id, ogRewards)
                 
             link = (await interaction.original_response()).jump_url
             print(f"{interaction.user.name} ({interaction.user.id}) have paid {discountedCost:,} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
@@ -436,9 +369,7 @@ class Buy(commands.Cog):
     async def buy(self, interaction: discord.Interaction, item: str) -> None:
         await interaction.response.defer(thinking=True)
             
-        ref = db.reference(f"{REWARDS_DB}/{interaction.guild.id}/shop")
-        daily = ref.get() or []
-        rewards = daily
+        rewards = await get_shop_items(interaction.client.pool, interaction.guild.id)
 
         x = 0
         for i in rewards:

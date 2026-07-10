@@ -15,90 +15,55 @@ def process_pending_shop_edits(guild_id):
     """Process any pending scheduled shop edits"""
     try:
         current_time = time.time()
-        ref = db.reference(f"/Pending Shop Edits/{guild_id}")
-        pending_edits = ref.get() or {}
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
+        cursor.execute("""
+            SELECT id, name, description, cost, multiple, stock, pending_stock_change, pending_scheduled_time
+            FROM minigame_rewards
+            WHERE gid = %s AND item_type = 'shop_item'
+              AND pending_scheduled_time IS NOT NULL AND pending_scheduled_time <= %s
+        """, (int(guild_id), current_time))
+        
+        rows = cursor.fetchall()
         processed_count = 0
-        for key, edit in list(pending_edits.items()):
-            scheduled_time = edit.get('scheduled_time', 0)
+        
+        for row in rows:
+            item_id, name, desc, cost, multiple, current_stock, stock_change, scheduled_time = row
             
-            # Skip if not yet time
-            if scheduled_time > current_time:
-                continue
-                
-            print(f"Processing edit for item {edit['item_identifier']} in guild {guild_id}")
-                
-            # Get current rewards
-            guild_ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
-            rewards_list = guild_ref.get() or []
+            print(f"Processing edit for item {name} in guild {guild_id}")
             
-            if not rewards_list:
-                print(f"No rewards found for guild {guild_id}")
-                ref.child(key).delete()
-                continue
-                
-            # Convert old format to new format if needed
-            for i, reward in enumerate(rewards_list):
-                if len(reward) < 5:
-                    rewards_list[i] = reward + [-1]
-                
-            # Find the item and process stock change
-            item_found = False
-            for i, item in enumerate(rewards_list):
-                if item[0] == edit['item_identifier']:
-                    current_stock = item[4]
-                    stock_change = edit['stock_change']
-                    
-                    # Handle relative changes
-                    if stock_change.startswith(('+', '-')):
-                        # Convert unlimited stock to 0 for relative operations
-                        if current_stock == -1:
-                            current_stock = 0
-                        
-                        # Parse the relative change
-                        try:
-                            change = int(stock_change)
-                            new_stock = current_stock + change
-                        except ValueError:
-                            # Handle cases like "+10" without space
-                            sign = stock_change[0]
-                            num_str = stock_change[1:].strip()
-                            if not num_str:
-                                num = 0
-                            else:
-                                num = int(num_str)
-                            new_stock = current_stock + num if sign == '+' else current_stock - num
-                    else:
-                        # Absolute value
-                        try:
-                            new_stock = int(stock_change)
-                            # Handle unlimited stock case
-                            if new_stock == -1:
-                                new_stock = -1
-                        except ValueError:
-                            # Invalid value, skip
-                            print(f"Invalid stock value: {stock_change}")
-                            continue
-                    
-                    # Clamp to valid range (but preserve -1 for unlimited)
-                    if new_stock < -1:
-                        new_stock = 0
-                    
-                    # Update stock
-                    rewards_list[i][4] = new_stock
-                    item_found = True
-                    print(f"Updated stock for {item[0]} from {current_stock} to {new_stock}")
-                    break
-            
-            if item_found:
-                # Update Firebase
-                guild_ref.set(rewards_list)
-                processed_count += 1
+            if stock_change.startswith(('+', '-')):
+                if current_stock == -1:
+                    current_stock = 0
+                try:
+                    change = int(stock_change)
+                    new_stock = current_stock + change
+                except ValueError:
+                    sign = stock_change[0]
+                    num_str = stock_change[1:].strip()
+                    num = int(num_str) if num_str else 0
+                    new_stock = current_stock + num if sign == '+' else current_stock - num
             else:
-                print(f"Item {edit['item_identifier']} not found in guild {guild_id}")
+                try:
+                    new_stock = int(stock_change)
+                except ValueError:
+                    print(f"Invalid stock value: {stock_change}")
+                    continue
             
-            # Remove processed edit
-            ref.child(key).delete()
+            if new_stock < -1:
+                new_stock = 0
+            
+            cursor.execute(
+                "UPDATE minigame_rewards SET stock = %s, pending_stock_change = NULL, pending_scheduled_time = NULL WHERE id = %s",
+                (new_stock, item_id)
+            )
+            processed_count += 1
+            print(f"Updated stock for {name} from {current_stock} to {new_stock}")
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
         
         print(f"Processed {processed_count} pending edits for guild {guild_id}")
         return processed_count
@@ -1393,44 +1358,62 @@ def api_shop_info(guild_id):
         process_pending_shop_edits(guild_id)
 
         # Get pending shop edits for this guild
-        pending_ref = db.reference(f"/Pending Shop Edits/{guild_id}")
-        pending_edits = pending_ref.get() or {}
-        
-        # Organize pending edits by item identifier
         pending_by_item = {}
-        for key, edit in pending_edits.items():
-            item_id = edit.get('item_identifier')
-            if item_id:
-                if item_id not in pending_by_item:
-                    pending_by_item[item_id] = []
-                # Include the key so we can delete the edit later
-                edit_with_key = edit.copy()
-                edit_with_key['edit_key'] = key
-                pending_by_item[item_id].append(edit_with_key)
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, name, description, cost, multiple, stock, pending_stock_change, pending_scheduled_time "
+                "FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' AND pending_stock_change IS NOT NULL "
+                "ORDER BY pending_scheduled_time",
+                (int(guild_id),)
+            )
+            for row in cursor.fetchall():
+                item_id, name, desc, cost, multiple, stock, stock_change, sched = row
+                item_key = str(name)
+                if item_key not in pending_by_item:
+                    pending_by_item[item_key] = []
+                pending_by_item[item_key].append({
+                    "item_identifier": name,
+                    "stock_change": stock_change,
+                    "scheduled_time": sched,
+                    "edit_key": str(item_id)
+                })
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching pending edits: {e}")
 
         # Get shop items from database
-        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
-        shop_items_list = ref.get() or []
         shop_items = []
-        for item in shop_items_list:
-            if len(item) >= 3:
-                # Convert old format to new format if needed
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name, description, cost, multiple, stock FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' ORDER BY id",
+                (int(guild_id),)
+            )
+            for row in cursor.fetchall():
                 item_data = {
-                    "name": item[0],
-                    "description": item[1],
-                    "cost": item[2],
-                    "multiple": item[3] if len(item) > 3 else False,
-                    "stock": item[4] if len(item) > 4 else -1
+                    "name": row[0],
+                    "description": row[1],
+                    "cost": row[2],
+                    "multiple": row[3],
+                    "stock": row[4]
                 }
                 
                 # Add role info if it's a role ID
-                if str(item[0]).isdigit() and str(item[0]) in guild_roles:
-                    item_data["role"] = guild_roles[str(item[0])]
+                if str(row[0]).isdigit() and str(row[0]) in guild_roles:
+                    item_data["role"] = guild_roles[str(row[0])]
                 
                 # Add pending edits info if any exist for this item
-                item_data["pending_edits"] = pending_by_item.get(str(item[0]), [])
+                item_data["pending_edits"] = pending_by_item.get(str(row[0]), [])
                 
                 shop_items.append(item_data)
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching shop items: {e}")
 
         # Generate shop items HTML
         items_html = ""
@@ -1656,21 +1639,36 @@ def api_add_shop_item(guild_id):
             except ValueError:
                 return jsonify({"success": False, "message": "Invalid stock value"}), 400
 
-        # Get existing rewards
-        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
-        rewards_list = ref.get() or []
-
         # Check for duplicates
-        for item in rewards_list:
-            if len(item) > 0 and str(item[0]) == str(name):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                (int(guild_id), str(name))
+            )
+            if cursor.fetchone():
+                cursor.close()
+                conn.close()
                 return jsonify({"success": False, "message": "Item with this name/role already exists"}), 400
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)}), 500
 
-        # Add new item
-        new_item = [name, description, cost, multiple, stock_val]
-        rewards_list.append(new_item)
-
-        # Save to database
-        ref.set(rewards_list)
+        # Insert new item
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock) VALUES (%s, 'shop_item', %s, %s, %s, %s, %s)",
+                (int(guild_id), str(name), str(description), str(cost), bool(multiple), int(stock_val))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)}), 500
 
         return jsonify({"success": True, "message": "Shop item added successfully"})
 
@@ -1698,33 +1696,39 @@ def api_delete_shop_item(guild_id):
         if not item_name:
             return jsonify({"success": False, "message": "Item name is required"}), 400
 
-        # Get existing rewards
-        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
-        rewards_list = ref.get() or []
-        
-        # Find and remove the item
-        item_to_delete = None
-        for i, item in enumerate(rewards_list):
-            if len(item) > 0 and str(item[0]) == str(item_name):
-                item_to_delete = rewards_list.pop(i)
-                break
-
-        if not item_to_delete:
-            return jsonify({"success": False, "message": "Item not found"}), 404
-
-        # Save updated list
-        ref.set(rewards_list)
+        # Find and remove the item, capture its cost before deleting
+        item_cost = 0
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT cost FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                (int(guild_id), str(item_name))
+            )
+            row = cursor.fetchone()
+            if not row:
+                cursor.close()
+                conn.close()
+                return jsonify({"success": False, "message": "Item not found"}), 404
+            item_cost = int(row[0])
+            cursor.execute(
+                "DELETE FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                (int(guild_id), str(item_name))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)}), 500
 
         # Handle compensation if requested
-        if compensate and len(item_to_delete) >= 3:
+        if compensate:
             try:
-                cost = int(item_to_delete[2])
                 compensated_users = 0
                 
-                # Get items to be removed (for calculating compensation)
                 conn = get_db_connection()
                 cursor = conn.cursor()
-                
+
                 # Query to get affected users and their item count
                 cursor.execute("""
                     SELECT uid, COUNT(*) as items_removed
@@ -1743,7 +1747,7 @@ def api_delete_shop_item(guild_id):
                 
                 # Add compensation mora for each affected user
                 for user_id, items_removed in affected_users:
-                    compensation = cost * items_removed
+                    compensation = item_cost * items_removed
                     ts = int(time.time())
                     cursor.execute(
                         "INSERT INTO minigame_mora (uid, gid, cid, timestamp, count) VALUES (%s, %s, %s, %s, %s)",
@@ -1755,7 +1759,7 @@ def api_delete_shop_item(guild_id):
                 cursor.close()
                 conn.close()
                 
-                message = f"Item deleted successfully. Compensated {compensated_users} users with {cost:,} Mora each."
+                message = f"Item deleted successfully. Compensated {compensated_users} users with {item_cost:,} Mora each."
             except Exception as e:
                 message = f"Item deleted successfully, but compensation failed: {str(e)}"
         else:
@@ -1798,66 +1802,65 @@ def api_edit_shop_item(guild_id):
             if float(scheduled_time) <= current_time:
                 return jsonify({"success": False, "message": "Scheduled time must be in the future"}), 400
             
-            # Get current item to compare changes
-            ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
-            rewards_list = ref.get() or []
-            current_item = None
+            # Get current item from database
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name, description, cost, multiple, stock FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                    (int(guild_id), str(old_name))
+                )
+                current_row = cursor.fetchone()
+                if not current_row:
+                    cursor.close()
+                    conn.close()
+                    return jsonify({"success": False, "message": "Item not found"}), 404
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                return jsonify({"success": False, "message": str(e)}), 500
             
-            for item in rewards_list:
-                if len(item) > 0 and str(item[0]) == str(old_name):
-                    current_item = item
-                    break
-            
-            if not current_item:
-                return jsonify({"success": False, "message": "Item not found"}), 404
-            
-            # Check if only stock is changing (consistent with Discord bot approach)
-            current_stock = current_item[4] if len(current_item) > 4 else -1
-            is_stock_only_change = (
-                str(current_item[0]) == str(new_name) and
-                str(current_item[1]) == str(description) and
-                int(current_item[2]) == int(cost) and
-                bool(current_item[3]) == bool(multiple)
+            # Check if only stock is changing
+            only_stock = (
+                current_row[0] == new_name and
+                str(current_row[1]) == str(description) and
+                str(current_row[2]) == str(cost) and
+                bool(current_row[3]) == bool(multiple)
             )
             
-            if is_stock_only_change:
-                # Handle stock-only change (like Discord bot)
+            if only_stock:
+                # Handle stock-only change
                 if stock and str(stock).strip():
-                    # Convert to string and handle different formats
                     stock_str = str(stock).strip()
                     
-                    # Validate stock change format
                     if stock_str.startswith(('+', '-')):
-                        # Relative change - validate the number part
                         try:
                             int(stock_str[1:]) if stock_str[1:] else 0
                             stock_change = stock_str
                         except ValueError:
                             return jsonify({"success": False, "message": "Invalid relative stock change format"}), 400
                     else:
-                        # Absolute value
                         try:
                             stock_val = int(stock_str)
-                            if stock_val < 0:
-                                stock_change = "-1"  # unlimited
-                            else:
-                                stock_change = str(stock_val)
+                            stock_change = "-1" if stock_val < 0 else str(stock_val)
                         except ValueError:
                             return jsonify({"success": False, "message": "Invalid stock value"}), 400
                 else:
-                    stock_change = "-1"  # unlimited
-                    
-                edit_data = {
-                    "item_identifier": old_name,
-                    "scheduled_time": float(scheduled_time),
-                    "stock_change": stock_change
-                }
-                pending_ref = db.reference(f"/Pending Shop Edits/{guild_id}")
-                pending_ref.push().set(edit_data)
+                    stock_change = "-1"
                 
-                # Convert timestamp to readable format for user (show in local time)
-                # The frontend sends UTC timestamp, but we need to show it in user's local time
-                # We'll send the timestamp to frontend and let JavaScript format it in user's timezone
+                try:
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE minigame_rewards SET pending_stock_change = %s, pending_scheduled_time = %s WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                        (stock_change, float(scheduled_time), int(guild_id), str(old_name))
+                    )
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+                except Exception as e:
+                    return jsonify({"success": False, "message": str(e)}), 500
+                
                 return jsonify({"success": True, "message": f"Stock update successfully scheduled", "scheduled_time": scheduled_time}) 
             else:
                 return jsonify({"success": False, "message": "Scheduled edits are only supported for stock-only changes. Please edit other fields immediately."}), 400
@@ -1884,30 +1887,36 @@ def api_edit_shop_item(guild_id):
             except ValueError:
                 return jsonify({"success": False, "message": "Invalid stock value"}), 400
 
-        # Get existing rewards
-        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/shop")
-        rewards_list = ref.get() or []
-        
-        # Find and update the item
-        item_found = False
-        for i, item in enumerate(rewards_list):
-            if len(item) > 0 and str(item[0]) == str(old_name):
-                # Check if new name conflicts with existing items (unless it's the same item)
-                if old_name != new_name:
-                    for other_item in rewards_list:
-                        if len(other_item) > 0 and str(other_item[0]) == str(new_name):
-                            return jsonify({"success": False, "message": "Item with this name/role already exists"}), 400
-                
-                # Update the item
-                rewards_list[i] = [new_name, description, cost, multiple, stock_val]
-                item_found = True
-                break
-
-        if not item_found:
-            return jsonify({"success": False, "message": "Item not found"}), 404
-
-        # Save updated list
-        ref.set(rewards_list)
+        # Update item in database
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Check if new name conflicts with existing items (unless it's the same item)
+            if old_name != new_name:
+                cursor.execute(
+                    "SELECT id FROM minigame_rewards WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                    (int(guild_id), str(new_name))
+                )
+                if cursor.fetchone():
+                    cursor.close()
+                    conn.close()
+                    return jsonify({"success": False, "message": "Item with this name/role already exists"}), 400
+            
+            cursor.execute(
+                "UPDATE minigame_rewards SET name = %s, description = %s, cost = %s, multiple = %s, stock = %s WHERE gid = %s AND item_type = 'shop_item' AND name = %s",
+                (str(new_name), str(description), str(cost), bool(multiple), int(stock_val), int(guild_id), str(old_name))
+            )
+            if cursor.rowcount == 0:
+                cursor.close()
+                conn.close()
+                return jsonify({"success": False, "message": "Item not found"}), 404
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)}), 500
 
         return jsonify({"success": True, "message": "Shop item updated successfully"})
 
@@ -1934,9 +1943,19 @@ def api_delete_pending_edit(guild_id):
         if not edit_key:
             return jsonify({"success": False, "message": "Edit key is required"}), 400
 
-        # Delete the pending edit from the database
-        pending_ref = db.reference(f"/Pending Shop Edits/{guild_id}/{edit_key}")
-        pending_ref.delete()
+        # Clear the pending edit on the reward row (edit_key is the item id)
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE minigame_rewards SET pending_stock_change = NULL, pending_scheduled_time = NULL WHERE id = %s AND gid = %s",
+                (int(edit_key), int(guild_id))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)}), 500
 
         return jsonify({"success": True, "message": "Pending edit deleted successfully"})
 
@@ -2093,26 +2112,36 @@ def api_milestones_info(guild_id):
                 guild_roles = {}
 
         # Get milestones from database
-        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
-        milestones_data = ref.get() or []
+        milestones_data = []
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, description, name, threshold FROM minigame_rewards WHERE gid = %s AND item_type = 'milestone' ORDER BY id",
+                (int(guild_id),)
+            )
+            milestones_data = cursor.fetchall()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching milestones: {e}")
         
         # Parse milestones
         milestones = []
-        for idx, milestone_entry in enumerate(milestones_data):
-            if isinstance(milestone_entry, list) and len(milestone_entry) >= 3:
-                milestone_info = {
-                    "id": str(idx),  
-                    "description": milestone_entry[0],
-                    "reward": milestone_entry[1],
-                    "threshold": milestone_entry[2]
-                }
-                
-                # Add role info if it's a role ID
-                reward = str(milestone_info["reward"])
-                if reward.isdigit() and reward in guild_roles:
-                    milestone_info["role"] = guild_roles[reward]
-                
-                milestones.append(milestone_info)
+        for row in milestones_data:
+            db_id, description, reward, threshold = row
+            milestone_info = {
+                "id": str(db_id),
+                "description": description,
+                "reward": reward,
+                "threshold": threshold
+            }
+            
+            # Add role info if it's a role ID
+            if str(reward).isdigit() and str(reward) in guild_roles:
+                milestone_info["role"] = guild_roles[str(reward)]
+            
+            milestones.append(milestone_info)
 
         # Sort by threshold
         milestones.sort(key=lambda x: x["threshold"])
@@ -2250,11 +2279,18 @@ def api_add_milestone(guild_id):
                 return jsonify({"success": False, "message": "Could not validate role"}), 500
 
         # Save to database
-        ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
-        milestones = ref.get() or []
-        milestone_data = [description, reward, threshold]
-        milestones.append(milestone_data)
-        ref.set(milestones)
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO minigame_rewards (gid, item_type, name, description, threshold) VALUES (%s, 'milestone', %s, %s, %s)",
+                (int(guild_id), str(reward), str(description), int(threshold))
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "message": str(e)}), 500
 
         # Award to existing users who meet the threshold (similar to bot logic)
         try:
@@ -2333,22 +2369,25 @@ def api_delete_milestone(guild_id):
         if not milestone_id:
             return jsonify({"success": False, "message": "Milestone ID is required"}), 400
 
-        # Delete from database - milestone_id is the index
+        # Delete from database
         try:
-            idx = int(milestone_id)
-            ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
-            milestones = ref.get() or []
-            
-            if idx < 0 or idx >= len(milestones):
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM minigame_rewards WHERE id = %s AND gid = %s AND item_type = 'milestone'",
+                (int(milestone_id), int(guild_id))
+            )
+            if cursor.rowcount == 0:
+                cursor.close()
+                conn.close()
                 return jsonify({"success": False, "message": "Milestone not found"}), 404
-            
-            # Remove the milestone at the given index
-            milestones.pop(idx)
-            ref.set(milestones)
+            conn.commit()
+            cursor.close()
+            conn.close()
             
             return jsonify({"success": True, "message": "Milestone deleted successfully"})
-        except (ValueError, IndexError):
-            return jsonify({"success": False, "message": "Invalid milestone ID"}), 400
+        except (ValueError, Exception) as e:
+            return jsonify({"success": False, "message": str(e)}), 400
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -2390,20 +2429,23 @@ def api_edit_milestone(guild_id):
 
         # Update in database
         try:
-            idx = int(milestone_id)
-            ref = db.reference(f"/Chat Minigames Rewards/{guild_id}/milestones")
-            milestones = ref.get() or []
-            
-            if idx < 0 or idx >= len(milestones):
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE minigame_rewards SET name = %s, description = %s, threshold = %s WHERE id = %s AND gid = %s AND item_type = 'milestone'",
+                (str(reward), str(description), int(threshold), int(milestone_id), int(guild_id))
+            )
+            if cursor.rowcount == 0:
+                cursor.close()
+                conn.close()
                 return jsonify({"success": False, "message": "Milestone not found"}), 404
-            
-            # Update the milestone at the given index - new list format: [description, reward, threshold]
-            milestones[idx] = [description, reward, threshold]
-            ref.set(milestones)
+            conn.commit()
+            cursor.close()
+            conn.close()
             
             return jsonify({"success": True, "message": "Milestone updated successfully"})
-        except (ValueError, IndexError):
-            return jsonify({"success": False, "message": "Invalid milestone ID"}), 400
+        except (ValueError, Exception) as e:
+            return jsonify({"success": False, "message": str(e)}), 400
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500

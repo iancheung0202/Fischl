@@ -8,7 +8,7 @@ import asyncpg
 from typing import Optional
 from firebase_admin import db
 
-from commands.Events.config import MORA_EMOTE, NO_EMOTE, REWARDS_DB, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
+from commands.Events.config import MORA_EMOTE, NO_EMOTE, MORA_CHEST_UPGRADE_TIMES, CONFUSED_EMOTE, XP_QUEST_EMBED
 
 # Progression helper functions
 
@@ -821,6 +821,255 @@ async def upsert_chest_counts(pool, gid: int, uid: int, counts: list):
                 counts = EXCLUDED.counts
         """, gid, uid, counts)
 
+# ── minigame_cosmetics ──────────────────────────────────────────────────
+
+async def ensure_cosmetics_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_cosmetics (
+                gid         BIGINT NOT NULL,
+                uid         BIGINT NOT NULL,
+
+                titles           TEXT[][] DEFAULT '{}',
+                backgrounds      TEXT[]   DEFAULT '{}',
+                frames           TEXT[]   DEFAULT '{}',
+
+                embed_color      BOOLEAN DEFAULT FALSE,
+
+                selected_title                   TEXT,
+                selected_custom_title            TEXT,
+                selected_animated_background     TEXT,
+                selected_profile_frame           TEXT,
+                selected_font                    TEXT,
+                selected_embed_color_hex         TEXT,
+                selected_animated_background_unlocked  BOOLEAN DEFAULT FALSE,
+                selected_font_unlocked                 BOOLEAN DEFAULT FALSE,
+                selected_custom_title_unlocked          BOOLEAN DEFAULT FALSE,
+
+                PRIMARY KEY (gid, uid)
+            )
+        """)
+
+async def get_cosmetics(pool, gid: int, uid: int) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM minigame_cosmetics WHERE gid = $1 AND uid = $2", gid, uid
+        )
+    if row:
+        return dict(row)
+    return None
+
+async def upsert_cosmetics(pool, gid: int, uid: int, **kwargs):
+    cols = ", ".join(kwargs.keys())
+    placeholders = ", ".join(f"${i+1}" for i in range(len(kwargs)))
+    updates = ", ".join(f"{k} = EXCLUDED.{k}" for k in kwargs)
+    vals = list(kwargs.values())
+    async with pool.acquire() as conn:
+        await conn.execute(f"""
+            INSERT INTO minigame_cosmetics (gid, uid, {cols})
+            VALUES ($1, $2, {placeholders})
+            ON CONFLICT (gid, uid) DO UPDATE SET {updates}
+        """, gid, uid, *vals)
+
+async def add_title_to_cosmetics(pool, gid: int, uid: int, ts: str, name: str):
+    row = await get_cosmetics(pool, gid, uid)
+    titles = row["titles"] if row else []
+    titles.append([ts, name])
+    await upsert_cosmetics(pool, gid, uid, titles=titles)
+
+async def add_background_to_cosmetics(pool, gid: int, uid: int, name: str):
+    row = await get_cosmetics(pool, gid, uid)
+    bgs = list(row["backgrounds"]) if row else []
+    if name not in bgs:
+        bgs.append(name)
+    await upsert_cosmetics(pool, gid, uid, backgrounds=bgs)
+
+async def add_frame_to_cosmetics(pool, gid: int, uid: int, name: str):
+    row = await get_cosmetics(pool, gid, uid)
+    frames = list(row["frames"]) if row else []
+    if name not in frames:
+        frames.append(name)
+    await upsert_cosmetics(pool, gid, uid, frames=frames)
+
+# ── minigame_rewards (shop items + milestones + pending edits) ──────────
+
+async def ensure_rewards_table(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_rewards (
+                id                      SERIAL PRIMARY KEY,
+                gid                     BIGINT NOT NULL,
+                item_type               TEXT NOT NULL,
+
+                name                    TEXT NOT NULL,
+                description             TEXT NOT NULL DEFAULT '',
+
+                cost                    TEXT DEFAULT '0',
+                multiple                BOOLEAN DEFAULT FALSE,
+                stock                   INTEGER DEFAULT -1,
+
+                threshold               BIGINT,
+
+                pending_stock_change    TEXT,
+                pending_scheduled_time  DOUBLE PRECISION,
+
+                created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rewards_gid_type ON minigame_rewards (gid, item_type)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rewards_pending ON minigame_rewards (pending_scheduled_time)
+                WHERE pending_scheduled_time IS NOT NULL
+        """)
+
+async def get_shop_items(pool, gid: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT name, description, cost, multiple, stock FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item' ORDER BY id",
+            gid
+        )
+    return [[r["name"], r["description"], r["cost"], r["multiple"], r["stock"]] for r in rows]
+
+async def set_shop_items(pool, gid: int, items: list):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item'", gid)
+            for item in items:
+                name, desc, cost, multiple, stock = item[0], item[1], str(item[2]), item[3], item[4]
+                await conn.execute(
+                    "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock) VALUES ($1, 'shop_item', $2, $3, $4, $5, $6)",
+                    gid, name, desc, cost, multiple, stock
+                )
+
+async def get_milestones_list(pool, gid: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT description, name, threshold FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' ORDER BY id",
+            gid
+        )
+    return [[r["description"], r["name"], r["threshold"]] for r in rows]
+
+async def set_milestones(pool, gid: int, milestones: list):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone'", gid)
+            for ms in milestones:
+                desc, reward, threshold = ms[0], ms[1], ms[2]
+                await conn.execute(
+                    "INSERT INTO minigame_rewards (gid, item_type, name, description, threshold) VALUES ($1, 'milestone', $2, $3, $4)",
+                    gid, reward, desc, threshold
+                )
+
+async def process_pending_stock_edits(pool, gid: int) -> int:
+    current_time = time.time()
+    processed = 0
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, description, cost, multiple, stock, pending_stock_change, pending_scheduled_time FROM minigame_rewards "
+            "WHERE gid = $1 AND item_type = 'shop_item' AND pending_scheduled_time IS NOT NULL AND pending_scheduled_time <= $2",
+            gid, current_time
+        )
+        for row in rows:
+            current_stock = row["stock"]
+            stock_change = row["pending_stock_change"]
+            if stock_change.startswith(('+', '-')):
+                if current_stock == -1:
+                    current_stock = 0
+                try:
+                    change = int(stock_change)
+                    new_stock = current_stock + change
+                except ValueError:
+                    sign = stock_change[0]
+                    num_str = stock_change[1:].strip()
+                    num = int(num_str) if num_str else 0
+                    new_stock = current_stock + num if sign == '+' else current_stock - num
+            else:
+                try:
+                    new_stock = int(stock_change)
+                except ValueError:
+                    continue
+            if new_stock < 0:
+                new_stock = 0
+            await conn.execute(
+                "UPDATE minigame_rewards SET stock = $1, pending_stock_change = NULL, pending_scheduled_time = NULL WHERE id = $2",
+                new_stock, row["id"]
+            )
+            processed += 1
+    return processed
+
+async def get_pending_shop_edits(pool, gid: int) -> dict:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, pending_stock_change, pending_scheduled_time FROM minigame_rewards "
+            "WHERE gid = $1 AND item_type = 'shop_item' AND pending_scheduled_time IS NOT NULL",
+            gid
+        )
+    return {
+        str(r["id"]): {
+            "item_identifier": r["name"],
+            "stock_change": r["pending_stock_change"],
+            "scheduled_time": r["pending_scheduled_time"]
+        }
+        for r in rows
+    }
+
+async def add_shop_item(pool, gid: int, name: str, description: str, cost: str, multiple: bool, stock: int):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO minigame_rewards (gid, item_type, name, description, cost, multiple, stock) VALUES ($1, 'shop_item', $2, $3, $4, $5, $6)",
+            gid, name, description, cost, multiple, stock
+        )
+
+async def remove_shop_item_by_name(pool, gid: int, name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item' AND name = $2",
+            gid, name
+        )
+
+async def update_shop_item_cost(pool, gid: int, name: str, new_cost: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_rewards SET cost = $1 WHERE gid = $2 AND item_type = 'shop_item' AND name = $3",
+            new_cost, gid, name
+        )
+
+async def update_shop_item_stock_by_name(pool, gid: int, name: str, new_stock: int):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_rewards SET stock = $1 WHERE gid = $2 AND item_type = 'shop_item' AND name = $3",
+            new_stock, gid, name
+        )
+
+async def add_pending_edit(pool, gid: int, name: str, stock_change: str, scheduled_time: float):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM minigame_rewards WHERE gid = $1 AND item_type = 'shop_item' AND name = $2",
+            gid, name
+        )
+        if row:
+            await conn.execute(
+                "UPDATE minigame_rewards SET pending_stock_change = $1, pending_scheduled_time = $2 WHERE id = $3",
+                stock_change, scheduled_time, row["id"]
+            )
+
+async def delete_pending_edit_by_name(pool, gid: int, name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE minigame_rewards SET pending_stock_change = NULL, pending_scheduled_time = NULL WHERE gid = $1 AND item_type = 'shop_item' AND name = $2",
+            gid, name
+        )
+
+async def get_milestones_flat(pool, gid: int) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT description, name, threshold FROM minigame_rewards WHERE gid = $1 AND item_type = 'milestone' ORDER BY id",
+            gid
+        )
+    return [[r["description"], r["name"], r["threshold"]] for r in rows]
+
 _SETTINGS_FALLBACK = {
     "channel_id": 0,
     "mora_multiplier": 1.00,
@@ -970,8 +1219,7 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
     
     total_mora = await get_guild_mora(pool, user_id, guild_id)
 
-    milestones_ref = db.reference(f"{REWARDS_DB}/{guild_id}/milestones")
-    milestones = milestones_ref.get() or []
+    milestones = await get_milestones_flat(pool, guild_id)
     
     user_inventory = await get_user_inventory(pool, user_id, guild_id)
     user_items = [item[0] for item in user_inventory]  # item[0] is title
@@ -1071,3 +1319,5 @@ async def setup(bot) -> None:
     await ensure_minigame_guild_chest_settings_table(bot.pool)
     await ensure_minigame_elite_table(bot.pool)
     await ensure_minigame_chests_table(bot.pool)
+    await ensure_cosmetics_table(bot.pool)
+    await ensure_rewards_table(bot.pool)

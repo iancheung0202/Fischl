@@ -52,10 +52,6 @@ TYPERACER_BG_PATH = "./assets/F7E8BE.png"
 TYPERACER_PATH = "./assets/typeracer.png"
 CURRENCY_ICON_PATH = "./assets/mora_icon.png"
 
-COSMETICS_DB = "/Chat Minigames Cosmetics"
-REWARDS_DB = "/Chat Minigames Rewards"
-SHOP_EDITS_PENDING_DB = "/Pending Shop Edits"
-
 PRICE_UP_EMOTE = "<:price_ascending:1346329079145562112>"
 PRICE_DOWN_EMOTE = "<:price_descending:1346329080462577725>"
 NAME_UP_EMOTE = "<:name_ascending:1346329053455585324>"

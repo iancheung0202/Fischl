@@ -4,14 +4,13 @@ import re
 
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 from PIL import Image, ImageEnhance, ImageOps, ImageSequence
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.quests import update_quest
-from commands.Events.helperFunctions import get_user_inventory, unpin_all_items
+from commands.Events.helperFunctions import get_user_inventory, unpin_all_items, get_cosmetics, upsert_cosmetics
 from commands.Events.trackData import is_elite_active
 
-from commands.Events.config import FRAMES_DIRECTORY, INVENTORY_BG_PATH, ANIMATED_INVENTORY_BG_PATH, DEFAULT_BG_PATH, YES_EMOTE, NO_EMOTE, HMM_EMOTE, COSMETICS_DB, FONT_PRESETS, FONT_PATH
+from commands.Events.config import FRAMES_DIRECTORY, INVENTORY_BG_PATH, ANIMATED_INVENTORY_BG_PATH, DEFAULT_BG_PATH, YES_EMOTE, NO_EMOTE, HMM_EMOTE, FONT_PRESETS, FONT_PATH
 
 def resolve_font_path(font_name: str | None) -> str:
     if not font_name:
@@ -38,9 +37,9 @@ def resolve_animated_background_path(animated_background: str | None) -> str | N
 
 def resolve_active_cosmetic_values(selected: dict, elite_active: bool) -> dict:
     return {
-        "animated_background": selected.get("animated_background") if elite_active else None,
-        "embed_color_hex": selected.get("embed_color_hex") if elite_active else None,
-        "font": selected.get("font") if elite_active else None,
+        "animated_background": selected.get("selected_animated_background") if elite_active else None,
+        "embed_color_hex": selected.get("selected_embed_color_hex") if elite_active else None,
+        "font": selected.get("selected_font") if elite_active else None,
     }
 
 async def process_animated_background_upload(attachment: discord.Attachment, output_path: str):
@@ -122,15 +121,15 @@ async def title_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ):
-    ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles")
-    titles = ref.get() or {}
+    cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+    titles = cosmetics["titles"] if cosmetics else []
     choices = []
     
-    for timestamp, title_data in titles.items():
-        if isinstance(title_data, dict):
-            title_name = title_data.get("name", "")
-        else:
-            title_name = str(title_data)
+    for entry in titles:
+        if len(entry) < 2:
+            continue
+        timestamp = entry[0]
+        title_name = entry[1]
         
         if not title_name:
             continue
@@ -157,8 +156,8 @@ async def font_autocomplete(interaction: discord.Interaction, current: str):
     return choices[:25]
 
 async def animated_bg_autocomplete(interaction: discord.Interaction, current: str):
-    ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/animated_backgrounds")
-    bgs = ref.get() or []
+    cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+    bgs = list(cosmetics["backgrounds"]) if cosmetics else []
     return [
         app_commands.Choice(name=bg, value=bg)
         for bg in bgs
@@ -166,8 +165,8 @@ async def animated_bg_autocomplete(interaction: discord.Interaction, current: st
     ][:25]
 
 async def frame_autocomplete(interaction: discord.Interaction, current: str):
-    ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/profile_frames")
-    frames = ref.get() or []
+    cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+    frames = list(cosmetics["frames"]) if cosmetics else []
     choices = []
     for frame in frames:
         base_name = frame.split('.')[0]
@@ -239,14 +238,19 @@ class ConfirmCustomizationView(discord.ui.View):
                     f"{NO_EMOTE} Failed to save background: {e}", ephemeral=True
                 )
 
-        ref = db.reference(f"{COSMETICS_DB}/{self.guild_id}/{interaction.user.id}/selected")
-        selected = ref.get() or {}
-        
+        pool = interaction.client.pool
+        gid = self.guild_id
+        uid = interaction.user.id
+
+        # Read current cosmetics to preserve other selected fields
+        current = await get_cosmetics(pool, gid, uid)
+        selected = dict(current) if current else {}
+
         # Animated background
         if self.static_bg_provided:
-            selected["animated_background"] = None
+            selected["selected_animated_background"] = None
         elif self.animated_bg_path:
-            selected["animated_background"] = f"{interaction.user.id}.gif"
+            selected["selected_animated_background"] = f"{interaction.user.id}.gif"
             try:
                 os.remove(f"{ANIMATED_INVENTORY_BG_PATH}/{interaction.user.id}.gif")
             except Exception:
@@ -260,12 +264,17 @@ class ConfirmCustomizationView(discord.ui.View):
         
         # Profile frame
         if self.profile_frame:
-            selected["profile_frame"] = self.profile_frame
+            selected["selected_profile_frame"] = self.profile_frame
 
         if self.font_name:
-            selected["font"] = self.font_name
+            selected["selected_font"] = self.font_name
 
-        ref.set(selected)
+        update_kwargs = {
+            "selected_animated_background": selected.get("selected_animated_background"),
+            "selected_profile_frame": selected.get("selected_profile_frame"),
+            "selected_font": selected.get("selected_font"),
+        }
+        await upsert_cosmetics(pool, gid, uid, **update_kwargs)
 
         changes = []
         if self.static_bg_provided:
@@ -363,8 +372,8 @@ class Customize(commands.Cog):
         
         processed_pin = False
         preview_needed = any([background, animated_background, profile_frame, font])
-        selected_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
-        current_selected = selected_ref.get() or {}
+        cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        current_selected = dict(cosmetics) if cosmetics else {}
         pending_font = None
 
         if font:
@@ -372,7 +381,7 @@ class Customize(commands.Cog):
                 return await interaction.followup.send(
                     f"{NO_EMOTE} Invalid font preset. Choose one of the available presets."
                 )
-            if font != "Default" and not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and current_selected.get("font_unlocked")):
+            if font != "Default" and not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and current_selected.get("selected_font_unlocked")):
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You have not unlocked **custom font preset** on the Elite Track!"
                 )
@@ -380,8 +389,8 @@ class Customize(commands.Cog):
 
         # Custom embed color
         if custom_accent_color:
-            ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/embed_color")
-            embed_color = ref.get() or False
+            cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+            embed_color = cosmetics["embed_color"] if cosmetics else False
             if not embed_color:
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You have not unlocked **custom accent color** on the Elite Track!"
@@ -400,8 +409,7 @@ class Customize(commands.Cog):
                     f"{NO_EMOTE} Invalid hex characters! Use 0-9 and A-F only"
                 )
 
-            current_selected["embed_color_hex"] = hex_color
-            selected_ref.set(current_selected)
+            await upsert_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id, selected_embed_color_hex=hex_color)
 
             color_int = int(hex_color, 16)
             await interaction.followup.send(
@@ -438,9 +446,9 @@ class Customize(commands.Cog):
         if not animated_background.filename.lower().endswith(".gif"):
             raise ValueError("Animated background must be a GIF upload")
 
-        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
-        selected = ref_selected.get() or {}
-        if not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and selected.get("animated_background_unlocked")):
+        cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        selected = dict(cosmetics) if cosmetics else {}
+        if not (await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id) and selected.get("selected_animated_background_unlocked")):
             raise ValueError("You have not unlocked **custom animated GIF background** on the Elite Track!")
 
         output_path = f"{ANIMATED_INVENTORY_BG_PATH}/{interaction.user.id}-temp.gif"
@@ -504,41 +512,37 @@ class Customize(commands.Cog):
             return True
         
     async def process_title(self, interaction: discord.Interaction, title_value: str):
-        ref_selected = db.reference(
-            f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected"
-        )
-        selected = ref_selected.get() or {}
+        pool = interaction.client.pool
+        gid = interaction.guild.id
+        uid = interaction.user.id
+        cosmetics = await get_cosmetics(pool, gid, uid)
+        selected = dict(cosmetics) if cosmetics else {}
 
         if title_value == "unset":
-            selected.pop("title", None)
-            selected.pop("custom_title", None)
+            await upsert_cosmetics(pool, gid, uid, selected_title=None, selected_custom_title=None)
             message = "Your title has been unset."
         else:
-            title_ref = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles")
-            titles = title_ref.get() or {}
+            titles = cosmetics["titles"] if cosmetics else []
+            title_ts = {e[0] for e in titles if len(e) >= 2}
             
-            if title_value in titles:
-                selected["title"] = title_value
-                selected.pop("custom_title", None)
-                title_data = titles[title_value]
-                # Title data is just the name or a simple dict with name
-                if isinstance(title_data, dict):
-                    title_name = title_data.get("name", "Unknown")
-                else:
-                    title_name = str(title_data)
+            if title_value in title_ts:
+                title_name = next(e[1] for e in titles if e[0] == title_value)
+                await upsert_cosmetics(pool, gid, uid, selected_title=title_value, selected_custom_title=None)
                 message = f"Title set to: **{title_name}**"
-            elif selected.get("custom_title_unlocked") and await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id):
+            elif selected.get("selected_custom_title_unlocked") and await is_elite_active(pool, uid, gid):
                 custom_title = title_value.strip()
                 if not custom_title:
                     return await interaction.followup.send(
                         f"{NO_EMOTE} Custom title cannot be empty!",
                         ephemeral=True
                     )
-                selected.pop("title", None)
-                selected["custom_title"] = custom_title
+                await upsert_cosmetics(pool, gid, uid, selected_title=None, selected_custom_title=custom_title)
                 message = f"Custom title set to: **{custom_title}**"
             else:
-                if title_value and title_value not in (db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/titles").get() or {}):
+                cosmetics_check = await get_cosmetics(pool, gid, uid)
+                owned_titles = cosmetics_check["titles"] if cosmetics_check else []
+                owned_ts = {e[0] for e in owned_titles if len(e) >= 2}
+                if title_value and title_value not in owned_ts:
                     return await interaction.followup.send(
                         f"{NO_EMOTE} You cannot use custom titles, as you haven't unlocked them on the Elite Track. You can still select owned titles from the autocomplete.",
                         ephemeral=True
@@ -548,7 +552,6 @@ class Customize(commands.Cog):
                     ephemeral=True
                 )
 
-        ref_selected.set(selected)
         await interaction.followup.send(
             embed=discord.Embed(description=message, color=discord.Color.green()),
             ephemeral=True
@@ -563,8 +566,8 @@ class Customize(commands.Cog):
         pin_processed: bool,
         font: str = None
     ):
-        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
-        current_selected = ref_selected.get() or {}
+        cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        current_selected = dict(cosmetics) if cosmetics else {}
         elite_active = await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id)
         active_selected = resolve_active_cosmetic_values(current_selected, elite_active)
         accent_color_hex = active_selected["embed_color_hex"]
@@ -572,7 +575,7 @@ class Customize(commands.Cog):
         
         # Animated background
         if animated_background:
-            if not (elite_active and current_selected.get("animated_background_unlocked")):
+            if not (elite_active and current_selected.get("selected_animated_background_unlocked")):
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You have not unlocked **custom animated GIF background** on the Elite Track!",
                     ephemeral=True
@@ -595,9 +598,7 @@ class Customize(commands.Cog):
 
         # Profile frame
         if profile_frame:
-            owned_frames = db.reference(
-                f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/profile_frames"
-            ).get() or []
+            owned_frames = list(current_selected.get("frames", [])) if current_selected else []
             if profile_frame not in owned_frames:
                 return await interaction.followup.send(
                     f"{NO_EMOTE} You don't own **{profile_frame.split('.')[0]}** profile frame!",
@@ -660,7 +661,7 @@ class Customize(commands.Cog):
         if profile_frame:
             frame_path = profile_frame
         else:
-            current_frame = current_selected.get("profile_frame")
+            current_frame = current_selected.get("selected_profile_frame")
             if current_frame:
                 frame_path = current_frame
 
@@ -721,8 +722,8 @@ class Customize(commands.Cog):
                 f"{NO_EMOTE} Profile frame **{profile_frame.split('.')[0]}** not found!"
             )
         
-        ref_selected = db.reference(f"{COSMETICS_DB}/{interaction.guild.id}/{interaction.user.id}/selected")
-        current_selected = ref_selected.get() or {}
+        cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        current_selected = dict(cosmetics) if cosmetics else {}
         bg_path = None
         elite_active = await is_elite_active(interaction.client.pool, interaction.user.id, interaction.guild.id)
         
@@ -730,7 +731,7 @@ class Customize(commands.Cog):
         if os.path.exists(static_path):
             bg_path = static_path
         else:
-            current_anim = current_selected.get("animated_background") if elite_active else None
+            current_anim = current_selected.get("selected_animated_background") if elite_active else None
             if current_anim:
                 anim_path = f"{ANIMATED_INVENTORY_BG_PATH}/{current_anim}.gif"
                 if os.path.exists(anim_path):
