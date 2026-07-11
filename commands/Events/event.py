@@ -699,8 +699,7 @@ async def unscrambleWords(channel, client):
     embed = discord.Embed(
         title="Unscramble the Scrambled",
         description=(
-            f"First to unscramble the following word wins {MORA_EMOTE} `{reward}`.\n"
-            "**Hint:** Might be related to Genshin/HSR!"
+            f"First to unscramble the following word wins {MORA_EMOTE} `{reward}`."
         ),
         color=discord.Color.blurple(),
     )
