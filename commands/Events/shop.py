@@ -7,7 +7,7 @@ from commands.Events.helperFunctions import get_shop_items, get_shop_item_by_nam
 from utils.pagination import BasePaginationView, BaseSortSelect
 from utils.commands import SlashCommand
 
-from commands.Events.config import NO_EMOTE, REPLY_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, SHOP_CURRENCY_FILTERS, CURRENCY_INFO, YES_EMOTE, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
+from commands.Events.config import BALANCE_COMMAND, NO_EMOTE, REPLY_EMOTE, NO_STOCK_EMOTE, SHOP_SORT_OPTIONS, SHOP_CURRENCY_FILTERS, CURRENCY_INFO, YES_EMOTE, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
 
 def get_currency_display(currency_type: str) -> str:
     info = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])
@@ -52,7 +52,7 @@ async def get_shop_embeds(
     embed = discord.Embed(
         title=f"{interaction.guild.name}'s Server Shop",
         description=(
-            f"{REPLY_EMOTE} *To check your balances and inventory, use {SlashCommand('mora')}.*\n"
+            f"{REPLY_EMOTE} *To check your balances and inventory, use {SlashCommand(BALANCE_COMMAND)}.*\n"
             f"{REPLY_EMOTE} *To purchase an item, use {SlashCommand('buy')}.*\n"
             f"{REPLY_EMOTE} *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
         ),
@@ -86,7 +86,7 @@ async def get_shop_embeds(
             embed = discord.Embed(
                 title=f"{interaction.guild.name}'s Server Shop",
                 description=(
-                    f"{REPLY_EMOTE} *To check your balances and inventory, use {SlashCommand('mora')}.*\n"
+                    f"{REPLY_EMOTE} *To check your balances and inventory, use {SlashCommand(BALANCE_COMMAND)}.*\n"
                     f"{REPLY_EMOTE} *To purchase an item, use {SlashCommand('buy')}.*\n"
                     f"{REPLY_EMOTE} *A 🔄 emoji indicates that the title can be purchased multiple times.*\n"
                 ),
