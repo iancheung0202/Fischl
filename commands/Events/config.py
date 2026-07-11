@@ -77,16 +77,32 @@ NAME_DOWN_EMOTE = "<:name_descending:1346329054634053703>"
 SHOP_SORT_OPTIONS = [("sort by cost (low to high)", PRICE_UP_EMOTE), ("sort by cost (high to low)", PRICE_DOWN_EMOTE), ("sort by name (a-z)", NAME_UP_EMOTE), ("sort by name (z-a)", NAME_DOWN_EMOTE),]
 SHOP_CURRENCY_FILTERS = [
     ("All currencies", "<:FischlRiot:1335609183885590629>"),
-    ("Guild Mora", GUILD_MORA_EMOTE),
-    ("Global Mora", GLOBAL_MORA_EMOTE),
-    ("Guild Sigils", GUILD_SIGIL_EMOTE),
-    ("Global Sigils", GLOBAL_SIGIL_EMOTE),
+    (f"Guild {CURRENCY_NAME}", GUILD_MORA_EMOTE),
+    (f"Global {CURRENCY_NAME}", GLOBAL_MORA_EMOTE),
+    (f"Guild {SIGIL_CURRENCY_NAME}", GUILD_SIGIL_EMOTE),
+    (f"Global {SIGIL_CURRENCY_NAME}", GLOBAL_SIGIL_EMOTE),
 ]
 CURRENCY_INFO = {
-    "guild_mora": {"emoji": GUILD_MORA_EMOTE, "label": "Guild Mora", "filter_label": "Guild Mora"},
-    "global_mora": {"emoji": GLOBAL_MORA_EMOTE, "label": "Global Mora", "filter_label": "Global Mora"},
-    "guild_sigils": {"emoji": GUILD_SIGIL_EMOTE, "label": "Guild Sigils", "filter_label": "Guild Sigils"},
-    "global_sigils": {"emoji": GLOBAL_SIGIL_EMOTE, "label": "Global Sigils", "filter_label": "Global Sigils"},
+    "guild_mora": {
+        "emoji": GUILD_MORA_EMOTE, 
+        "label": f"Guild {CURRENCY_NAME}", 
+        "filter_label": f"Guild {CURRENCY_NAME}"
+    },
+    "global_mora": {
+        "emoji": GLOBAL_MORA_EMOTE, 
+        "label": f"Global {CURRENCY_NAME}", 
+        "filter_label": f"Global {CURRENCY_NAME}"
+    },
+    "guild_sigils": {
+        "emoji": GUILD_SIGIL_EMOTE, 
+        "label": f"Guild {SIGIL_CURRENCY_NAME}", 
+        "filter_label": f"Guild {SIGIL_CURRENCY_NAME}"
+    },
+    "global_sigils": {
+        "emoji": GLOBAL_SIGIL_EMOTE, 
+        "label": f"Global {SIGIL_CURRENCY_NAME}", 
+        "filter_label": f"Global {SIGIL_CURRENCY_NAME}"
+    },
 }
 MILESTONE_SORT_OPTIONS = [("sort by threshold (low to high)", PRICE_UP_EMOTE), ("sort by threshold (high to low)", PRICE_DOWN_EMOTE), ("sort by name (a-z)", NAME_UP_EMOTE), ("sort by name (z-a)", NAME_DOWN_EMOTE),]
 
@@ -136,11 +152,11 @@ def build_chest_description(gc: dict = None) -> str:
         f"{DOT_EMOTE} You get a minimum of **{base_upgrades} chances** to upgrade your chest.",
         f"{DOT_EMOTE} You must claim your chest within **{MORA_CHEST_TIMEOUT // 60} minutes** or it will be wasted.",
         f"{DOT_EMOTE} After claiming, wait until the next **UTC +0 midnight** to earn a new chest.",
-        "### Rewards (Base Mora) 🏆",
+        f"### Rewards (Base {CURRENCY_NAME}) 🏆",
     ]
     for i in range(len(tier_names)):
         r = tier_rewards[i] if i < len(tier_rewards) else 0
-        lines.append(f"{DOT_EMOTE} **{tier_names[i]}**:   **`{r:,}`** Mora")
+        lines.append(f"{DOT_EMOTE} **{tier_names[i]}**:   **`{r:,}`** {CURRENCY_NAME}")
     lines.append("### Upgrade Chances :arrow_up:")
     for i in range(len(tier_names) - 1):
         c = upgrade_chances[i] * 100 if i < len(upgrade_chances) else 0

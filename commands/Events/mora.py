@@ -934,8 +934,8 @@ class Mora(commands.Cog):
 
     @app_commands.command(name="gift", description=f"Gift {CURRENCY_NAME} to another user")
     @app_commands.describe(
-        user="User to gift {CURRENCY_NAME} to",
-        amount="Amount of {CURRENCY_NAME} to gift"
+        user=f"User to gift {CURRENCY_NAME} to",
+        amount=f"Amount of {CURRENCY_NAME} to gift"
     )
     async def gift(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         await interaction.response.defer()

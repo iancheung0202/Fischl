@@ -153,26 +153,29 @@ class CurrencyFilterSelect(discord.ui.Select):
     def __init__(self, current_filter="all", initial_author=None):
         self.initial_author = initial_author
         options = []
-        for label, emoji in SHOP_CURRENCY_FILTERS:
-            filter_key = "all"
-            if label != "All currencies":
-                filter_key = {"Guild Mora": "guild_mora", "Global Mora": "global_mora", "Guild Sigils": "guild_sigils", "Global Sigils": "global_sigils"}.get(label, "all")
-            is_default = (current_filter == filter_key)
+        all_emoji = next((emoji for label, emoji in SHOP_CURRENCY_FILTERS if label == "All currencies"), None)
+        options.append(discord.SelectOption(label="All currencies", emoji=all_emoji, default=(current_filter == "all")))
+        
+        for key, info in CURRENCY_INFO.items():
             options.append(
-                discord.SelectOption(label=label, emoji=emoji, default=is_default)
+                discord.SelectOption(
+                    label=info["filter_label"], 
+                    emoji=info["emoji"], 
+                    default=(current_filter == key)
+                )
             )
+            
         super().__init__(placeholder="Filter by currency...", max_values=1, min_values=1, options=options, custom_id="currencyfilter")
 
     async def callback(self, interaction: discord.Interaction):
         label = self.values[0]
-        filter_map = {
-            "All currencies": "all",
-            "Guild Mora": "guild_mora",
-            "Global Mora": "global_mora",
-            "Guild Sigils": "guild_sigils",
-            "Global Sigils": "global_sigils",
-        }
-        new_filter = filter_map.get(label, "all")
+        
+        new_filter = "all"
+        for key, info in CURRENCY_INFO.items():
+            if info["filter_label"] == label:
+                new_filter = key
+                break
+                
         originalList = await get_shop_items(interaction.client.pool, interaction.guild.id)
         pages, items = await get_shop_embeds(interaction, originalList, len(originalList) == 0, currency_filter=new_filter)
         view = ShopView(pages=pages, items=items, default="sort by cost (high to low)", initial_author=self.initial_author, is_admin=interaction.user.guild_permissions.administrator, currency_filter=new_filter, guild_id=interaction.guild.id, pool=interaction.client.pool, guild=interaction.guild)
@@ -325,12 +328,17 @@ class ShopItemCurrencySelect(discord.ui.Select):
         self.initial_author = initial_author
         self.item_name = str(item[0])
         current_currency = item[5] if len(item) > 5 else "guild_mora"
+        
         currency_options = [
-            discord.SelectOption(label="Guild Mora", value="guild_mora", emoji=GUILD_MORA_EMOTE, default=(current_currency == "guild_mora")),
-            discord.SelectOption(label="Global Mora", value="global_mora", emoji=GLOBAL_MORA_EMOTE, default=(current_currency == "global_mora")),
-            discord.SelectOption(label="Guild Sigils", value="guild_sigils", emoji=GUILD_SIGIL_EMOTE, default=(current_currency == "guild_sigils")),
-            discord.SelectOption(label="Global Sigils", value="global_sigils", emoji=GLOBAL_SIGIL_EMOTE, default=(current_currency == "global_sigils")),
+            discord.SelectOption(
+                label=info["label"], 
+                value=key, 
+                emoji=info["emoji"], 
+                default=(current_currency == key)
+            )
+            for key, info in CURRENCY_INFO.items()
         ]
+        
         super().__init__(placeholder="Select a currency...", max_values=1, min_values=1, options=currency_options, row=row)
 
     async def callback(self, interaction: discord.Interaction):
