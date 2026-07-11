@@ -19,7 +19,7 @@ from commands.Events.trackData import get_current_track, check_tier_rewards, is_
 from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, get_guild_settings, get_chest_progress, upsert_chest_progress, get_chest_streaks, upsert_chest_streaks, get_chest_counts, upsert_chest_counts, get_sigils_balance, get_daily_sigils, add_sigils, parse_boosted_roles
 from commands.Events.quests import update_quest
 
-from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, BALANCE_COMMAND, SIGILS_MESSAGE_EMOTE, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_RANGE, DEFAULT_CHAT_MAX_CAP, DEFAULT_CHAT_MSG_RANGE
+from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, BALANCE_COMMAND, SIGILS_MESSAGE_EMOTE, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, TYPERACER_FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_RANGE, DEFAULT_CHAT_MAX_CAP, DEFAULT_CHAT_MSG_RANGE
 from commands.Events.config import build_chest_description
 
 from utils.commands import SlashCommand
@@ -460,7 +460,7 @@ async def createImage(
 ):
     im1 = Image.open(bg)
     color = (0, 0, 0)
-    font = ImageFont.truetype(FONT_PATH, 55)
+    font = ImageFont.truetype(TYPERACER_FONT_PATH, 55)
     d1 = ImageDraw.Draw(im1)
     d1.text((120, 60), text, font=font, fill=color)
     im1.save(filename)

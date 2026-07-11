@@ -8,6 +8,8 @@ except ImportError:
 
         def __str__(self):
             return f"`/{self.name}`"
+        
+SHOW_GLOBAL_ONLY = False
 
 CURRENCY_NAME = "Mora"
 MORA_EMOTE = "<:MORA:1364030973611610205>"
@@ -56,6 +58,7 @@ ANIMATED_INVENTORY_BG_PATH = "./assets/Animated Mora Inventory Background"
 GRAPHS_DIRECTORY = "./assets/graph"
 DEFAULT_BG_PATH = "./assets/mora_bg.png"
 FONT_PATH = "./assets/ja-jp.ttf"
+TYPERACER_FONT_PATH = "./assets/ja-jp.ttf"
 FONT_PRESETS = {
     "Default": FONT_PATH,
     "Arimo": "/usr/share/fonts/truetype/croscore/Arimo-Bold.ttf",

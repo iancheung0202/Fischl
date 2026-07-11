@@ -799,8 +799,8 @@ class Mora(commands.Cog):
             embed.add_field(
                 name=interaction.guild.name,
                 value=(
-                    f"{GUILD_MORA_EMOTE} **`{int(guild_total):,}`**\n"
-                    f"{GUILD_SIGIL_EMOTE} **`{int(guild_sigils):,}`**"
+                    f"{GUILD_MORA_EMOTE} {CURRENCY_NAME}: **`{int(guild_total):,}`**\n"
+                    f"{GUILD_SIGIL_EMOTE} {SIGIL_CURRENCY_NAME}: **`{int(guild_sigils):,}`**"
                 ),
                 inline=True,
             )
@@ -809,8 +809,8 @@ class Mora(commands.Cog):
             embed.add_field(
                 name="Global",
                 value=(
-                    f"{GLOBAL_MORA_EMOTE} **`{int(global_total):,}`**\n"
-                    f"{GLOBAL_SIGIL_EMOTE} **`{int(global_sigils):,}`**"
+                    f"{GLOBAL_MORA_EMOTE} {CURRENCY_NAME}: **`{int(global_total):,}`**\n"
+                    f"{GLOBAL_SIGIL_EMOTE} {SIGIL_CURRENCY_NAME}: **`{int(global_sigils):,}`**"
                 ),
                 inline=True,
             )
@@ -891,6 +891,12 @@ class Mora(commands.Cog):
                 user,
                 f"{int(guild_total):,}",
                 guild_rank,
+                f"{int(guild_sigils):,}",
+                guild_sigils_rank,
+                f"{int(global_total):,}",
+                global_rank,
+                f"{int(global_sigils):,}",
+                global_sigils_rank,
                 bg=bg_path,
                 profile_frame=profile_frame if profile_frame else None,
                 accent_color_hex=custom_color_hex,
@@ -900,8 +906,14 @@ class Mora(commands.Cog):
         else:
             filename = await createProfileCard(
                 user,
-                f"{guild_total:,}",
+                f"{int(guild_total):,}",
                 guild_rank,
+                f"{int(guild_sigils):,}",
+                guild_sigils_rank,
+                f"{int(global_total):,}",
+                global_rank,
+                f"{int(global_sigils):,}",
+                global_sigils_rank,
                 accent_color_hex=custom_color_hex,
                 font_name=selected.get("font") if elite_active else None
             )
