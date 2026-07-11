@@ -425,7 +425,7 @@ class TabChestsButton(discord.ui.Button):
 class TabSigilsButton(discord.ui.Button):
     def __init__(self, active: bool):
         super().__init__(
-            label="Configure Sigils",
+            label=f"Configure {SIGIL_CURRENCY_NAME}",
             style=discord.ButtonStyle.primary if active else discord.ButtonStyle.secondary,
             custom_id="tab_sigils",
         )
@@ -538,7 +538,7 @@ def build_sigils_embed(channel, settings: dict, guild_config: dict = None) -> di
                     desc += f"{DOT_EMOTE} <@&{entry[0]}>: `{entry[1]}`\n"
 
     embed = discord.Embed(
-        title=f"{SIGIL_EMOTE} Sigils Configuration",
+        title=f"{SIGIL_EMOTE} {SIGIL_CURRENCY_NAME} Configuration",
         description=desc,
         color=discord.Color.purple(),
     )
@@ -754,7 +754,7 @@ class EditChestIconsButton(discord.ui.Button):
 
 class ChatToggleButton(discord.ui.Button):
     def __init__(self, enable: bool):
-        label = "Enable Sigils" if enable else "Disable Sigils"
+        label = f"Enable {SIGIL_CURRENCY_NAME}" if enable else f"Disable {SIGIL_CURRENCY_NAME}"
         style = discord.ButtonStyle.green if enable else discord.ButtonStyle.red
         super().__init__(label=label, style=style)
         self.enable = enable
@@ -780,7 +780,7 @@ class ChatRangeModal(discord.ui.Modal, title="Sigil Earning Range"):
         self.channel_id = channel_id
         display = ", ".join(str(x) for x in current) if current else "19, 25"
         self.add_item(discord.ui.TextInput(
-            label="Exact OR min, max (sigils per batch)",
+            label=f"Exact OR min, max ({SIGIL_CURRENCY_NAME} per batch)",
             style=discord.TextStyle.short,
             placeholder="19, 25",
             default=display,
@@ -812,7 +812,7 @@ class ChatMsgRangeModal(discord.ui.Modal, title="Messages per Batch"):
         self.channel_id = channel_id
         display = ", ".join(str(x) for x in current) if current else "15, 20"
         self.add_item(discord.ui.TextInput(
-            label="Exact OR min, max (messages per batch)",
+            label=f"Exact OR min, max ({SIGIL_CURRENCY_NAME} per batch)",
             style=discord.TextStyle.short,
             placeholder="15, 20",
             default=display,
@@ -846,7 +846,7 @@ class SetBoostModal(discord.ui.Modal, title="Set Role Boost"):
         self.role_id = role_id
         self.settings_interaction = settings_interaction
         self.add_item(discord.ui.TextInput(
-            label="Boost value (e.g. +20 adds, 80 sets cap)",
+            label=f"Boost value (e.g. +20 adds, 80 sets cap)",
             style=discord.TextStyle.short,
             placeholder="+20 or 80",
             default=current_value or "",
@@ -964,12 +964,12 @@ class ChatBoostedRolesSelect(discord.ui.RoleSelect):
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
-class ChatMaxCapModal(discord.ui.Modal, title="Max Daily Sigils"):
+class ChatMaxCapModal(discord.ui.Modal, title=f"Max Daily {SIGIL_CURRENCY_NAME}"):
     def __init__(self, guild_id: int, current: int):
         super().__init__()
         self.guild_id = guild_id
         self.add_item(discord.ui.TextInput(
-            label="Maximum daily sigils (server-wide)",
+            label=f"Maximum Daily {SIGIL_CURRENCY_NAME} (server-wide)",
             style=discord.TextStyle.short,
             placeholder=str(current),
             default=str(current),
