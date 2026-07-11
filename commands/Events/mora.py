@@ -19,7 +19,7 @@ from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTI
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
 from utils.commands import SlashCommand
 
-from commands.Events.config import DOT_EMOTE, MORA_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, NO_EMOTE_2, REPLY_EMOTE, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_MSG_RANGE, DEFAULT_CHAT_MAX_CAP, YES_EMOTE_2, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
+from commands.Events.config import DOT_EMOTE, MORA_EMOTE, TRACK_EMOTE, PRESTIGE_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, NO_EMOTE_2, REPLY_EMOTE, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_MSG_RANGE, DEFAULT_CHAT_MAX_CAP, YES_EMOTE_2, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
@@ -298,7 +298,7 @@ class ToggleView(discord.ui.View):
         embed = discord.Embed(
             title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Progression Track in {interaction.guild.name}",
             description=(
-                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) <:PaiHype:1194817285748183140>\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# {REPLY_EMOTE} **Earn XP** by purchasing in the shop and completing quests.\n"
+                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) {TRACK_EMOTE}\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# {REPLY_EMOTE} **Earn XP** by purchasing in the shop and completing quests.\n"
                 f"```diff\n"
                 f"+ Current Tier: {current_tier_display} ({user_xp} total XP)\n"
                 + f"- Status: {'Elite Track Activated' if await is_elite_active(interaction.client.pool, self.user_id, self.guild_id) else 'Free Track Only'}\n"
@@ -318,7 +318,7 @@ class ToggleView(discord.ui.View):
         embed.add_field(name=":gift: Gift Tax", value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' and gift_tax is not None else ''}`", inline=True)
         embed.add_field(name="🧲 Minigame Summons", value=f"`{stats.get('minigame_summons', 0)}`", inline=True)
         embed.add_field(name="🏷️ Shop Discount", value=f"`{stats.get('shop_discount', 0)}%`", inline=True)
-        embed.add_field(name="🏰 Domain Discount", value=f"`{stats.get('domain_discount', 0)}%`", inline=True)
+        embed.add_field(name=f"🏰 {KINGDOM_NAME} Discount", value=f"`{stats.get('domain_discount', 0)}%`", inline=True)
 
         cosmetics = await get_cosmetics(interaction.client.pool, interaction.guild.id, self.user_id)
         selected = dict(cosmetics) if cosmetics else {}
@@ -328,7 +328,7 @@ class ToggleView(discord.ui.View):
             custom_color = selected.get("selected_embed_color_hex")
             color_status = f"`{custom_color}`" if custom_color else "`Unlocked but not set`"
         embed.add_field(name="🎨 Custom Accent Color", value=color_status, inline=True)
-        embed.add_field(name="<:PRIMOGEM:1364031230357540894> Prestige", value=f"`{prestige}`")
+        embed.add_field(name=f"{PRESTIGE_EMOTE} Prestige", value=f"`{prestige}`")
         
         embed.set_footer(text="Tip: XP Progression is tracked separately per server.")
         return embed
@@ -524,14 +524,14 @@ class ToggleView(discord.ui.View):
         prefs = (
             f"-# {DOT_EMOTE} Daily Chest Spawning: {pref(chest_disabled)} \n"
             f"-# {DOT_EMOTE} Minigame Spawning: {pref(minigame_disabled)} \n"
-            f"-# {DOT_EMOTE} Sigils Chat Earning: {pref(sigils_disabled)}"
+            f"-# {DOT_EMOTE} {SIGIL_CURRENCY_NAME} Chat Earning: {pref(sigils_disabled)}"
         )
         embed.add_field(name="Your Server Preferences", value=prefs, inline=True)
 
         states = (
             f"-# {DOT_EMOTE} Daily Chest Spawning: {ch_state(chests_enabled)} \n"
             f"-# {DOT_EMOTE} Minigame Spawning: {ch_state(minigames_enabled)} \n"
-            f"-# {DOT_EMOTE} Sigils Chat Earning: {ch_state(chat_enabled)}"
+            f"-# {DOT_EMOTE} {SIGIL_CURRENCY_NAME} Chat Earning: {ch_state(chat_enabled)}"
         )
         ch_name = f"#{channel.name} (Current Channel)" if channel else "Current Channel"
         embed.add_field(name=ch_name, value=states, inline=True)
@@ -545,7 +545,7 @@ class ToggleView(discord.ui.View):
 
         setting_key = self.settings_select.values[0]
         column = {"toggle_chest_spawn": "chest_disabled", "toggle_minigame_spawn": "minigame_disabled", "toggle_sigils_spawn": "sigils_disabled"}[setting_key]
-        label = {"toggle_chest_spawn": "Daily chest spawning", "toggle_minigame_spawn": "Minigame spawning", "toggle_sigils_spawn": "Sigils chat earning"}[setting_key]
+        label = {"toggle_chest_spawn": "Daily chest spawning", "toggle_minigame_spawn": "Minigame spawning", "toggle_sigils_spawn": f"{SIGIL_CURRENCY_NAME} chat earning"}[setting_key]
 
         user_settings = await get_user_minigame_settings(interaction.client.pool, interaction.guild.id, self.user_id)
         new_status = not user_settings[column]
@@ -677,7 +677,7 @@ class ToggleView(discord.ui.View):
                             value="toggle_minigame_spawn",
                         ),
                         discord.SelectOption(
-                            label="Sigils Chat Earning",
+                            label=f"{SIGIL_CURRENCY_NAME} Chat Earning",
                             value="toggle_sigils_spawn",
                         ),
                     ],

@@ -7,7 +7,7 @@ from commands.Events.seasons import get_current_season
 from commands.Events.helperFunctions import add_title_to_cosmetics, add_background_to_cosmetics, add_frame_to_cosmetics, get_cosmetics, upsert_cosmetics
 from utils.commands import SlashCommand
 
-from commands.Events.config import MORA_EMOTE, REWARD_TYPES, CURRENCY_NAME
+from commands.Events.config import MORA_EMOTE, REWARD_TYPES, CURRENCY_NAME, PRESTIGE_EMOTE
 
 def get_current_track():
     season = get_current_season()
@@ -107,7 +107,7 @@ async def grant_reward(guild_id, user_id, reward_str, tier, channel, is_elite=Fa
                 "UPDATE minigame_progression SET prestige = prestige + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
                 guild_id, user_id
             )
-        title = f"{'Elite Reward: ' if is_elite else ''} Prestige +1 <:PRIMOGEM:1364031230357540894>"
+        title = f"{'Elite Reward: ' if is_elite else ''} Prestige +1 {PRESTIGE_EMOTE}"
         description = f"You have earned `+1` prestige for **reaching the end of the {'elite' if is_elite else 'free'} track**! Use {SlashCommand('mora')} to view your prestige count!"
         
     elif reward_type == "mora_boost" or reward_type == "mora_boost_67":

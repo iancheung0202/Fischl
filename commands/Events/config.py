@@ -31,6 +31,8 @@ MONEYDANCE_EMOTE = "<a:moneydance:1227425759077859359>"
 DOT_EMOTE = "<:dot:1357188726047899760>"
 CONFUSED_EMOTE = "<:PinkConfused:1204614149628498010>"
 REPLY_EMOTE = "<:reply:1036792837821435976>"
+TRACK_EMOTE = "<:PaiHype:1194817285748183140>"
+PRESTIGE_EMOTE = "<:PRIMOGEM:1364031230357540894>"
 
 GUILD_MORA_EMOTE = MORA_EMOTE
 GLOBAL_MORA_EMOTE = "<:global_mora:1525244303784542301>"
@@ -180,7 +182,7 @@ TIPS = [
 ]
 
 KINGDOM_NAME = "Kingdom"
-DOMAIN_NAME = "Immernachtreich Domain"
+DOMAIN_NAME = "Immernachtreich Kingdom"
 DOMAIN_DESCRIPTION = "Construct your eternal kingdom within the darkness."
 
 BUILDINGS = {
@@ -258,7 +260,7 @@ class PurchaseEliteTrack(discord.ui.Button):
                 f"**Elite Track** unlocks a premium reward tier alongside every free tier while supporting development work:\n\n"
                 f"-# {DOT_EMOTE}**Ultimate Customization**: Unlock **Custom GIF Backgrounds**, **Fonts**, **Accent Colors**, and **Titles** to make your profile uniquely yours! <:CharlotteHeart:1191594476263702528>\n"
                 f"-# {DOT_EMOTE}**Animated Cosmetics**: Exclusive animated profile frames to allow you to stand out from the crowd! <:KokoWow:1191868161851666583>\n"
-                f"-# {DOT_EMOTE}**Economic Boosts**: Shop & Domain discounts, extra Mora gains, reduced gifting tax, and immediate spawns for daily chests <:PinkCelebrate:1204614140044386314>\n"
+                f"-# {DOT_EMOTE}**Economic Boosts**: Shop & Kingdom Discounts, extra Mora gains, reduced gifting tax, and immediate spawns for daily chests <:PinkCelebrate:1204614140044386314>\n"
                 f"-# {DOT_EMOTE}**Flexing Perks**: Earn **+1 additional Prestige** at the final tier <:LynetteSip:1335609206988079169>\n\n"
                 f"**Elite rewards are server-specific, and a season lasts for 3 months.**\n"
                 f"<:reply:1036792837821435976> <:YanfeiNote:1335644122253623458> ***[View Full Track Comparison](https://fischl.app/profile)***"
@@ -570,7 +572,7 @@ SEASONS = [
             {'tier': 5,  'xp_req': 1000, 'cumulative_xp': 5000,    'free': 'Unlocks Mora Gifting',                                           'elite': 'Mora Gift Tax -10%'},
             {'tier': 6,  'xp_req': 1000, 'cumulative_xp': 6000,    'free': 'Server Title | The Golden Apple Vacation Returns!',              'elite': 'Shop Discount +10%'},
             {'tier': 7,  'xp_req': 1000, 'cumulative_xp': 7000,   'free': 'Drop Pack',                                                       'elite': '+1 Chest Upgrade Limit'},
-            {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                          'elite': 'Domain Discount +10%'},
+            {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                          'elite': 'Kingdom Discount +10%'},
             {'tier': 9,  'xp_req': 1000, 'cumulative_xp': 9000,   'free': 'Mora Gain Boost +5%',                                             'elite': 'Custom Card Font'},
             {'tier': 10, 'xp_req': 1000, 'cumulative_xp': 10000,   'free': 'Drop Pack',                                                      'elite': 'Custom GIF Background'},
             {'tier': 11, 'xp_req': 1000, 'cumulative_xp': 11000,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Jade Stone.gif'},
@@ -579,20 +581,20 @@ SEASONS = [
             {'tier': 14, 'xp_req': 1000, 'cumulative_xp': 14000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Snowglobe.png',          'elite': 'Shop Discount +10%'},
             {'tier': 15, 'xp_req': 1000, 'cumulative_xp': 15000,   'free': 'Drop Pack',                                                      'elite': '+30 Minigames Summon'},
             {'tier': 16, 'xp_req': 2500, 'cumulative_xp': 17500,   'free': 'Mora Gift Tax -5%',                                              'elite': '+1 Chest Upgrade Limit'},
-            {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Domain Discount +10%'},
+            {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Kingdom Discount +10%'},
             {'tier': 18, 'xp_req': 2500, 'cumulative_xp': 22500,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +10%'},
             {'tier': 19, 'xp_req': 2500, 'cumulative_xp': 25000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Shop Discount +10%'},
-            {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | Immernachtreich Apokalypse',                      'elite': 'Domain Discount +10%'},
+            {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | Immernachtreich Apokalypse',                      'elite': 'Kingdom Discount +10%'},
             {'tier': 21, 'xp_req': 2500, 'cumulative_xp': 30000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Dragon Mouth.gif'},
             {'tier': 22, 'xp_req': 2500, 'cumulative_xp': 32500,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gain Boost +10%'},
             {'tier': 23, 'xp_req': 2500, 'cumulative_xp': 35000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
             {'tier': 24, 'xp_req': 2500, 'cumulative_xp': 37500,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Shop Discount +10%'},
-            {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Drop Pack',                                                      'elite': 'Domain Discount +10%'},
+            {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Drop Pack',                                                      'elite': 'Kingdom Discount +10%'},
             {'tier': 26, 'xp_req': 5000, 'cumulative_xp': 45000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Mountains.png',          'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Holodragon.gif'},
             {'tier': 27, 'xp_req': 5000, 'cumulative_xp': 50000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +10%'},
             {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -10%'},
             {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Drop Pack',                                                      'elite': 'Shop Discount +10%'},
-            {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | What a beautiful day!',                           'elite': 'Domain Discount +10%'},
+            {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | What a beautiful day!',                           'elite': 'Kingdom Discount +10%'},
             {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
         ]
     ),
@@ -619,7 +621,7 @@ REWARD_TYPES = {
     "Animated Title": "title",
     "Custom Card Font": "font_unlock",
     "Shop Discount +10%": "shop_discount",
-    "Domain Discount +10%": "domain_discount",
+    "Kingdom Discount +10%": "domain_discount",
     "Express Daily Chests": "express_daily_chests",
     "+30 Minigames Summon": "minigame_summon_30",
 }

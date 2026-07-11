@@ -16,7 +16,7 @@ from commands.Events.helperFunctions import (
 )
 from utils.pagination import BasePaginationView
 
-from commands.Events.config import CURRENCY_NAME, SIGIL_CURRENCY_NAME, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
+from commands.Events.config import PRESTIGE_EMOTE, CURRENCY_NAME, SIGIL_CURRENCY_NAME, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
         
 
 class Leaderboard(commands.Cog):
@@ -136,7 +136,7 @@ class Leaderboard(commands.Cog):
                 "has_rank_title": False,
             },
             "prestige": {
-                "icon": "<:PRIMOGEM:1364031230357540894>",
+                "icon": PRESTIGE_EMOTE,
                 "color_global": 0xFFB6C1,
                 "color_server": 0xFFB6C1,
                 "title": "Prestige Leaderboard",
