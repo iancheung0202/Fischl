@@ -49,7 +49,16 @@ async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, d
     total_chests = sum(counts)
 
     streak_data = await get_chest_streaks(pool, guild_id, user_id)
-    last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
+    
+    last_claimed = streak_data.get("last_claimed") if streak_data else None
+    if last_claimed:
+        if isinstance(last_claimed, str):
+            last_claimed = datetime.datetime.fromisoformat(last_claimed).date()
+        elif isinstance(last_claimed, (datetime.datetime, datetime.date)):
+            if isinstance(last_claimed, datetime.datetime):
+                last_claimed = last_claimed.date()
+        else:
+            last_claimed = None
     current_streak = streak_data.get("streak", 0) if last_claimed and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days <= 1 else 0
     max_streak = streak_data.get("max_streak", current_streak)
 

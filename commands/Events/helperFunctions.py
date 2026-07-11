@@ -881,7 +881,7 @@ async def ensure_minigame_inventory_table(pool):
                 gid         BIGINT NOT NULL,
                 title       TEXT NOT NULL,
                 description TEXT DEFAULT '',
-                cost        TEXT DEFAULT '0',
+                cost        INTEGER DEFAULT 0,
                 timestamp   BIGINT DEFAULT 0,
                 pinned      BOOLEAN DEFAULT FALSE,
                 link        TEXT DEFAULT NULL,
@@ -889,6 +889,7 @@ async def ensure_minigame_inventory_table(pool):
                 PRIMARY KEY (uid, gid, title)
             )
         """)
+        
 
 async def ensure_minigame_chests_table(pool):
     async with pool.acquire() as conn:
