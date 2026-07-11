@@ -9,7 +9,7 @@ from discord.ext import commands
 from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, get_total_mora, subtractGuildMora, subtract_global_mora, add_inventory_item, get_user_inventory, apply_discount, get_shop_discount, get_shop_items, get_shop_item_by_name, process_pending_stock_edits as process_pending_stock_edits_helper, get_sigils_balance, get_global_sigils_balance, subtract_guild_sigils, subtract_global_sigils, update_shop_item_stock_by_name
 from utils.commands import SlashCommand
 
-from commands.Events.config import NO_EMOTE, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, CONFUSED_EMOTE, CURRENCY_INFO, MORA_TO_XP_RATIO, SIGILS_TO_XP_RATIO
+from commands.Events.config import BALANCE_COMMAND, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, CONFUSED_EMOTE, CURRENCY_INFO, MORA_TO_XP_RATIO, SIGILS_TO_XP_RATIO
 
 global_purchase_queue = asyncio.Queue()
 
@@ -227,10 +227,9 @@ class ConfirmPurchaseView(discord.ui.View):
 
         if not has_balance:
             currency_display = get_currency_display(currency_type)
-            bal_cmd = SlashCommand("mora") if is_mora_currency else SlashCommand("mora")
             embed = discord.Embed(
                 title=f"{SHRUG_EMOTE} Insufficient {currency_display}",
-                description=f"You don't have enough {currency_display} for **{role_mention}**. Please check your balance using {bal_cmd}.",
+                description=f"You don't have enough {currency_display} for **{role_mention}**. Please check your balance using {SlashCommand(BALANCE_COMMAND)}.",
                 color=discord.Color.red(),
             )
             await interaction.edit_original_response(embed=embed, view=None)
