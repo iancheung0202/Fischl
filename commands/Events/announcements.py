@@ -7,22 +7,15 @@ announcement_embed = discord.Embed(
     description=(
         f"## <:CharlotteHeart:1191594476263702528> **Elite Track Just Got a HUGE Upgrade!** {MONEYDANCE_EMOTE}\n"
         "If you've been thinking about supporting Fischl, you can start this season. The Elite Track now packs a ridiculous amount of value for a tiny seasonal price.\n"
-        "### <:YanfeiNote:1335644122253623458> **What New Rewards You Can Unlock**\n"
-        f"{DOT_EMOTE} **Custom GIF Backgrounds** for your inventory card\n"
-        f"{DOT_EMOTE} **Custom Fonts** for a more personalized profile card\n"
-        f"{DOT_EMOTE} **Custom Accent Colors** for your inventory texts and profile card\n"
-        f"{DOT_EMOTE} **Custom Titles** so your profile actually feels like yours\n"
-        f"{DOT_EMOTE} **Shop Discounts** to stretch your Mora further\n"
-        f"{DOT_EMOTE} **Domain Discounts** to make kingdom upgrades cheaper\n"
-        f"{DOT_EMOTE} **Express Daily Chests** for immediate chest spawns\n"
-        f"{DOT_EMOTE} ***Animated profile frames, mora boosts, gift tax reductions, and minigame summons** remain available throughout the track!*\n"
+        "### <:YanfeiNote:1335644122253623458> **What Rewards Can I Unlock**\n"
+        f"-# {DOT_EMOTE} **New:** Custom GIF backgrounds, custom fonts, custom accent colors, shop and domain upgrade discounts, and immediate daily chest spawning\n"
+        f"-# {DOT_EMOTE} *Animated profile frames, additional mora boosts, gift tax reductions, and minigame summons are still available throughout the track!*\n"
         "### <:PinkCelebrate:1204614140044386314> Get the Elite Track by visiting https://fischl.app/profile and selecting this server!\n"
         "-# You get way more cosmetics, more convenience, and more progression in one place. "
-        "The Elite Track is one of the best-value ways to support the bot and keep development going. "
-        "Honestly, Fischl would very much appreciate it if you treated yourself and helped fund the chaos a little. <:PaimonWow:1188553806456291489>\n"
+        "This is the best-value way to support the bot and keep development going. <:PaimonWow:1188553806456291489>\n"
     ),
     color=discord.Color.gold()
-)
+).set_footer(text="A new currency called Sigils have arrived! Admins can enable it via /events settings")
 
 # discord.Embed(
 #     title="",

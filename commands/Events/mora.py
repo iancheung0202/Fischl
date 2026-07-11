@@ -714,15 +714,6 @@ class Mora(commands.Cog):
         guild_sigils_leaderboard = await get_guild_sigils_leaderboard(interaction.client.pool, interaction.guild.id, limit=10000)
         guild_sigils_rank = next((i+1 for i, (uid, _) in enumerate(guild_sigils_leaderboard) if uid == user.id), "N/A")
 
-        def word(n):
-            if n == "N/A":
-                return "N/A"
-            return str(n) + (
-                "th"
-                if 4 <= n % 100 <= 20
-                else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-            )
-
         inventory_items = await get_user_inventory(interaction.client.pool, user.id, interaction.guild.id)
         inv = f"No {SlashCommand('shop')} items purchased yet"
 
@@ -808,10 +799,8 @@ class Mora(commands.Cog):
             embed.add_field(
                 name=interaction.guild.name,
                 value=(
-                    f"{CURRENCY_NAME}: {GUILD_MORA_EMOTE} `{int(guild_total):,}`\n"
-                    f"-# <:rank:1364439165189488854> Rank: **{word(guild_rank)}**\n"
-                    f"{SIGIL_CURRENCY_NAME}: {GUILD_SIGIL_EMOTE} `{int(guild_sigils):,}`\n"
-                    f"-# <:rank:1364439165189488854> Rank: **{word(guild_sigils_rank)}**"
+                    f"{GUILD_MORA_EMOTE} **`{int(guild_total):,}`**\n"
+                    f"{GUILD_SIGIL_EMOTE} **`{int(guild_sigils):,}`**"
                 ),
                 inline=True,
             )
@@ -820,10 +809,8 @@ class Mora(commands.Cog):
             embed.add_field(
                 name="Global",
                 value=(
-                    f"{CURRENCY_NAME}: {GLOBAL_MORA_EMOTE} `{int(global_total):,}`\n"
-                    f"-# <:rank:1364439165189488854> Rank: **{word(global_rank)}**\n"
-                    f"{SIGIL_CURRENCY_NAME}: {GLOBAL_SIGIL_EMOTE} `{int(global_sigils):,}`\n"
-                    f"-# <:rank:1364439165189488854> Rank: **{word(global_sigils_rank)}**"
+                    f"{GLOBAL_MORA_EMOTE} **`{int(global_total):,}`**\n"
+                    f"{GLOBAL_SIGIL_EMOTE} **`{int(global_sigils):,}`**"
                 ),
                 inline=True,
             )
@@ -884,7 +871,7 @@ class Mora(commands.Cog):
             if title_entry:
                 title_name = title_entry[1]
                 
-                pin = ":round_pushpin:" if "<a:" not in title_name else ""
+                pin = "<:rank:1364439165189488854>" if "<a:" not in title_name else ""
                 title_display = (
                     f"### {pin}{title_name}"
                 )

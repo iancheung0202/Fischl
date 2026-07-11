@@ -160,7 +160,7 @@ TIPS = [
     f"Check your inventory with {SlashCommand('mora')} with all your stats 🎉",
     f"Use {SlashCommand('gift')} to send Mora to your friends or even strangers! 🎁",
     f"Get FREE mora & minigame summons at [by **playing daily games on the website**](https://fischl.app/profile) 📈",
-    f"Admins can edit event settings & view purchase logs on the **[dashboard](https://fischl.app/dashboard) ⚙️**",
+    f"Admins can customize using {SlashCommand('events settings')}, {SlashCommand('shop')} and {SlashCommand('milestones')} easily ⚙️**",
 ]
 
 KINGDOM_NAME = "Kingdom"

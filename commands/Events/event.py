@@ -4130,13 +4130,17 @@ class MoraChestView(discord.ui.View):
 class PersistentChestInfoView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(PROFILE_LINK_BUTTON)
+        import copy
+        btn = copy.copy(PROFILE_LINK_BUTTON)
+        btn.row = 0
+        self.add_item(btn)
 
     @discord.ui.button(
         label="What is this?",
         style=discord.ButtonStyle.grey,
         custom_id="persistent_chest_info_view",
         emoji="❓",
+        row=0
     )
     async def persistentChestInfoView(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -4153,6 +4157,7 @@ class PersistentChestInfoView(discord.ui.View):
         style=discord.ButtonStyle.grey,
         custom_id="persistent_chest_delete",
         emoji="<a:delete:1372423674640207882>",
+        row=0
     )
     async def persistent_chest_delete(
         self, interaction: discord.Interaction, button: discord.ui.Button
