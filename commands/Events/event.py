@@ -19,8 +19,10 @@ from commands.Events.trackData import get_current_track, check_tier_rewards, is_
 from commands.Events.helperFunctions import addMora, get_guild_mora, get_channel_settings, get_channel_mora_multiplier, get_channel_chest_config, get_user_minigame_settings, get_guild_settings, get_chest_progress, upsert_chest_progress, get_chest_streaks, upsert_chest_streaks, get_chest_counts, upsert_chest_counts, get_sigils_balance, get_daily_sigils, add_sigils, parse_boosted_roles
 from commands.Events.quests import update_quest
 
-from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_RANGE, DEFAULT_CHAT_MAX_CAP, DEFAULT_CHAT_MSG_RANGE
+from commands.Events.config import CROSS_EMOJI, CIRCLE_EMOJI, MEMORY_GAME_EMOJIS, BALANCE_COMMAND, SIGILS_MESSAGE_EMOTE, MORA_EMOTE, TTOL_EMOJIS, YES_EMOTE, NO_EMOTE, MONEYDANCE_EMOTE, FONT_PATH, TYPERACER_BG_PATH, TYPERACER_PATH, MORA_CHEST_NAME, MORA_CHEST_TIERS, MORA_CHEST_REWARDS, MORA_CHEST_UPGRADE_CHANCES, MORA_CHEST_STREAK_BONUS, MORA_CHEST_MAX_STREAK_BONUS, MORA_CHEST_TIMEOUT, EMOTE_STREAK, EMOTE_MAX_STREAK, EMOTE_BLANK, LETTER_LIST, TIPS, PROFILE_LINK_BUTTON, BOSSES, HSR_EMOJI_RIDDLE_CSV_URL, GENSHIN_EMOJI_RIDDLE_CSV_URL, CURRENCY_EMOTES, WORDS, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_RANGE, DEFAULT_CHAT_MAX_CAP, DEFAULT_CHAT_MSG_RANGE
 from commands.Events.config import build_chest_description
+
+from utils.commands import SlashCommand
 
 
 def get_next_reset_unix():
@@ -4410,7 +4412,15 @@ class DailyChestSystem:
         spawn_req = ccfg.get("chests_spawn_req", [4, 6])
         
         streak_data = await get_chest_streaks(cog.client.pool, guild_id, user_id)
-        last_claimed = datetime.datetime.fromisoformat(streak_data["last_claimed"]).date() if "last_claimed" in streak_data else None
+        last_claimed_raw = streak_data.get("last_claimed")
+        if isinstance(last_claimed_raw, str):
+            last_claimed = datetime.datetime.fromisoformat(last_claimed_raw).date()
+        elif hasattr(last_claimed_raw, "date"):
+            last_claimed = last_claimed_raw.date()
+        elif isinstance(last_claimed_raw, datetime.date): 
+            last_claimed = last_claimed_raw
+        else:
+            last_claimed = None
         current_streak = streak_data.get("streak", 0)
 
         today = datetime.datetime.now(datetime.timezone.utc).date()
@@ -4535,9 +4545,9 @@ class DailySigilSystem:
 
         try:
             await message.channel.send(
-                f"<:BennettThumbsUp:1411638508375773395> {message.author.mention} earned {SIGIL_EMOTE} **{sigils_earned} {SIGIL_CURRENCY_NAME}** "
+                f"{SIGILS_MESSAGE_EMOTE} {message.author.mention} earned {SIGIL_EMOTE} **{sigils_earned} {SIGIL_CURRENCY_NAME}** "
                 f"for chatting actively! *(Daily Cap: `{new_daily}/{int(max_sigils)}`)*\n"
-                f"> -# <a:clock:1382887924273774754> Resets <t:{reset_ts}:R>. Use </mora> to check your progress!"
+                f"> -# <a:clock:1382887924273774754> Resets <t:{reset_ts}:R>. Use {SlashCommand(BALANCE_COMMAND)} to check your progress!"
             )
         except Exception:
             pass
