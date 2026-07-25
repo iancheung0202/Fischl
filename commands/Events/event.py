@@ -4,6 +4,7 @@ import asyncio
 import time
 import random
 import re
+import logging
 import pandas as pd
 import io
 import aiohttp
@@ -2036,7 +2037,7 @@ class MatchPFPButton(discord.ui.Button):
             if elapsed < 5:
                 quest_data["win_minigames_under_5s"] = 1
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
-            del active_pfp_games[interaction.message.id]
+            active_pfp_games.pop(interaction.message.id, None)
         else:
             await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
@@ -2086,7 +2087,7 @@ async def matchThePFP(channel, client):
     async def cleanup():
         await asyncio.sleep(300)
         if game_message.id in active_pfp_games:
-            del active_pfp_games[game_message.id]
+            active_pfp_games.pop(game_message.id)
             await game_message.edit(embed=discord.Embed(
                 description="⏳ This game session has timed out",
                 color=discord.Color.dark_grey()
@@ -2492,7 +2493,7 @@ class memoryBtn(discord.ui.Button):
             if elapsed < 5:
                 quest_data["win_minigames_under_5s"] = 1
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
-            del active_memory_games[interaction.message.id]
+            active_memory_games.pop(interaction.message.id, None)
         else:
             await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             game_state.participants.append(interaction.user.id)
@@ -4109,7 +4110,7 @@ class MoraChestView(discord.ui.View):
             view.cog.pending_chests.discard((view.user_id, view.guild_id))
             view.completed = True
             view.update_buttons()
-            print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
+            logging.info(f"{interaction.user.name} ({interaction.user.id}) has claimed a {view.tier} Chest in {interaction.guild.name} ({interaction.guild.id})")
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
 
             from commands.Events.announcements import announcement_embed
@@ -4446,7 +4447,7 @@ class DailyChestSystem:
             embed=embed,
             view=view
         )
-        print(f"⛔️⛔️⛔️⛔️⛔️ {message.author.name} ({message.author.id}) is currently claiming a chest in {message.guild.name} ({message.guild.id})")
+        logging.warning(f"{message.author.name} ({message.author.id}) is currently claiming a chest in {message.guild.name} ({message.guild.id})")
         view.message = chest_msg
         cog.pending_chests.add(key)
         
@@ -4703,12 +4704,12 @@ class TheEventItself(commands.Cog):
 
         try:
             event = random.choice(eligible_events)
-            print(f"<{event.__name__}>: #{message.channel.name} ({message.channel.id}) in {message.guild.name} ({message.guild.id})")
+            logging.warning(f"<{event.__name__}>: #{message.channel.name} ({message.channel.id}) in {message.guild.name} ({message.guild.id})")
             await event(message.channel, self.client)
         except Exception as e:
             import traceback
             tb_str = traceback.format_exc()
-            print("Event crashed:\n", tb_str)
+            logging.error(f"Event crashed:\n{tb_str}")
             embed = discord.Embed(description=f"Event crashed: `{e}`")
             embed.set_footer(text="Error has been logged and developer has been notified.")
             msg = await message.channel.send(embed=embed)
@@ -4716,7 +4717,7 @@ class TheEventItself(commands.Cog):
             await ian.send(f"Event crashed: {msg.jump_url}")
         finally:
             active_channels.pop(message.channel.id, None)
-            print("✅")
+            logging.info(f"<{event.__name__}>: #{message.channel.name} in {message.guild.name} has ended")
 
 
 class Summon(commands.Cog):
