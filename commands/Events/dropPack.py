@@ -1,3 +1,5 @@
+import logging
+
 import discord
 import time
 import random
@@ -91,7 +93,7 @@ class DropPackView(View):
                 )
                 await interaction.followup.send(view=TierRewardsView(free_embed, elite_embed))
 
-            print(f"📦📦📦📦📦 {interaction.user.name} ({interaction.user.id}) has claimed the Drop Pack in {interaction.guild.name} ({interaction.guild.id})")
+            logging.info(f"{interaction.user.name} ({interaction.user.id}) has claimed the Drop Pack in {interaction.guild.name} ({interaction.guild.id})")
             
 class DropPackDelete(discord.ui.Button):
     def __init__(self):
@@ -131,7 +133,7 @@ async def create_drop_pack(guild_id, user_id, channel, is_elite, is_bonus, tier,
     
     view = DropPackView(guild_id, user_id, drops, xp_bonus)
     message = await channel.send(content=f"<@{user_id}>, claim this pack <t:{int(time.time()) + 180}:R>!", embed=embed, view=view)
-    print(f"⛔️⛔️⛔️⛔️⛔️ User {user_id} in {message.guild.name} ({message.guild.id}) is currently claiming a Drop Pack.")
+    logging.warning(f"User {user_id} in {message.guild.name} ({message.guild.id}) is currently claiming a Drop Pack.")
     view.message = message
     return message
     
