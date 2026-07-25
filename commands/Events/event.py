@@ -2213,7 +2213,7 @@ class WhoSaidThatGuessButton(discord.ui.Button):
 
             await interaction.response.edit_message(embed=embed, view=self.view)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, interaction.client)
-            del active_who_said_it_games[interaction.message.id]
+            active_who_said_it_games.pop(interaction.message.id, None)
         else:
             await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
@@ -2248,7 +2248,7 @@ async def startWhoSaidThatGuessing(game_message, client, game_state):
     async def cleanup():
         await asyncio.sleep(300)
         if game_message.id in active_who_said_it_games:
-            del active_who_said_it_games[game_message.id]
+            active_who_said_it_games.pop(game_message.id)
             await game_message.edit(embed=discord.Embed(
                 description="⌛ This game session has timed out",
                 color=discord.Color.dark_grey()
@@ -2300,9 +2300,9 @@ async def whoSaidIt(channel, client):
             )
             await game_message.edit(embed=embed, view=None)
             await update_quest(uid, channel.guild.id, channel.id, {"participate_minigames": 1, "win_minigames": 1, "earn_mora": addedMora}, client)
-            del active_who_said_it_games[game_message.id]
+            active_who_said_it_games.pop(game_message.id, None)
         else:
-            del active_who_said_it_games[game_message.id]
+            active_who_said_it_games.pop(game_message.id, None)
             await game_message.edit(embed=discord.Embed(
                 description="⌛ This game session has timed out",
                 color=discord.Color.dark_grey()
@@ -2368,7 +2368,7 @@ class KnowMembersButton(discord.ui.Button):
             if elapsed < 5:
                 quest_data["win_minigames_under_5s"] = 1
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
-            del active_know_members_games[interaction.message.id]
+            active_know_members_games.pop(interaction.message.id, None)
         else:
             await interaction.response.send_message(f"Incorrect! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
@@ -2433,7 +2433,7 @@ async def knowYourMembers(channel, client):
     async def cleanup():
         await asyncio.sleep(300)
         if game_message.id in active_know_members_games:
-            del active_know_members_games[game_message.id]
+            active_know_members_games.pop(game_message.id)
             await game_message.edit(embed=discord.Embed(
                 description="⏳ This game session has timed out",
                 color=discord.Color.dark_grey()
@@ -2598,7 +2598,7 @@ class answerLieBtn(discord.ui.Button):
             if elapsed < 5:
                 quest_data["win_minigames_under_5s"] = 1
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
-            del active_ttol_games[interaction.message.id]
+            active_ttol_games.pop(interaction.message.id, None)
         else:
             await interaction.response.send_message(f"Wrong! {NO_EMOTE}", ephemeral=True)
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
@@ -2721,7 +2721,7 @@ class TwoTruthAndALieButton(discord.ui.Button):
         async def expire_game():
             await asyncio.sleep(300)
             if game_message.id in active_ttol_games:
-                del active_ttol_games[game_message.id]
+                active_ttol_games.pop(game_message.id)
                 await game_message.edit(view=None)
                 
         asyncio.create_task(expire_game())
@@ -2847,7 +2847,7 @@ class SplitButton(discord.ui.Button):
             await update_quest(stealer.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
             await update_quest(game_state.player_a.id if game_state.player_b.id == stealer.id else game_state.player_b.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
-        del active_split_or_steal_games[interaction.message.id]
+        active_split_or_steal_games.pop(interaction.message.id, None)
 
 class StealButton(discord.ui.Button):
     def __init__(self, disabled=False):
@@ -2917,7 +2917,7 @@ class StealButton(discord.ui.Button):
             await update_quest(stealer.id, interaction.guild.id, interaction.channel.id, quest_data, interaction.client)
             await update_quest(game_state.player_a.id if game_state.player_b.id == stealer.id else game_state.player_b.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
-        del active_split_or_steal_games[interaction.message.id]
+        active_split_or_steal_games.pop(interaction.message.id, None)
 
 async def splitOrSteal(channel, client):
     mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
@@ -2959,7 +2959,7 @@ async def splitOrSteal(channel, client):
     async def cleanup():
         await asyncio.sleep(300)
         if game_message.id in active_split_or_steal_games:
-            del active_split_or_steal_games[game_message.id]
+            active_split_or_steal_games.pop(game_message.id)
             await game_message.edit(embed=discord.Embed(
                 description="🕒 This game session has timed out",
                 color=discord.Color.dark_grey()
@@ -3078,7 +3078,7 @@ async def resolve_rps_game(interaction: discord.Interaction, game_state: RPSGame
             else:
                 await update_quest(player.id, interaction.guild.id, interaction.channel.id, {"participate_minigames": 1}, interaction.client)
 
-    del active_rps_games[interaction.message.id]
+    active_rps_games.pop(interaction.message.id, None)
 
 async def rockPaperScissors(channel, client):
     mora_mult = await get_channel_mora_multiplier(client.pool, channel.id)
@@ -3122,7 +3122,7 @@ async def rockPaperScissors(channel, client):
     async def cleanup():
         await asyncio.sleep(300)
         if game_message.id in active_rps_games:
-            del active_rps_games[game_message.id]
+            active_rps_games.pop(game_message.id)
             await game_message.edit(embed=discord.Embed(
                 description="⌛ This game session has timed out",
                 color=discord.Color.dark_grey()
@@ -3415,7 +3415,7 @@ class AuctionView(discord.ui.View):
             await asyncio.sleep(remaining)
         
         if self.message.id in active_auctions:
-            del active_auctions[self.message.id]
+            active_auctions.pop(self.message.id)
 
         self.clear_items()
         embed = self.message.embeds[0]
@@ -4114,7 +4114,8 @@ class MoraChestView(discord.ui.View):
             await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"collect_chests": 1, "earn_mora": addedMora}, interaction.client)
 
             from commands.Events.announcements import announcement_embed
-            await interaction.followup.send(embed=announcement_embed, ephemeral=True)
+            if announcement_embed:
+                await interaction.followup.send(embed=announcement_embed, ephemeral=True)
 
     class WhatIsItButton(discord.ui.Button):
         def __init__(self):
