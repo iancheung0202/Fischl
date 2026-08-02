@@ -207,7 +207,7 @@ class MessageHistoryAPICog(commands.Cog):
             resp = self.app.response_class(status=304)
         else:
             resp = jsonify(data)
-            resp.setetag(etag)
+            resp.set_etag(etag)
         resp.headers["Cache-Control"] = "no-cache"
         return resp
 
