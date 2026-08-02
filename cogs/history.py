@@ -27,6 +27,9 @@ class MessageHistoryAPICog(commands.Cog):
         self.rate_limits = {}
         self.rate_limit_lock = threading.Lock()
         self.app = Flask("msg_history_api")
+        self.app.config["JSON_SORT_KEYS"] = False
+        if hasattr(self.app, "json"):
+            self.app.json.sort_keys = False
         self.app.add_url_rule("/summary", "summary", self.handle_summary)
         self.app.add_url_rule("/messages", "messages", self.handle_messages)
         threading.Thread(target=self.run_server, daemon=True).start()
@@ -42,7 +45,7 @@ class MessageHistoryAPICog(commands.Cog):
             if channel is None:
                 channel = await self.bot.fetch_channel(CHANNEL_ID)
             count = 0
-            async for message in channel.history(limit=None):
+            async for message in channel.history(limit=None, oldest_first=True):
                 with self.lock:
                     self.insert(message)
                 count += 1
@@ -114,8 +117,8 @@ class MessageHistoryAPICog(commands.Cog):
             if total:
                 newest = next(iter(self.messages.values()))
                 oldest = next(reversed(self.messages.values()))
-                first_timestamp = oldest["timestamp"]
-                last_timestamp = newest["timestamp"]
+                first_timestamp = newest["timestamp"]
+                last_timestamp = oldest["timestamp"]
             else:
                 first_timestamp = None
                 last_timestamp = None
@@ -127,7 +130,7 @@ class MessageHistoryAPICog(commands.Cog):
                 "total_messages": total,
                 "first_message": first_timestamp,
                 "last_message": last_timestamp,
-                "messages_per_day": dict(sorted(daily.items())),
+                "messages_per_day": dict(sorted(daily.items(), reverse=True)),
                 "cache": {
                     "backfill_complete": self.backfill_complete,
                     "last_update": datetime.datetime.fromtimestamp(
