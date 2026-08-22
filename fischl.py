@@ -13,6 +13,7 @@ from discord.ext import commands
 from utils.persistent import views
 from utils.controls import BotControlServer
 from utils.uptime import app
+from utils.activity import app as activity
 from assets.secret import DISCORD_TOKEN, DATABASE_PATH, DATABASE_URL, DATABASE_USER, DATABASE_PASSWORD
 
 cred = credentials.Certificate(DATABASE_PATH)
@@ -59,6 +60,7 @@ class Fischl(commands.AutoShardedBot):
 
     async def on_ready(self):
         threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8083, use_reloader=False), daemon=True).start()
+        threading.Thread(target=lambda: activity.run(host="0.0.0.0", port=8087, use_reloader=False), daemon=True).start()
         print(f"{self.user} has connected to Discord!")
 
         print(f"CPU Usage: {psutil.cpu_percent()}%")
