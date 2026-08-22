@@ -216,11 +216,6 @@ class OnStatusUpdate(commands.Cog):
         await check_and_reload()
 
         if after.id == 692254240290242601:
-            # NOTE: this looks like leftover personal debug/logging code
-            # unrelated to vanity roles (tracking one hardcoded user's
-            # activity to Firebase). Left in place but hardened so a bad
-            # activity payload can't crash the rest of this listener (and
-            # therefore vanity-role processing) for every other guild.
             try:
                 debug_ref = db.reference("/Ian Activity")
 
@@ -246,9 +241,6 @@ class OnStatusUpdate(commands.Cog):
 
         entry = get_vanity_entry(after.guild.id)
         if entry is None:
-            # Already logged inside get_vanity_entry. There's nothing sane
-            # to do without the config, so bail instead of crashing on
-            # unbound locals further down (the original bug).
             return
 
         log_channel_id = entry.get("Log Channel ID")

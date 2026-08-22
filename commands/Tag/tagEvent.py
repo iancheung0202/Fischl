@@ -60,6 +60,8 @@ class TagRoleHandler(commands.Cog):
         if not all_configs:
             return
 
+        log_chn = self.bot.get_channel(1026867655468126249)
+
         for guild_id in enabledGuilds:
             try:
                 guild = self.bot.get_guild(guild_id)
@@ -140,6 +142,12 @@ class TagRoleHandler(commands.Cog):
                                 description=f"✅ {member.mention} was given the tag role",
                                 colour=0x00FF00
                             )
+                            await log_chn.send(
+                                embed=embed.add_field(
+                                    name="Guild",
+                                    value=f"{guild.name} ({guild.id})",
+                                )
+                            )
                             try:
                                 await log_channel.send(embed=embed)
                             except: pass
@@ -151,6 +159,12 @@ class TagRoleHandler(commands.Cog):
                             embed = discord.Embed(
                                 description=f"❌ {member.mention} had tag role removed",
                                 colour=0xFF0000
+                            )
+                            await log_chn.send(
+                                embed=embed.add_field(
+                                    name="Guild",
+                                    value=f"{guild.name} ({guild.id})",
+                                )
                             )
                             try:
                                 await log_channel.send(embed=embed)
