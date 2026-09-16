@@ -13,7 +13,7 @@ from matplotlib.dates import DateFormatter
 
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.trackData import get_current_track, is_elite_active
-from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_settings, get_channel_settings, get_chest_counts, get_chest_streaks, get_cosmetics, get_milestones_list, get_sigils_balance, get_daily_sigils, parse_boosted_roles, get_global_sigils_balance, get_guild_sigils_leaderboard, get_global_sigils_leaderboard
+from commands.Events.helperFunctions import addMora, get_global_leaderboard, get_guild_leaderboard, get_user_mora_history, get_mora_stats, get_guild_mora, get_user_inventory, apply_discount, get_user_minigame_settings, upsert_user_minigame_setting, get_guild_settings, get_channel_settings, get_chest_counts, get_chest_streaks, upsert_chest_streaks, get_cosmetics, get_milestones_list, get_sigils_balance, get_daily_sigils, parse_boosted_roles, get_global_sigils_balance, get_guild_sigils_leaderboard, get_global_sigils_leaderboard
 from commands.Events.seasons import get_current_season
 from commands.Events.quests import update_quest, get_quest_data, QUEST_DESCRIPTIONS, QUEST_BONUS_XP, QUEST_XP_REWARDS
 from commands.Events.domain import get_kingdom_embed, upgrade_building, BUILDINGS, calculate_cost, get_rank_title
@@ -21,6 +21,130 @@ from utils.commands import SlashCommand
 
 from commands.Events.config import DOT_EMOTE, MORA_EMOTE, TRACK_EMOTE, PRESTIGE_EMOTE, ANIMATED_INVENTORY_BG_PATH, INVENTORY_BG_PATH, NO_EMOTE_2, REPLY_EMOTE, YES_EMOTE, NO_EMOTE, RESOLVED_EMOTE, UNRESOLVED_EMOTE, MORA_CHEST_TIERS, MORA_CHEST_NAME, EMOTE_BLANK, EMOTE_STREAK, EMOTE_MAX_STREAK, BALANCE_COMMAND, CURRENCY_NAME, PROFILE_LINK_BUTTON, KINGDOM_NAME, VIEW_FULL_TRACK, GRAPHS_DIRECTORY, SIGIL_EMOTE, SIGIL_CURRENCY_NAME, DEFAULT_CHAT_MSG_RANGE, DEFAULT_CHAT_MAX_CAP, YES_EMOTE_2, GUILD_MORA_EMOTE, GLOBAL_MORA_EMOTE, GUILD_SIGIL_EMOTE, GLOBAL_SIGIL_EMOTE
 from commands.Events.config import ThanksEliteTrack, PurchaseEliteTrack
+
+FIXSTREAK_OWNER_ID = 692254240290242601
+STREAK_RESTORE_COST_PER_DAY = 10000
+
+def _parse_streak_data(streak_data: dict) -> tuple[int, int, "datetime.date | None", bool]:
+    """
+    Given a raw streak_data dict from get_chest_streaks, returns:
+    (live_current_streak, max_streak, last_claimed_date, is_broken)
+
+    live_current_streak mirrors the display logic used elsewhere (e.g. generate_mora_graph):
+    it's 0 if the streak has lapsed (more than 1 day since last claim), even if the
+    'streak' column in the DB hasn't been overwritten yet (that only happens on next claim).
+    """
+    last_claimed = streak_data.get("last_claimed") if streak_data else None
+    if last_claimed:
+        if isinstance(last_claimed, str):
+            last_claimed = datetime.datetime.fromisoformat(last_claimed).date()
+        elif isinstance(last_claimed, datetime.datetime):
+            last_claimed = last_claimed.date()
+        elif not isinstance(last_claimed, datetime.date):
+            last_claimed = None
+
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    is_broken = not (last_claimed and (today - last_claimed).days <= 1)
+    raw_streak = streak_data.get("streak", 0) if streak_data else 0
+    live_current_streak = 0 if is_broken else raw_streak
+    max_streak = streak_data.get("max_streak", raw_streak) if streak_data else 0
+
+    return live_current_streak, max_streak, last_claimed, is_broken
+
+
+class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
+    days = discord.ui.TextInput(
+        label="Days to restore",
+        placeholder="Enter a number of days",
+        required=True,
+        max_length=5
+    )
+
+    def __init__(self, guild_id: int, user_id: int, max_restorable: int, max_streak: int, base_streak: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.max_restorable = max_restorable
+        self.max_streak = max_streak
+        self.base_streak = base_streak
+        self.days.placeholder = f"Enter number of days between 1 and {max_restorable}"
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw = str(self.days.value).strip().replace(",", "")
+        if not raw.isdigit():
+            return await interaction.response.send_message(f"{NO_EMOTE} Please enter a whole number!", ephemeral=True)
+
+        days_to_restore = int(raw)
+        if days_to_restore <= 0:
+            return await interaction.response.send_message(f"{NO_EMOTE} You need to restore at least `1` day!", ephemeral=True)
+
+        if days_to_restore > self.max_restorable:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} You can only restore up to `{self.max_restorable}` day{'s' if self.max_restorable != 1 else ''}!",
+                ephemeral=True
+            )
+
+        cost = days_to_restore * STREAK_RESTORE_COST_PER_DAY
+        balance = await get_guild_mora(interaction.client.pool, self.user_id, self.guild_id)
+
+        if balance < cost:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} Restoring `{days_to_restore}` day{'s' if days_to_restore != 1 else ''} costs {MORA_EMOTE} `{cost:,}`, "
+                f"but you only have {MORA_EMOTE} `{int(balance):,}`!",
+                ephemeral=True
+            )
+
+        # Re-check current state at the moment of submission to avoid stale/racey data
+        streak_data = await get_chest_streaks(interaction.client.pool, self.guild_id, self.user_id)
+        live_current_streak, max_streak, _, is_broken = _parse_streak_data(streak_data)
+
+        if not is_broken or max_streak <= live_current_streak:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} Your streak isn't broken anymore, there's nothing to restore!",
+                ephemeral=True
+            )
+
+        new_streak = min(live_current_streak + days_to_restore, max_streak)
+
+        await addMora(interaction.client.pool, self.user_id, -cost, interaction.channel.id, self.guild_id, interaction.client, bypass_boost=True)
+
+        today_iso = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        await upsert_chest_streaks(interaction.client.pool, self.guild_id, self.user_id, new_streak, max_streak, today_iso)
+
+        embed = discord.Embed(
+            title=f"{YES_EMOTE} Streak Restored!",
+            description=(
+                f"{EMOTE_STREAK} **New Streak:** `{new_streak}` day{'s' if new_streak != 1 else ''}\n"
+                f"{EMOTE_MAX_STREAK} **Max Streak:** `{max_streak}` day{'s' if max_streak != 1 else ''}\n"
+                f"{MORA_EMOTE} **Cost Paid:** `{cost:,}`"
+            ),
+            color=discord.Color.green()
+        )
+        await interaction.response.edit_message(embed=embed, view=None)
+
+
+class RestoreStreakView(discord.ui.View):
+    def __init__(self, guild_id: int, user_id: int, max_restorable: int, max_streak: int, base_streak: int):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.max_restorable = max_restorable
+        self.max_streak = max_streak
+        self.base_streak = base_streak
+
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            child.disabled = True
+
+    @discord.ui.button(label="Restore Streak", style=discord.ButtonStyle.green, emoji="✨")
+    async def restore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("You can't use this button!", ephemeral=True)
+            return
+
+        modal = RestoreStreakModal(self.guild_id, self.user_id, self.max_restorable, self.max_streak, self.base_streak)
+        await interaction.response.send_modal(modal)
+
 
 async def generate_mora_graph(pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str) -> str:
     history = await get_user_mora_history(pool, user_id, guild_id)
@@ -1014,6 +1138,112 @@ class Mora(commands.Cog):
             quest_dict["gift_mora_poorer"] = 1
         
         await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, quest_dict, interaction.client)
+
+    @app_commands.command(name="streak", description=f"Check your {MORA_CHEST_NAME} streak")
+    async def streak(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True)
+        user = interaction.user
+
+        streak_data = await get_chest_streaks(interaction.client.pool, interaction.guild.id, user.id)
+        live_current_streak, max_streak, _, is_broken = _parse_streak_data(streak_data)
+
+        counts = await get_chest_counts(interaction.client.pool, interaction.guild.id, user.id)
+        total_chests = sum(counts)
+
+        gc = await get_guild_settings(interaction.client.pool, interaction.guild.id)
+        tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
+        tier_emotes_list = gc.get("chests_emotes", [])
+        tier_emotes = dict(zip(tier_names, tier_emotes_list)) if tier_emotes_list else {}
+
+        chest_info = ""
+        for i, name in enumerate(tier_names):
+            emote = tier_emotes.get(name, EMOTE_BLANK)
+            count = counts[i] if i < len(counts) else 0
+            chest_info += f"{emote} `{count}` {EMOTE_BLANK}"
+        chest_info += f"\n**Total:** `{total_chests}`"
+
+        embed = discord.Embed(
+            title=f"{user.display_name}'s {MORA_CHEST_NAME} Streak",
+            description="",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name=f"`📦` {MORA_CHEST_NAME}s", value=chest_info, inline=False)
+        embed.add_field(
+            name="Current Streak",
+            value=f"{EMOTE_STREAK} `{live_current_streak}` day{'s' if live_current_streak != 1 else ''}",
+            inline=True
+        )
+        embed.add_field(
+            name="Max Streak",
+            value=f"{EMOTE_MAX_STREAK} `{max_streak}` day{'s' if max_streak != 1 else ''}",
+            inline=True
+        )
+
+        max_restorable = max(0, max_streak - live_current_streak)
+
+        view = None
+        if is_broken and max_restorable > 0:
+            embed.add_field(
+                name="💔 Streak Broken!",
+                value=(
+                    f"You can restore up to `{max_restorable}` day{'s' if max_restorable != 1 else ''} "
+                    f"back towards your max streak.\n"
+                    f"-# Costs {MORA_EMOTE} `{STREAK_RESTORE_COST_PER_DAY:,}` per day restored."
+                ),
+                inline=False
+            )
+            view = RestoreStreakView(interaction.guild.id, user.id, max_restorable, max_streak, live_current_streak)
+
+        embed.set_footer(text="Tip: Claim your chest at the same time each day to keep your streak!")
+        if view is not None:
+            await interaction.followup.send(embed=embed, view=view)
+        else:
+            await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="fixstreak", description="[Owner Only] Manually fix a user's chest streak")
+    @app_commands.describe(
+        user="The user whose streak to fix",
+        new_streak="The new current streak to set",
+        new_max_streak="The new max streak to set",
+        mora_to_deduct=f"Optional amount of {CURRENCY_NAME} to deduct from the user"
+    )
+    async def fixstreak(self, interaction: discord.Interaction, user: discord.Member, new_streak: int, new_max_streak: int, mora_to_deduct: int = None):
+        if interaction.user.id != FIXSTREAK_OWNER_ID:
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if new_streak < 0 or new_max_streak < 0:
+            return await interaction.followup.send(f"{NO_EMOTE} Streak values can't be negative!", ephemeral=True)
+
+        if mora_to_deduct is not None:
+            if mora_to_deduct < 0:
+                return await interaction.followup.send(f"{NO_EMOTE} Mora to deduct can't be negative!", ephemeral=True)
+
+            if mora_to_deduct > 0:
+                current_balance = await get_guild_mora(interaction.client.pool, user.id, interaction.guild.id)
+                if current_balance < mora_to_deduct:
+                    return await interaction.followup.send(
+                        f"{NO_EMOTE} {user.mention} only has {MORA_EMOTE} `{int(current_balance):,}`, "
+                        f"can't deduct {MORA_EMOTE} `{mora_to_deduct:,}`!",
+                        ephemeral=True
+                    )
+                await addMora(interaction.client.pool, user.id, -mora_to_deduct, interaction.channel.id, interaction.guild.id, interaction.client, bypass_boost=True)
+
+        today_iso = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        await upsert_chest_streaks(interaction.client.pool, interaction.guild.id, user.id, new_streak, new_max_streak, today_iso)
+
+        embed = discord.Embed(
+            title=f"{YES_EMOTE} Streak Fixed",
+            description=(
+                f"**User:** {user.mention}\n"
+                f"{EMOTE_STREAK} **New Streak:** `{new_streak}` day{'s' if new_streak != 1 else ''}\n"
+                f"{EMOTE_MAX_STREAK} **New Max Streak:** `{new_max_streak}` day{'s' if new_max_streak != 1 else ''}"
+                + (f"\n{MORA_EMOTE} **Mora Deducted:** `{mora_to_deduct:,}`" if mora_to_deduct else "")
+            ),
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Mora(bot))
