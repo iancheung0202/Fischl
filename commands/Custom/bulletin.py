@@ -1,10 +1,12 @@
-import discord
 import time
 
-from firebase_admin import db
+import discord
 from discord import app_commands
 from discord.ext import commands
+from firebase_admin import db
+
 from commands.Events.helperFunctions import addMora
+
 
 class CustomCommands(commands.Cog):
     def __init__(self, bot):
@@ -43,9 +45,7 @@ class CustomCommands(commands.Cog):
                 inline=True,
             )
             embed2.set_image(url=link)
-            await chn.send(
-                embeds=[embed1, embed2]
-            )
+            await chn.send(embeds=[embed1, embed2])
             role = interaction.guild.get_role(1313053449549512704)
             db_path = f"/Weekly Leaderboard/{interaction.guild.id}"
             prev_winner_id = db.reference(db_path).get()
@@ -68,12 +68,19 @@ class CustomCommands(commands.Cog):
 
             timestamp = int(time.time())
             async with interaction.client.pool.acquire() as conn:
-                await conn.execute("""
+                await conn.execute(
+                    """
                     INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
                     VALUES ($1, $2, $3, $4, $5)
                     ON CONFLICT (gid, uid, cid, timestamp)
                     DO UPDATE SET count = $5
-                """, text_user.id, interaction.guild.id, 10, timestamp, 100000)
+                """,
+                    text_user.id,
+                    interaction.guild.id,
+                    10,
+                    timestamp,
+                    100000,
+                )
 
             await interaction.followup.send(
                 f"<:yes:1036811164891480194> Added exactly <:MORA:1364030973611610205> `100,000` to <@{text_user.id}>'s inventory. \n-# This is not boosted and doesn't count towards quest progression.",
@@ -93,9 +100,19 @@ class CustomCommands(commands.Cog):
 
         # MEROPIDE BULLETIN REPLACED SAPPHIRE INVITE LINK AUTOMOD RULE #
 
-        if message.guild.id == 1281655927791030293 and ("discord.com/invite/" in message.content or "discord.gg/" in message.content or "discordapp.com/invite/" in message.content):
+        if message.guild.id == 1281655927791030293 and (
+            "discord.com/invite/" in message.content
+            or "discord.gg/" in message.content
+            or "discordapp.com/invite/" in message.content
+        ):
             if (
-                message.channel.category.id in [1281655927791030302, 1299725218767568997, 1281690196357808240, 1301601587059490836]
+                message.channel.category.id
+                in [
+                    1281655927791030302,
+                    1299725218767568997,
+                    1281690196357808240,
+                    1301601587059490836,
+                ]
                 or message.guild.get_role(1282396278071890086) in message.author.roles
                 or message.guild.get_role(1282395927168159876) in message.author.roles
             ):
@@ -110,22 +127,40 @@ class CustomCommands(commands.Cog):
                         ownServer = False
                 if not ownServer:
                     await message.delete()
-                    await message.channel.send(f"{message.author.mention}, no invite links!", delete_after=300)
+                    await message.channel.send(
+                        f"{message.author.mention}, no invite links!", delete_after=300
+                    )
 
                     embed = discord.Embed(
                         title="Auto Moderation - External Server Invites",
                         color=discord.Color.red(),
                     )
-                    embed.add_field(name="User:", value=f"{message.author.mention} `({message.author.id})`", inline=False)
-                    embed.add_field(name="Channel(s):", value=f"{message.channel.mention}", inline=False)
-                    embed.add_field(name="Message Content", value=message.content, inline=False)
+                    embed.add_field(
+                        name="User:",
+                        value=f"{message.author.mention} `({message.author.id})`",
+                        inline=False,
+                    )
+                    embed.add_field(
+                        name="Channel(s):",
+                        value=f"{message.channel.mention}",
+                        inline=False,
+                    )
+                    embed.add_field(
+                        name="Message Content", value=message.content, inline=False
+                    )
                     embed.set_footer(text=f"Message deleted")
 
-                    await message.guild.get_channel(1288400196220227594).send(embed=embed)
+                    await message.guild.get_channel(1288400196220227594).send(
+                        embed=embed
+                    )
 
         # MEROPIDE BULLETIN SERVER RULE TRIGGER PHRASES #
 
-        if (message.guild.id == 1281655927791030293 and message.content.lower().startswith("-r") and message.content.lower()[2:].isdigit()):
+        if (
+            message.guild.id == 1281655927791030293
+            and message.content.lower().startswith("-r")
+            and message.content.lower()[2:].isdigit()
+        ):
             index = int(message.content.lower()[2:]) - 1  # Convert to 0-based index
             if 0 <= index < 10:
                 try:
@@ -135,19 +170,31 @@ class CustomCommands(commands.Cog):
 
                     msg = await channel.fetch_message(1297054467107328000)
                     if index >= len(msg.embeds):
-                        await message.channel.send("❌ That rule number doesn’t exist.", delete_after=10)
+                        await message.channel.send(
+                            "❌ That rule number doesn’t exist.", delete_after=10
+                        )
                         return
 
                     embed = msg.embeds[index]
                     await message.channel.send(embed=embed)
 
                 except Exception as e:
-                    await message.channel.send("⚠️ Failed to fetch the rule.", delete_after=10)
+                    await message.channel.send(
+                        "⚠️ Failed to fetch the rule.", delete_after=10
+                    )
                     print(f"Error fetching rule: {e}")
 
         # MEROPIDE BULLETIN AUTO PUBLISH IN ANNOUNCEMENT CHANNELS #
-        channel_ids = [1281673438435741696, 1281675540511850639, 1281675690416279633, 1281675725216284753]
-        if message.guild.id == 1281655927791030293 and message.channel.id in channel_ids:
+        channel_ids = [
+            1281673438435741696,
+            1281675540511850639,
+            1281675690416279633,
+            1281675725216284753,
+        ]
+        if (
+            message.guild.id == 1281655927791030293
+            and message.channel.id in channel_ids
+        ):
             try:
                 await message.publish()
             except Exception as e:

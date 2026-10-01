@@ -22,7 +22,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'VT323', monospace;
             background: linear-gradient(135deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.6) 50%, rgba(0, 0, 0, 0.6) 100%), url('https://ticket.mysticraft.xyz/assets/mysti-banner.png');
@@ -39,7 +39,7 @@
             0%, 100% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
         }
-        
+
         .container {
             max-width: 1000px;
             margin: 0 auto;
@@ -63,7 +63,7 @@
             font-size: 24px;
             margin-bottom: 5px;
         }
-        
+
         .mc-panel {
             border: 2px solid;
             border-color: #fff #555 #555 #fff;
@@ -71,31 +71,31 @@
             padding: 15px;
             margin: 5px;
         }
-        
+
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
         }
-        
+
         .header h1 {
             color: #404040;
             font-size: 32px;
             margin-bottom: 5px;
         }
-        
+
         .subtitle {
             color: #555;
             font-size: 18px;
             margin-bottom: 8px;
         }
-        
+
         .header-user {
             color: #555;
             font-size: 15px;
         }
-        
+
         .logout-button {
             background: #A00;
             border: 2px solid;
@@ -109,7 +109,7 @@
             text-shadow: 2px 2px #3f3f3f;
             transition: all 0.1s;
         }
-        
+
         .logout-button:hover {
             background: #C00;
         }
@@ -119,13 +119,13 @@
             padding-top: 10px;
             padding-bottom: 6px;
         }
-        
+
         .tickets-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 15px;
         }
-        
+
         .ticket-card {
             background: #C6C6C6;
             border: 4px solid #000;
@@ -133,17 +133,17 @@
             box-shadow: 5px 5px 0px rgba(0,0,0,0.3);
             transition: transform 0.1s, box-shadow 0.1s;
         }
-        
+
         .ticket-card:hover {
             transform: translate(-2px, -2px);
             box-shadow: 7px 7px 0px rgba(0,0,0,0.4);
         }
-        
+
         .ticket-card:active {
             transform: translate(1px, 1px);
             box-shadow: 2px 2px 0px rgba(0,0,0,0.2);
         }
-        
+
         .category-badge {
             display: inline-block;
             background: #667eea;
@@ -179,13 +179,13 @@
         .category-badge i {
             margin-right: 6px;
         }
-        
+
         .ticket-date {
             color: #555;
             font-size: 16px;
             margin-bottom: 15px;
         }
-        
+
         .transcript-link {
             display: inline-block;
             background: #7d7d7d;
@@ -200,7 +200,7 @@
             transition: all 0.1s;
             cursor: pointer;
         }
-        
+
         .transcript-link:hover {
             background: #9e9e9e;
         }
@@ -210,7 +210,7 @@
             padding-top: 10px;
             padding-bottom: 6px;
         }
-        
+
         .empty-state {
             background: #C6C6C6;
             border: 4px solid #000;
@@ -218,13 +218,13 @@
             text-align: center;
             box-shadow: 5px 5px 0px rgba(0,0,0,0.3);
         }
-        
+
         .empty-state h2 {
             color: #404040;
             margin-bottom: 10px;
             font-size: 28px;
         }
-        
+
         .empty-state p {
             color: #555;
             font-size: 20px;
@@ -383,10 +383,10 @@
         function updateLoadingMessage() {
             const messageEl = document.getElementById('loadingMessage');
             const percentEl = document.getElementById('loadingPercent');
-            
+
             messageEl.textContent = loadingMessages[messageIndex];
             messageIndex = (messageIndex + 1) % loadingMessages.length;
-            
+
             percentValue = Math.min(percentValue + Math.random() * 20, 95);
             percentEl.textContent = Math.floor(percentValue) + '%';
         }
@@ -439,24 +439,24 @@
         function renderTickets(tickets) {
             const container = document.getElementById('ticketsContainer');
             const emptyState = document.getElementById('emptyState');
-            
+
             if (!tickets || tickets.length === 0) {
                 emptyState.style.display = 'block';
                 container.style.display = 'none';
                 return;
             }
-            
+
             container.innerHTML = '';
             tickets.forEach(ticket => {
                 const ticketCard = document.createElement('div');
                 ticketCard.className = 'ticket-card';
                 let badgesHtml = '<div class="badge-container">';
-                
+
                 if (ticket.guild_name) {
                     badgesHtml += `<div class="guild-pill"><i class="fas fa-server"></i>${escapeHtml(ticket.guild_name)}</div>`;
                 }
                 badgesHtml += `<div class="category-badge"><i class="fas fa-tag"></i>${escapeHtml(ticket.category)}</div></div>`;
-                
+
                 ticketCard.innerHTML = `
                     ${badgesHtml}
                     <div class="ticket-date">Closed at ${formatDate(ticket.date_str)}</div>
@@ -464,7 +464,7 @@
                 `;
                 container.appendChild(ticketCard);
             });
-            
+
             container.style.display = 'grid';
             emptyState.style.display = 'none';
         }
@@ -481,10 +481,10 @@
                         }
                     }
                     renderTickets(data.tickets);
-                    
+
                     const percentEl = document.getElementById('loadingPercent');
                     percentEl.textContent = '100%';
-                    
+
                     setTimeout(hideLoadingScreen, 500);
                 })
                 .catch(error => {
@@ -518,11 +518,11 @@
                     </div>
                     <a href="https://ticket.mysticraft.xyz/logout" class="logout-button">Disconnect</a>
                 </div>
-                
+
                 <div id="errorMessage" class="error-message" style="display: none;"></div>
-                
+
                 <div id="ticketsContainer" class="tickets-grid" style="display: none;"></div>
-                
+
                 <div id="emptyState" class="empty-state" style="display: none;">
                     <h2>No Ticket History</h2>
                     <p>You haven't closed any support tickets yet.</p>

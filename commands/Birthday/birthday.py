@@ -1,14 +1,24 @@
-import discord
 import datetime
-import pytz
 import re
 
-from firebase_admin import db
+import discord
+import pytz
 from discord import app_commands
 from discord.ext import commands
+from firebase_admin import db
 
-from commands.Birthday.birthdayTexts import characters, characters_dict, timezones, months, days, time_to_emoji, month_map, months_short
+from commands.Birthday.birthdayTexts import (
+    characters,
+    characters_dict,
+    days,
+    month_map,
+    months,
+    months_short,
+    time_to_emoji,
+    timezones,
+)
 from utils.commands import SlashCommand
+
 
 async def timezone_autocomplete(
     interaction: discord.Interaction,
@@ -33,7 +43,10 @@ async def day_autocomplete(
     current: str,
 ):
     if current == "":
-        return [app_commands.Choice(name=str(days[x]), value=str(days[x])) for x in range(25)]
+        return [
+            app_commands.Choice(name=str(days[x]), value=str(days[x]))
+            for x in range(25)
+        ]
     else:
         list = []
         for day in days:
@@ -142,8 +155,11 @@ class Birthday(commands.GroupCog, name="birthday"):
                 ref.push().set(value)
             count += 1
         await interaction.followup.send(f"Added **{count}** birthday records.")
+
     @birthday_sync.error
-    async def birthday_sync_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_sync_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="set", description="Set your birth date and timezone")
@@ -269,13 +285,18 @@ class Birthday(commands.GroupCog, name="birthday"):
             color=0x04C607,
         )
         if character != "None" and character in characters_dict:
-            icon_link = characters_dict[character]['icon']
+            icon_link = characters_dict[character]["icon"]
             embed.set_thumbnail(url=icon_link)
 
-        embed.set_footer(text="Missing your favorite character? Join discord.gg/BXkc8CC4uJ and let us know!")
+        embed.set_footer(
+            text="Missing your favorite character? Join discord.gg/BXkc8CC4uJ and let us know!"
+        )
         await interaction.response.send_message(embed=embed)
+
     @birthday_set.error
-    async def birthday_set_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_set_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="get", description="Get the birthday of a member")
@@ -324,14 +345,17 @@ class Birthday(commands.GroupCog, name="birthday"):
                 description=f":birthday: {user.mention}'s birthday is **{months[month-1]} {day}** *({timezone})*.\n In UTC time, it is **{display_utc_date}** {time_to_emoji(display_utc_date.split(' ')[1])}",
                 color=0xF1EE0C,
             )
-        
+
         if character != "None" and character in characters_dict:
-            icon_link = characters_dict[character]['icon']
+            icon_link = characters_dict[character]["icon"]
             embed.set_thumbnail(url=icon_link)
-            
+
         await interaction.response.send_message(embed=embed)
+
     @birthday_get.error
-    async def birthday_get_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_get_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -364,8 +388,11 @@ class Birthday(commands.GroupCog, name="birthday"):
             )
 
         await interaction.response.send_message(embed=embed)
+
     @birthday_remove.error
-    async def birthday_remove_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_remove_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -393,7 +420,7 @@ class Birthday(commands.GroupCog, name="birthday"):
                 data_items_with_dates.append((key, value, date))
             except ValueError:
                 print(f"Invalid date found: {value['Display UTC Date']} for key {key}")
-        
+
         sorted_data_items = sorted(data_items_with_dates, key=lambda x: x[2])
         sorted_data_items_final = [
             (key, value) for key, value, date in sorted_data_items
@@ -411,8 +438,11 @@ class Birthday(commands.GroupCog, name="birthday"):
             file.write(content)
 
         await interaction.followup.send(file=discord.File(filename))
+
     @birthday_export.error
-    async def birthday_export_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_export_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -421,20 +451,27 @@ class Birthday(commands.GroupCog, name="birthday"):
     @app_commands.describe(
         channel="The channel to send birthday wishes in",
         role="The role to given those who are celebrating their birthdays",
-        create_birthday_thread="Whether if a thread is created for each birthday wish"
+        create_birthday_thread="Whether if a thread is created for each birthday wish",
     )
-    @app_commands.checks.bot_has_permissions(manage_roles=True, create_public_threads=True, manage_webhooks=True)
-    @app_commands.checks.has_permissions(manage_guild=True, manage_channels=True, manage_webhooks=True)
+    @app_commands.checks.bot_has_permissions(
+        manage_roles=True, create_public_threads=True, manage_webhooks=True
+    )
+    @app_commands.checks.has_permissions(
+        manage_guild=True, manage_channels=True, manage_webhooks=True
+    )
     async def birthday_enable(
         self,
         interaction: discord.Interaction,
         channel: discord.TextChannel,
         role: discord.Role,
-        create_birthday_thread: bool = False
+        create_birthday_thread: bool = False,
     ) -> None:
-        
+
         if role == interaction.guild.default_role:
-            return await interaction.response.send_message("<:no:1036810470860013639> You have specified an unknown role!", ephemeral=True)
+            return await interaction.response.send_message(
+                "<:no:1036810470860013639> You have specified an unknown role!",
+                ephemeral=True,
+            )
 
         ref = db.reference("/Birthday System")
         bs = ref.get()
@@ -458,7 +495,7 @@ class Birthday(commands.GroupCog, name="birthday"):
                 "Server ID": interaction.guild.id,
                 "Server Name": interaction.guild.name,
                 "Role ID": role.id,
-                "Create Birthday Thread": create_birthday_thread
+                "Create Birthday Thread": create_birthday_thread,
             }
         }
 
@@ -472,8 +509,11 @@ class Birthday(commands.GroupCog, name="birthday"):
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         await interaction.response.send_message(embed=embed)
+
     @birthday_enable.error
-    async def birthday_enable_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_enable_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -511,8 +551,11 @@ class Birthday(commands.GroupCog, name="birthday"):
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @birthday_disable.error
-    async def birthday_disable_error(self, interaction: discord.Interaction, error: Exception):
+    async def birthday_disable_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
 

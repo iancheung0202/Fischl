@@ -1,6 +1,7 @@
 import json
 import os
 
+
 class SlashCommand:
     def __init__(self, name: str):
         self.name = name
@@ -11,7 +12,7 @@ class SlashCommand:
             if os.path.exists("assets/commands.json"):
                 with open("assets/commands.json", "r") as f:
                     command_map = json.load(f)
-                    
+
                 base_name = self.name.split()[0]
                 return command_map.get(base_name, command_map.get(self.name, "0"))
         except Exception:

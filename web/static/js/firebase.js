@@ -134,9 +134,9 @@ db.ref('Bot Status/ping_history').limitToLast(100).on('child_added', snapshot =>
             timestamp: p.timestamp,
             latency_ms: p.latency_ms
         });
-        
+
         if (pingHistory.length > 100) {
-            pingHistory.shift(); 
+            pingHistory.shift();
         }
         updateDisplay();
     }

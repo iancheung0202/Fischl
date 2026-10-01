@@ -1,6 +1,6 @@
-import discord
 import datetime
 
+import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View
@@ -53,7 +53,7 @@ class SendCodes(commands.Cog):
         role="The role you would like to ping alongside this message",
         reward="Optional description the rewards, each separated by a comma",
         separate_msg="Whether to send separate messages afterwards for copy & pasting (default: False)",
-        image="One optional image of the reward, inserted in the embed"
+        image="One optional image of the reward, inserted in the embed",
     )
     @app_commands.guild_only()
     async def sendcode(
@@ -154,7 +154,9 @@ class SendCodes(commands.Cog):
             )
 
         if image is None:
-            embed.set_image(url="https://media.discordapp.net/attachments/957252297501577276/965133143365550090/unknown.png")
+            embed.set_image(
+                url="https://media.discordapp.net/attachments/957252297501577276/965133143365550090/unknown.png"
+            )
         else:
             path = f"./assets/sendcodes.png"
             await image.save(path)
@@ -164,25 +166,42 @@ class SendCodes(commands.Cog):
             embed.set_image(url=url)
 
         try:
-            embed.set_footer(text=interaction.guild.name, icon_url=interaction.guild.icon.url)
+            embed.set_footer(
+                text=interaction.guild.name, icon_url=interaction.guild.icon.url
+            )
         except Exception:
             embed.set_footer(text=interaction.guild.name)
-            
+
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
 
         if role is not None:
-            if not(interaction.user.guild_permissions.mention_everyone):
-                return await interaction.response.send_message("<:no:1036810470860013639> You don't have permissions to mention `@everyone`, `@here`, or other roles!", ephemeral=True)
-            await interaction.channel.send(f"<:blurplemic:1108805037230129302> {role.mention} **• Redeemable Codes**", embed=embed, view=view)
+            if not (interaction.user.guild_permissions.mention_everyone):
+                return await interaction.response.send_message(
+                    "<:no:1036810470860013639> You don't have permissions to mention `@everyone`, `@here`, or other roles!",
+                    ephemeral=True,
+                )
+            await interaction.channel.send(
+                f"<:blurplemic:1108805037230129302> {role.mention} **• Redeemable Codes**",
+                embed=embed,
+                view=view,
+            )
         else:
-            await interaction.channel.send(f"<:blurplemic:1108805037230129302> **• Redeemable Codes**", embed=embed, view=view)
+            await interaction.channel.send(
+                f"<:blurplemic:1108805037230129302> **• Redeemable Codes**",
+                embed=embed,
+                view=view,
+            )
 
         if separate_msg:
-            await interaction.channel.send("-# <:BunnyNerd:1224838490743767121> For copy and pasting ⬇️")
+            await interaction.channel.send(
+                "-# <:BunnyNerd:1224838490743767121> For copy and pasting ⬇️"
+            )
             for code in listOfCodes:
                 await interaction.channel.send(code.strip())
 
-        await interaction.response.send_message("<:yes:1036811164891480194> Sent!", ephemeral=True)
+        await interaction.response.send_message(
+            "<:yes:1036811164891480194> Sent!", ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

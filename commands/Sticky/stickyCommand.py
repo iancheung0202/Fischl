@@ -1,9 +1,9 @@
-import discord
 import datetime
 
-from firebase_admin import db
+import discord
 from discord import app_commands
 from discord.ext import commands
+from firebase_admin import db
 
 from utils.commands import SlashCommand
 
@@ -76,8 +76,11 @@ class Sticky(commands.GroupCog, name="sticky"):
                 break
         with open("./commands/Sticky/enabledChannels.py", "w") as file:
             file.writelines(lines)
+
     @sticky_enable.error
-    async def sticky_enable_error(self, interaction: discord.Interaction, error: Exception):
+    async def sticky_enable_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -135,8 +138,11 @@ class Sticky(commands.GroupCog, name="sticky"):
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @sticky_disable.error
-    async def sticky_disable_error(self, interaction: discord.Interaction, error: Exception):
+    async def sticky_disable_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
 

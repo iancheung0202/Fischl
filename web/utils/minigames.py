@@ -1,14 +1,23 @@
 import datetime
-import time
 import os
-import psycopg2
+import time
 
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
+import psycopg2
+from config.settings import (
+    API_BASE,
+    BOT_TOKEN,
+    MORA_EMOTE,
+    POSTGRES_DB,
+    POSTGRES_HOST,
+    POSTGRES_PASSWORD,
+    POSTGRES_USER,
+)
 from matplotlib.dates import DateFormatter
 
-from config.settings import BOT_TOKEN, API_BASE, MORA_EMOTE, POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
 from utils.request import requests_session
+
 
 def get_db_connection():
     """Get a synchronous PostgreSQL connection for web layer"""
@@ -16,8 +25,9 @@ def get_db_connection():
         host=POSTGRES_HOST,
         user=POSTGRES_USER,
         password=POSTGRES_PASSWORD,
-        database=POSTGRES_DB
+        database=POSTGRES_DB,
     )
+
 
 def get_total_mora(user_id):
     """Get total mora across all guilds for a user"""
@@ -26,7 +36,7 @@ def get_total_mora(user_id):
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = %s",
-            (user_id,)
+            (user_id,),
         )
         result = cursor.fetchone()
         total = result[0] if result else 0
@@ -37,6 +47,7 @@ def get_total_mora(user_id):
         print(f"Error getting total mora: {e}")
         return 0
 
+
 def get_guild_mora(user_id, guild_id):
     """Get total mora for a user in a specific guild"""
     try:
@@ -44,7 +55,7 @@ def get_guild_mora(user_id, guild_id):
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COALESCE(SUM(count), 0) FROM minigame_mora WHERE uid = %s AND gid = %s",
-            (user_id, guild_id)
+            (user_id, guild_id),
         )
         result = cursor.fetchone()
         total = result[0] if result else 0
@@ -55,6 +66,7 @@ def get_guild_mora(user_id, guild_id):
         print(f"Error getting guild mora: {e}")
         return 0
 
+
 def get_channel_settings_sync(guild_id, channel_id):
     """Synchronously read channel settings from PostgreSQL for the web layer"""
     try:
@@ -63,7 +75,7 @@ def get_channel_settings_sync(guild_id, channel_id):
         cursor.execute(
             "SELECT minigame_list, mora_multiplier, minigames_frequency, chests_enabled "
             "FROM minigame_settings WHERE channel_id = %s",
-            (channel_id,)
+            (channel_id,),
         )
         row = cursor.fetchone()
         cursor.close()
@@ -80,14 +92,17 @@ def get_channel_settings_sync(guild_id, channel_id):
         print(f"Error getting channel settings: {e}")
         return None
 
-_ENABLED_CHANNELS_TTL = 30      # seconds
-_GUILD_CHANNELS_TTL = 300       # seconds
+
+_ENABLED_CHANNELS_TTL = 30  # seconds
+_GUILD_CHANNELS_TTL = 300  # seconds
 _enabled_channels_cache = {"ts": 0.0, "ids": set()}
-_guild_channels_cache = {}      # guild_id -> (timestamp, set of channel/thread ids)
+_guild_channels_cache = {}  # guild_id -> (timestamp, set of channel/thread ids)
+
 
 def get_enabled_channel_ids():
     """Channel IDs where the bot's event system is active, using the bot's own definition:
-    chat minigames (minigames_enabled) and/or chests (chests_enabled) and/or sigils (chat_enabled)."""
+    chat minigames (minigames_enabled) and/or chests (chests_enabled) and/or sigils (chat_enabled).
+    """
     now = time.time()
     if now - _enabled_channels_cache["ts"] < _ENABLED_CHANNELS_TTL:
         return _enabled_channels_cache["ids"]
@@ -105,28 +120,37 @@ def get_enabled_channel_ids():
     _enabled_channels_cache.update(ts=now, ids=ids)
     return ids
 
+
 def get_guild_channel_ids(guild_id):
     """All channel (and active thread) IDs of a guild, fetched with the bot token and cached.
-    minigame_settings is keyed by channel_id only, so this is how channels are tied to a guild."""
+    minigame_settings is keyed by channel_id only, so this is how channels are tied to a guild.
+    """
     guild_id = str(guild_id)
     now = time.time()
     cached = _guild_channels_cache.get(guild_id)
     if cached and now - cached[0] < _GUILD_CHANNELS_TTL:
         return cached[1]
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-    resp = requests_session.get(f"{API_BASE}/guilds/{guild_id}/channels", headers=headers)
+    resp = requests_session.get(
+        f"{API_BASE}/guilds/{guild_id}/channels", headers=headers
+    )
     if resp.status_code != 200:
-        raise RuntimeError(f"Could not fetch channels for guild {guild_id}: HTTP {resp.status_code}")
+        raise RuntimeError(
+            f"Could not fetch channels for guild {guild_id}: HTTP {resp.status_code}"
+        )
     ids = {int(c["id"]) for c in resp.json()}
     # Settings can also be set on threads; include active ones (best effort)
     try:
-        t = requests_session.get(f"{API_BASE}/guilds/{guild_id}/threads/active", headers=headers)
+        t = requests_session.get(
+            f"{API_BASE}/guilds/{guild_id}/threads/active", headers=headers
+        )
         if t.status_code == 200:
             ids |= {int(c["id"]) for c in t.json().get("threads", [])}
     except Exception:
         pass
     _guild_channels_cache[guild_id] = (now, ids)
     return ids
+
 
 def check_events_enabled(guild_id, stickies=None):
     """True if at least one channel of this guild has the event system enabled
@@ -144,15 +168,30 @@ def check_events_enabled(guild_id, stickies=None):
 
 def _load_events_config():
     """Load commands/Events/config.py (the bot's source of truth for seasons and tracks) by file path,
-    so the web layer doesn't need the repo root on sys.path (its own `utils` package would clash)."""
+    so the web layer doesn't need the repo root on sys.path (its own `utils` package would clash).
+    """
     import importlib.util
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "commands", "Events", "config.py")
-    spec = importlib.util.spec_from_file_location("fischl_events_config", os.path.normpath(path))
+
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "..",
+        "commands",
+        "Events",
+        "config.py",
+    )
+    spec = importlib.util.spec_from_file_location(
+        "fischl_events_config", os.path.normpath(path)
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
-SEASONS = _load_events_config().SEASONS  # Season objects: id, name, start_ts, end_ts, track_data
+
+SEASONS = (
+    _load_events_config().SEASONS
+)  # Season objects: id, name, start_ts, end_ts, track_data
+
 
 def _active_season():
     """Currently active Season object; falls back to the latest defined season (same as before)."""
@@ -162,20 +201,25 @@ def _active_season():
             return season
     return SEASONS[-1]
 
+
 def get_current_season():
     """Get current season info from the bot's season config"""
     season = _active_season()
     return {"id": season.id, "name": season.name, "end_ts": season.end_ts}
 
+
 def get_current_track():
     """Get current track data from the bot's season config"""
     return list(_active_season().track_data)
+
 
 def load_elite_subscriptions():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, guild_id, server_name, expires_at FROM minigame_elite")
+        cursor.execute(
+            "SELECT user_id, guild_id, server_name, expires_at FROM minigame_elite"
+        )
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -186,11 +230,12 @@ def load_elite_subscriptions():
                 "user_id": row[0],
                 "server_id": row[1],
                 "server_name": row[2] or "",
-                "expires_at": row[3]
+                "expires_at": row[3],
             }
         return subs
     except Exception:
         return {}
+
 
 def save_elite_subscriptions(subscriptions):
     try:
@@ -202,7 +247,12 @@ def save_elite_subscriptions(subscriptions):
                    VALUES (%s, %s, %s, %s)
                    ON CONFLICT (user_id, guild_id)
                    DO UPDATE SET server_name = EXCLUDED.server_name, expires_at = EXCLUDED.expires_at""",
-                (sub["user_id"], sub["server_id"], sub.get("server_name", ""), sub["expires_at"])
+                (
+                    sub["user_id"],
+                    sub["server_id"],
+                    sub.get("server_name", ""),
+                    sub["expires_at"],
+                ),
             )
         conn.commit()
         cursor.close()
@@ -210,10 +260,13 @@ def save_elite_subscriptions(subscriptions):
     except Exception:
         pass
 
+
 def activate_elite_subscription(user_id, guild_id, order_id=None):
     """Activate elite subscription for a user in a guild"""
     try:
-        print(f"Starting elite subscription activation for user {user_id} in guild {guild_id}")
+        print(
+            f"Starting elite subscription activation for user {user_id} in guild {guild_id}"
+        )
         if order_id:
             print(f"Order ID: {order_id}")
 
@@ -227,9 +280,13 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
 
         guild_response = requests_session.get(
             f"{API_BASE}/guilds/{guild_id}",
-            headers={"Authorization": f"Bot {BOT_TOKEN}"}
+            headers={"Authorization": f"Bot {BOT_TOKEN}"},
         )
-        guild_name = guild_response.json().get("name", f"Server {guild_id}") if guild_response.status_code == 200 else f"Server {guild_id}"
+        guild_name = (
+            guild_response.json().get("name", f"Server {guild_id}")
+            if guild_response.status_code == 200
+            else f"Server {guild_id}"
+        )
         print(f"Guild name: {guild_name}")
 
         conn = get_db_connection()
@@ -240,7 +297,7 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
                ON CONFLICT (user_id, guild_id)
                DO UPDATE SET server_name = EXCLUDED.server_name, expires_at = EXCLUDED.expires_at,
                              order_id = EXCLUDED.order_id, pending_processed = FALSE""",
-            (int(user_id), int(guild_id), guild_name, expires_at, order_id or "")
+            (int(user_id), int(guild_id), guild_name, expires_at, order_id or ""),
         )
         conn.commit()
         cursor.close()
@@ -251,8 +308,11 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
             print("Sending Discord notification...")
             user_response = requests_session.post(
                 f"{API_BASE}/users/@me/channels",
-                headers={"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"},
-                json={"recipient_id": str(user_id)}
+                headers={
+                    "Authorization": f"Bot {BOT_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json={"recipient_id": str(user_id)},
             )
 
             if user_response.status_code == 200:
@@ -265,7 +325,7 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
                         f"🎉 You now have sweet perks in **{guild_name}**! Elite rewards should have been automatically granted! Enjoy friend!\n"
                         f"-# ⏰ Expires <t:{int(expires_at)}:R> by the end of the current season."
                     ),
-                    "color": 0xfa0add
+                    "color": 0xFA0ADD,
                 }
 
                 if order_id:
@@ -273,8 +333,11 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
 
                 dm_response = requests_session.post(
                     f"{API_BASE}/channels/{dm_channel_id}/messages",
-                    headers={"Authorization": f"Bot {BOT_TOKEN}", "Content-Type": "application/json"},
-                    json={"embed": embed}
+                    headers={
+                        "Authorization": f"Bot {BOT_TOKEN}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"embed": embed},
                 )
                 print(f"DM sent successfully")
             else:
@@ -290,13 +353,14 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
         print(f"Error activating elite subscription: {e}")
         return False, f"Error activating subscription: {str(e)}"
 
+
 def is_elite_active(user_id, guild_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT expires_at FROM minigame_elite WHERE user_id = %s AND guild_id = %s",
-            (int(user_id), int(guild_id))
+            (int(user_id), int(guild_id)),
         )
         row = cursor.fetchone()
         cursor.close()

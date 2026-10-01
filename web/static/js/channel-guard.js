@@ -16,7 +16,7 @@ const avatarHTML = isGrouped
     ? `<div class="avatar-spacer"></div>`
     : `<img class="avatar" src="${isUser ? 'assets/oz.png' : 'https://cdn.discordapp.com/avatars/732422232273584198/624035e5e9a841bfd3020e35a0a5c0a0.png?size=1024'}" />`;
 
-const usernameLine = isUser 
+const usernameLine = isUser
     ? `<div><span class='username' style='color: #aff800;'>Oz</span></div>`
     : `<div><span class='username glow-text'>Fischl</span> <div class='app-badge'>APP</div></div>`;
 

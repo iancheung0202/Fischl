@@ -1,7 +1,7 @@
 import discord
-from utils.commands import SlashCommand
 
 from commands.Events.config import DOT_EMOTE, MONEYDANCE_EMOTE
+from utils.commands import SlashCommand
 
 announcement_embed = discord.Embed(
     description=(
@@ -14,8 +14,10 @@ announcement_embed = discord.Embed(
         "-# You get way more cosmetics, more convenience, and more progression in one place. "
         "This is the best-value way to support the bot and keep development going. <:PaimonWow:1188553806456291489>\n"
     ),
-    color=discord.Color.gold()
-).set_footer(text="A new currency called Sigils have arrived! Admins can enable it via /events settings")
+    color=discord.Color.gold(),
+).set_footer(
+    text="A new currency called Sigils have arrived! Admins can enable it via /events settings"
+)
 
 # discord.Embed(
 #     title="",
@@ -109,7 +111,7 @@ announcement_embed = discord.Embed(
 #     ).set_footer(text="Why are we doing this? We just launched our brand new profile website and dashboard! Check them out!"),
 #     ephemeral=True,
 #     view=View().add_item(Button(label="Complete your daily challenge", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
-# ) 
+# )
 
 # await interaction.followup.send(
 #     embed=discord.Embed(
@@ -260,6 +262,7 @@ announcement_embed = discord.Embed(
 #     ),
 #     ephemeral=True
 # )
+
 
 async def setup(bot):
     pass

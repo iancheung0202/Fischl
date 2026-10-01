@@ -5,9 +5,11 @@ import os
 from discord.ext import commands
 from firebase_admin import db
 
-commands_module = importlib.import_module('commands')
+commands_module = importlib.import_module("commands")
 from commands.Sticky.enabledChannels import enabledChannels
+
 last_modified = os.path.getmtime("./commands/Sticky/enabledChannels.py")
+
 
 def check_and_reload():
     global last_modified, enabledChannels
@@ -22,6 +24,7 @@ def check_and_reload():
             enabledChannels = new_enabled_channels
             last_modified = new_modified
             print("Sticky Messages ./commands/Sticky/enabledChannels.py reloaded!")
+
 
 class OnMessage(commands.Cog):
     def __init__(self, bot):
@@ -57,20 +60,23 @@ class OnMessage(commands.Cog):
         ref = db.reference("/Sticky Messages")
         stickies = ref.get() or {}
         for key, val in stickies.items():
-            if val['Channel ID'] == channel.id:
+            if val["Channel ID"] == channel.id:
                 try:
                     old = await channel.fetch_message(val["Message ID"])
                     await old.delete()
                 except Exception:
                     pass
                 msg = await channel.send(val["Message Content"])
-                db.reference('/Sticky Messages').child(key).delete()
-                db.reference('/Sticky Messages').push().set({
-                    "Channel ID": channel.id,
-                    "Message ID": msg.id,
-                    "Message Content": val["Message Content"]
-                })
+                db.reference("/Sticky Messages").child(key).delete()
+                db.reference("/Sticky Messages").push().set(
+                    {
+                        "Channel ID": channel.id,
+                        "Message ID": msg.id,
+                        "Message Content": val["Message Content"],
+                    }
+                )
                 break
 
-async def setup(bot): 
+
+async def setup(bot):
     await bot.add_cog(OnMessage(bot))

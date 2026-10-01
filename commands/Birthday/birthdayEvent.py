@@ -1,11 +1,13 @@
-import discord
 import asyncio
 import datetime
 import random
 
+import discord
 from discord.ext import commands, tasks
 from firebase_admin import db
+
 from commands.Birthday.birthdayTexts import characters, characters_dict
+
 
 class BirthdayCog(commands.Cog):
     def __init__(self, bot):
@@ -27,7 +29,7 @@ class BirthdayCog(commands.Cog):
             ref2 = db.reference("/Birthday System")
             bs = ref2.get()
             minute_key = current_time.strftime("%Y%m%d%H%M")
-            
+
             count_1 = 0
             for key, value in bday.items():
                 count_2 = 0
@@ -44,7 +46,7 @@ class BirthdayCog(commands.Cog):
                     except Exception:
                         print("Cannot fetch birthday role")
                         continue
-                    
+
                     display_utc_date = value["Display UTC Date"]
                     try:
                         utc_date_object = datetime.datetime.strptime(
@@ -53,14 +55,16 @@ class BirthdayCog(commands.Cog):
                     except ValueError as e:
                         continue
                     try:
-                        utc_date_object = utc_date_object.replace(year=current_time.year)
+                        utc_date_object = utc_date_object.replace(
+                            year=current_time.year
+                        )
                     except Exception:
                         pass
-                    
+
                     cache_key = (value["User ID"], v["Server ID"], minute_key)
                     if cache_key in self._birthday_sent_cache:
                         continue
-                    
+
                     if (
                         utc_date_object.month == current_time.month
                         and utc_date_object.day == current_time.day
@@ -73,14 +77,16 @@ class BirthdayCog(commands.Cog):
                         except discord.NotFound:
                             # print(f"Member {value['User ID']} not found in server {server.id}, skipping birthday send.")
                             continue
-                        print(f"Successfully fetched {member} for birthday send in server {server.id}")
-                        
+                        print(
+                            f"Successfully fetched {member} for birthday send in server {server.id}"
+                        )
+
                         character = value["Fav Character"]
                         footer = 'Use "/birthday set" to have your favorite character celebrate your birthday with you!'
                         if character == "None":
                             character = random.choice(characters)
                             footer = 'Use "/birthday set" to update your birthday with timezones & favorite character!'
-                        icon_link = characters_dict[character]['icon']
+                        icon_link = characters_dict[character]["icon"]
                         try:
                             webhook = await self.bot.fetch_webhook(v["Webhook ID"])
                         except Exception as e:
@@ -95,7 +101,9 @@ class BirthdayCog(commands.Cog):
 
                         msg = None
                         if webhook is None:
-                            print(f"No webhook available for server {server.id}, skipping send.")
+                            print(
+                                f"No webhook available for server {server.id}, skipping send."
+                            )
                         else:
                             try:
                                 sent = await webhook.send(
@@ -107,15 +115,21 @@ class BirthdayCog(commands.Cog):
                                 )
                                 msg = sent
                                 if msg is None:
-                                    print("Webhook.send returned None (no message object). Reaction/thread may not be possible.")
+                                    print(
+                                        "Webhook.send returned None (no message object). Reaction/thread may not be possible."
+                                    )
                                 else:
                                     try:
                                         await msg.add_reaction("🎂")
                                     except Exception as e:
-                                        print(f"Could not add reaction to webhook message: {e}")
+                                        print(
+                                            f"Could not add reaction to webhook message: {e}"
+                                        )
                             except Exception as e:
-                                print(f"Failed to send webhook message in {server.name} ({server.id}): {e}")
-                        
+                                print(
+                                    f"Failed to send webhook message in {server.name} ({server.id}): {e}"
+                                )
+
                         try:
                             if v["Create Birthday Thread"]:
                                 if msg is not None:
@@ -124,21 +138,29 @@ class BirthdayCog(commands.Cog):
                                             name=f"Wish {member.name} a Happy Birthday 🎉"
                                         )
                                     except Exception as e:
-                                        print(f"Unable to create thread (message exists but thread creation failed): {e}")
+                                        print(
+                                            f"Unable to create thread (message exists but thread creation failed): {e}"
+                                        )
                                 else:
-                                    print("Skipping thread creation because message object is not available from webhook.send().")
+                                    print(
+                                        "Skipping thread creation because message object is not available from webhook.send()."
+                                    )
                         except Exception as e:
-                            print(f"Unable to create thread for the birthday of {member.name} ({member.id}) in {server.name} ({server.id})\n{e}")
-                        
+                            print(
+                                f"Unable to create thread for the birthday of {member.name} ({member.id}) in {server.name} ({server.id})\n{e}"
+                            )
+
                         try:
                             if birthday_role is None:
                                 print(f"Birthday role not found in server {server.id}")
                                 continue
                             await member.add_roles(birthday_role)
                         except Exception as e:
-                            print(f"Unable to add role {birthday_role.name} ({birthday_role.id}) to member {member.name} ({member.id}) in {server.name} ({server.id})\n{e}")
+                            print(
+                                f"Unable to add role {birthday_role.name} ({birthday_role.id}) to member {member.name} ({member.id}) in {server.name} ({server.id})\n{e}"
+                            )
                             continue
-                        
+
                         try:
                             button = discord.ui.Button(
                                 style=discord.ButtonStyle.link,
@@ -153,25 +175,29 @@ class BirthdayCog(commands.Cog):
                                 color=discord.Colour.random(),
                             )
                             embed.set_thumbnail(url=icon_link)
-                            embed.set_footer(text=f"You received this DM because you've set your birthday and {server.name} has birthday notifications enabled!")
+                            embed.set_footer(
+                                text=f"You received this DM because you've set your birthday and {server.name} has birthday notifications enabled!"
+                            )
                             await member.send(
                                 embed=embed,
                                 view=view,
                             )
                         except Exception as e:
-                            print(f"Cannot send happy birthday DM to member to member {member.name} ({member.id}) in {server.name} ({server.id})\n{e}")
-                        
+                            print(
+                                f"Cannot send happy birthday DM to member to member {member.name} ({member.id}) in {server.name} ({server.id})\n{e}"
+                            )
+
                         self._birthday_sent_cache[cache_key] = True
-                    
+
                     elif (
                         utc_date_object.month == current_time.month
                         and utc_date_object.day == current_time.day
                     ):
-                        pass # It's their birthday right now, so do nothing!
+                        pass  # It's their birthday right now, so do nothing!
 
                     elif (
                         utc_date_object.month == current_time.month
-                        and utc_date_object.day + 1 == current_time.day 
+                        and utc_date_object.day + 1 == current_time.day
                         and utc_date_object.hour == current_time.hour
                     ):
                         # It's the day after their birthday, remove the role
@@ -188,13 +214,17 @@ class BirthdayCog(commands.Cog):
                             try:
                                 await member.remove_roles(birthday_role)
                             except Exception as e:
-                                print(f"Unable to remove role {birthday_role.name} ({birthday_role.id}) from member {member.name} ({member.id}) in {server.name} ({server.id}) {e}")
+                                print(
+                                    f"Unable to remove role {birthday_role.name} ({birthday_role.id}) from member {member.name} ({member.id}) in {server.name} ({server.id}) {e}"
+                                )
                                 continue
                     count_2 += 1
                 count_1 += 1
             print(f"Processed {count_1} users with birthdays.")
 
-            keys_to_remove = [k for k in self._birthday_sent_cache if k[2] != minute_key]
+            keys_to_remove = [
+                k for k in self._birthday_sent_cache if k[2] != minute_key
+            ]
             for k in keys_to_remove:
                 del self._birthday_sent_cache[k]
             await asyncio.sleep(60)
@@ -204,6 +234,7 @@ class BirthdayCog(commands.Cog):
     @birthday_task.before_loop
     async def before_birthday_task(self):
         await self.bot.wait_until_ready()
+
 
 async def setup(bot):
     await bot.add_cog(BirthdayCog(bot))

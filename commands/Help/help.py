@@ -1,8 +1,8 @@
+import platform
+
 import discord
 import firebase_admin
-import platform
 import psutil
-
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View
@@ -13,79 +13,92 @@ from utils.commands import SlashCommand
 BLANK = "<:blank:1036792889121980426>"
 REPLY = "<:reply:1036792837821435976>"
 
+
 class Select(discord.ui.Select):
     def __init__(self, list, initial_author):
         self.initial_author = initial_author
         self.list = list
 
         simple_formatter = lambda cmd: "".join(
-            f"\n\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
-            if sub.type == discord.AppCommandOptionType.subcommand
-            else f"\n\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
+            (
+                f"\n\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
+                if sub.type == discord.AppCommandOptionType.subcommand
+                else f"\n\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
+            )
             for sub in cmd.options
         )
-        
+
         formatter = lambda cmd: "".join(
-            f"\n\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
-            + "".join(f"\n{BLANK}{REPLY} `{sub_cmd.name}` - {sub_cmd.description}" for sub_cmd in sub.options)
-            if sub.type == discord.AppCommandOptionType.subcommand
-            else f"\n\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
+            (
+                f"\n\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
+                + "".join(
+                    f"\n{BLANK}{REPLY} `{sub_cmd.name}` - {sub_cmd.description}"
+                    for sub_cmd in sub.options
+                )
+                if sub.type == discord.AppCommandOptionType.subcommand
+                else f"\n\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
+            )
             for sub in cmd.options
         )
-        
+
         utility_formatter = lambda cmd: (
             f" \n\n{cmd.mention}\n{REPLY} {cmd.description}"
             + "".join(
-                f"\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
-                + "".join(f"\n{BLANK}{REPLY} `{sub_cmd.name}` - {sub_cmd.description}" for sub_cmd in sub.options)
-                if sub.type == discord.AppCommandOptionType.subcommand
-                else f"\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
+                (
+                    f"\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
+                    + "".join(
+                        f"\n{BLANK}{REPLY} `{sub_cmd.name}` - {sub_cmd.description}"
+                        for sub_cmd in sub.options
+                    )
+                    if sub.type == discord.AppCommandOptionType.subcommand
+                    else f"\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
+                )
                 for sub in cmd.options
             )
         )
-        
+
         categories = {
             "ticket": {
                 "title": "Tickets",
                 "emoji": "🎫",
                 "description": f"The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use {SlashCommand('ticket settings')} and the bot will guide you through the procedures of setting up your ticket system!",
                 "condition": lambda cmd: "ticket" in cmd.name,
-                "formatter": simple_formatter
+                "formatter": simple_formatter,
             },
             "coop": {
                 "title": "Co-op System",
                 "emoji": "🎮",
                 "description": f"The following commands are used to setup co-op system in your server. Use {SlashCommand('co-op setup')} to starting setting up the co-op system, and the bot will guide you through the procedures!",
                 "condition": lambda cmd: "co-op" in cmd.name,
-                "formatter": formatter
+                "formatter": formatter,
             },
             "partner": {
                 "title": "Partnership Panels",
                 "emoji": "🤝",
                 "description": f"The following slash commands are for managing your server’s partnerships. When a user requests for partnership, a private thread is created, just like a ticket. Server representatives can be invited into the thread, and admins can easily add/remove partnered servers to the customizable and auto-updating partnership panels. Use {SlashCommand('partner setup')} to get started!",
                 "condition": lambda cmd: "partner" in cmd.name,
-                "formatter": simple_formatter
+                "formatter": simple_formatter,
             },
             "sticky": {
                 "title": "Sticky Messages",
                 "emoji": "🫧",
                 "description": f"The following slash commands are for setting up sticky messages in different channels. Sticky messages will be stayed at the bottom of the channel no matter what messages are sent afterwards. This function is especially useful when you need give your members a heads up on how to use this chat channel or what they need to know before going ahead and sending any messages. Use {SlashCommand('sticky enable')} to setup sticky messages in a channel.",
                 "condition": lambda cmd: "sticky" in cmd.name,
-                "formatter": formatter
+                "formatter": formatter,
             },
             "welcome": {
                 "title": "Welcomer",
                 "emoji": "👋",
                 "description": f"The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use {SlashCommand('welcome setup')} to setup welcome messages.",
                 "condition": lambda cmd: "welcome" in cmd.name,
-                "formatter": formatter
+                "formatter": formatter,
             },
             "birthday": {
                 "title": "Birthday Wishes",
                 "emoji": "🎂",
                 "description": f"The following slash commands are for wishing users in your server a happy birthday. Member will receive personalized birthday wishes from their favorite characters in servers that have this system enabled. Use {SlashCommand('birthday enable')} to setup birthday wishes in the server.",
                 "condition": lambda cmd: "birthday" in cmd.name,
-                "formatter": formatter
+                "formatter": formatter,
             },
             "events": {
                 "title": "Chat Minigames",
@@ -106,26 +119,35 @@ class Select(discord.ui.Select):
                 ),
                 "formatter": lambda cmd: (
                     f" \n\n{cmd.mention}\n{REPLY} {cmd.description}"
-                    if cmd.name in ["customize", "mora", "lb", "buy", "shop", "milestones", "gift", "summon", "chest", "preview"]
+                    if cmd.name
+                    in [
+                        "customize",
+                        "mora",
+                        "lb",
+                        "buy",
+                        "shop",
+                        "milestones",
+                        "gift",
+                        "summon",
+                        "chest",
+                        "preview",
+                    ]
                     else formatter(cmd)
-                )
+                ),
             },
             "boosterrole": {
                 "title": "Booster Roles",
                 "emoji": "💎",
                 "description": f"The following slash commands are for rewarding your server boosters with customizable roles and thank-you messages. When a member boosts the server, the bot will automatically send a personalized thank-you message in a designated channel, and the booster can create a custom role. Use {SlashCommand('boosterrole setup')} to setup booster roles in your server.",
                 "condition": lambda cmd: "boosterrole" in cmd.name,
-                "formatter": formatter
+                "formatter": formatter,
             },
             "vanity": {
                 "title": "Vanity/Tag Roles",
                 "emoji": "👤",
                 "description": f"We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
-                "condition": lambda cmd: (
-                    "vanity" in cmd.name
-                    or "tag" in cmd.name
-                ),
-                "formatter": formatter
+                "condition": lambda cmd: ("vanity" in cmd.name or "tag" in cmd.name),
+                "formatter": formatter,
             },
             "utility": {
                 "title": "Utility Commands",
@@ -140,7 +162,7 @@ class Select(discord.ui.Select):
                     and "layout" not in cmd.name
                     and "database" not in cmd.name
                 ),
-                "formatter": utility_formatter
+                "formatter": utility_formatter,
             },
         }
 
@@ -152,11 +174,18 @@ class Select(discord.ui.Select):
                     break
 
         self.lyst = [
-            [content[cat], categories[cat]["title"], categories[cat]["emoji"], categories[cat]["description"]]
+            [
+                content[cat],
+                categories[cat]["title"],
+                categories[cat]["emoji"],
+                categories[cat]["description"],
+            ]
             for cat in categories
         ]
 
-        options = [discord.SelectOption(label=item[1], emoji=item[2]) for item in self.lyst]
+        options = [
+            discord.SelectOption(label=item[1], emoji=item[2]) for item in self.lyst
+        ]
 
         super().__init__(
             placeholder="Browse All Commands",
@@ -168,13 +197,23 @@ class Select(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if self.initial_author != interaction.user:
-            await interaction.response.send_message("<:no:1036810470860013639> You are not the author of this command", ephemeral=True)
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are not the author of this command",
+                ephemeral=True,
+            )
             return
         for item in self.lyst:
             if self.values[0] == item[1]:
-                intro = discord.Embed(title=f"{item[2]} {item[1]}", description=item[3], color=0xFFFF00)
-                embed = discord.Embed(description=item[0], color=discord.Color.blurple())
-                await interaction.response.edit_message(embeds=[intro, embed], view=HelpPanel(self.list, self.initial_author))
+                intro = discord.Embed(
+                    title=f"{item[2]} {item[1]}", description=item[3], color=0xFFFF00
+                )
+                embed = discord.Embed(
+                    description=item[0], color=discord.Color.blurple()
+                )
+                await interaction.response.edit_message(
+                    embeds=[intro, embed],
+                    view=HelpPanel(self.list, self.initial_author),
+                )
                 break
 
 
@@ -188,7 +227,7 @@ class HelpPanel(discord.ui.View):
             style=discord.ButtonStyle.link,
             url="https://discord.com/api/oauth2/authorize?client_id=732422232273584198",
             row=1,
-            emoji="<a:robot:1366940845697400935>"
+            emoji="<a:robot:1366940845697400935>",
         )
         self.add_item(inviteButton)
         serverButton = Button(
@@ -196,7 +235,7 @@ class HelpPanel(discord.ui.View):
             style=discord.ButtonStyle.link,
             url="https://discord.gg/kaycd3fxHh",
             row=1,
-            emoji="<a:join:1366940843088543775>"
+            emoji="<a:join:1366940843088543775>",
         )
         self.add_item(serverButton)
         websiteButton = Button(
@@ -204,35 +243,46 @@ class HelpPanel(discord.ui.View):
             style=discord.ButtonStyle.link,
             url="https://fischl.app/",
             row=1,
-            emoji="<a:globe:1366940841829994557>"
+            emoji="<a:globe:1366940841829994557>",
         )
         self.add_item(websiteButton)
         self.add_item(Select(self.list, self.initial_author))
-        
+
     async def on_timeout(self) -> None:
         for child in self.children:
             if isinstance(child, Button) and child.style == discord.ButtonStyle.link:
                 continue
             child.disabled = True
             if isinstance(child, Select):
-                child.add_option(label="Disabled due to timeout", value="X", emoji="<:no:1036810470860013639>", default=True)
-                
-        if hasattr(self, 'message'):
+                child.add_option(
+                    label="Disabled due to timeout",
+                    value="X",
+                    emoji="<:no:1036810470860013639>",
+                    default=True,
+                )
+
+        if hasattr(self, "message"):
             try:
                 await self.message.edit(view=self)
             except discord.NotFound:
                 pass
         self.stop()
 
-
     @discord.ui.button(
-        label="Overview", style=discord.ButtonStyle.blurple, custom_id="overview", row=0, emoji="<a:memo:1366940844300701714>"
+        label="Overview",
+        style=discord.ButtonStyle.blurple,
+        custom_id="overview",
+        row=0,
+        emoji="<a:memo:1366940844300701714>",
     )
     async def overview(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if self.initial_author != interaction.user:
-            await interaction.response.send_message("<:no:1036810470860013639> You are not the author of this command", ephemeral=True)
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are not the author of this command",
+                ephemeral=True,
+            )
             return
         embed = discord.Embed(
             title="Fischl Help",
@@ -259,15 +309,21 @@ class HelpPanel(discord.ui.View):
         style=discord.ButtonStyle.blurple,
         custom_id="statistics",
         row=0,
-        emoji="<a:server:1366940847093841961>"
+        emoji="<a:server:1366940847093841961>",
     )
     async def statistics(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if self.initial_author != interaction.user:
-            await interaction.response.send_message("<:no:1036810470860013639> You are not the author of this command", ephemeral=True)
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are not the author of this command",
+                ephemeral=True,
+            )
             return
-        embed = discord.Embed(title="Fischl Discord Bot Statistics <a:server:1366940847093841961>", color=0x1DBCEB)
+        embed = discord.Embed(
+            title="Fischl Discord Bot Statistics <a:server:1366940847093841961>",
+            color=0x1DBCEB,
+        )
         mem_usage = psutil.virtual_memory()
         embed.add_field(
             name="<:info:1037445870469267638> Package Info",
@@ -304,20 +360,25 @@ class HelpPanel(discord.ui.View):
             inline=True,
         )
 
-        await interaction.response.edit_message(embed=embed, view=HelpPanel(self.list, self.initial_author))
+        await interaction.response.edit_message(
+            embed=embed, view=HelpPanel(self.list, self.initial_author)
+        )
 
     @discord.ui.button(
         label="View Server Configuration",
         style=discord.ButtonStyle.blurple,
         custom_id="serverconfig",
         row=0,
-        emoji="<a:config:1366940834628505650>"
+        emoji="<a:config:1366940834628505650>",
     )
     async def tutorial(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if self.initial_author != interaction.user:
-            await interaction.response.send_message("<:no:1036810470860013639> You are not the author of this command", ephemeral=True)
+            await interaction.response.send_message(
+                "<:no:1036810470860013639> You are not the author of this command",
+                ephemeral=True,
+            )
             return
         embed = discord.Embed(
             title="Server Configuration <a:config:1366940834628505650>",
@@ -326,8 +387,11 @@ class HelpPanel(discord.ui.View):
         )
 
         ################
-        
-        await interaction.response.send_message("<a:loading:1026905298088243240>  Loading Server Configuration", ephemeral=True)
+
+        await interaction.response.send_message(
+            "<a:loading:1026905298088243240>  Loading Server Configuration",
+            ephemeral=True,
+        )
 
         ref = db.reference("/Tickets")
         tickets = ref.get()
@@ -494,36 +558,40 @@ class HelpPanel(discord.ui.View):
             else:
                 x = f"{x}<:reply:1036792837821435976> **Custom Image Background:** `Not uploaded`\n"
             embed.add_field(name="Welcome Messages", value=x, inline=True)
-        
+
         ################
-        
+
         ref = db.reference(f"/Partner/config/{interaction.guild.id}")
         config = ref.get()
         if config:
-            request_channel = config.get('request_channel')
-            panel_channel = config.get('panel_channel')
-            log_channel = config.get('log_channel')
-            partner_role = config.get('partner_role')
-            
+            request_channel = config.get("request_channel")
+            panel_channel = config.get("panel_channel")
+            log_channel = config.get("log_channel")
+            partner_role = config.get("partner_role")
+
             value = f"<:yes:1036811164891480194> Enabled\n"
             value += f"<:reply:1036792837821435976> **Request Channel:** <#{request_channel}>\n"
-            value += f"<:reply:1036792837821435976> **Panel Channel:** <#{panel_channel}>\n"
+            value += (
+                f"<:reply:1036792837821435976> **Panel Channel:** <#{panel_channel}>\n"
+            )
             value += f"<:reply:1036792837821435976> **Log Channel:** <#{log_channel}>\n"
-            value += f"<:reply:1036792837821435976> **Partner Role:** <@&{partner_role}>"
+            value += (
+                f"<:reply:1036792837821435976> **Partner Role:** <@&{partner_role}>"
+            )
         else:
             value = "<:no:1036810470860013639> Disabled"
         embed.add_field(name="Partnership System", value=value, inline=True)
 
         ################
-        
+
         ref = db.reference(f"Booster Role/{interaction.guild.id}")
         config = ref.get()
         if config and "base_role" in config:
-            base_role = config.get('base_role')
-            system_channel = config.get('system_channel')
-            public_channel = config.get('channel')
-            log_channel = config.get('log')
-            
+            base_role = config.get("base_role")
+            system_channel = config.get("system_channel")
+            public_channel = config.get("channel")
+            log_channel = config.get("log")
+
             value = f"<:yes:1036811164891480194> Enabled\n"
             value += f"<:reply:1036792837821435976> **Base Role:** <@&{base_role}>\n"
             value += f"<:reply:1036792837821435976> **System Channel:** <#{system_channel}>\n"
@@ -536,7 +604,9 @@ class HelpPanel(discord.ui.View):
         await interaction.message.edit(
             content=None, embed=embed, view=HelpPanel(self.list, self.initial_author)
         )
-        await interaction.edit_original_response(content="<:yes:1036811164891480194> Loaded Server Configuration")
+        await interaction.edit_original_response(
+            content="<:yes:1036811164891480194> Loaded Server Configuration"
+        )
 
 
 class Help(commands.Cog):

@@ -1,7 +1,8 @@
-import discord
 import datetime
 
+import discord
 from discord.ext import commands
+
 
 class OnGuild(commands.Cog):
     def __init__(self, bot):
@@ -14,13 +15,21 @@ class OnGuild(commands.Cog):
             title="Guild Joined",
             description=f"{guild.name} ({guild.id})",
             color=discord.Color.green(),
-            timestamp=datetime.datetime.now(datetime.timezone.utc)
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
         if guild.member_count:
-            embed.add_field(name="Member Count", value=str(guild.member_count), inline=True)
+            embed.add_field(
+                name="Member Count", value=str(guild.member_count), inline=True
+            )
         if guild.owner:
-            embed.add_field(name="Owner", value=f"{guild.owner.mention} ({guild.owner_id})", inline=True)
-        embed.add_field(name="Total Bot Guilds", value=str(len(self.client.guilds)), inline=True)
+            embed.add_field(
+                name="Owner",
+                value=f"{guild.owner.mention} ({guild.owner_id})",
+                inline=True,
+            )
+        embed.add_field(
+            name="Total Bot Guilds", value=str(len(self.client.guilds)), inline=True
+        )
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
         await channel.send(embed=embed)
@@ -32,16 +41,25 @@ class OnGuild(commands.Cog):
             title="Guild Left",
             description=f"{guild.name} ({guild.id})",
             color=discord.Color.red(),
-            timestamp=datetime.datetime.now(datetime.timezone.utc)
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
         if guild.member_count:
-            embed.add_field(name="Member Count", value=str(guild.member_count), inline=True)
+            embed.add_field(
+                name="Member Count", value=str(guild.member_count), inline=True
+            )
         if guild.owner:
-            embed.add_field(name="Owner", value=f"{guild.owner.mention} ({guild.owner_id})", inline=True)
-        embed.add_field(name="Total Bot Guilds", value=str(len(self.client.guilds)), inline=True)
+            embed.add_field(
+                name="Owner",
+                value=f"{guild.owner.mention} ({guild.owner_id})",
+                inline=True,
+            )
+        embed.add_field(
+            name="Total Bot Guilds", value=str(len(self.client.guilds)), inline=True
+        )
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
         await channel.send(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(OnGuild(bot))

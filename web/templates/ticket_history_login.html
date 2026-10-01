@@ -22,7 +22,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'VT323', monospace;
             background: linear-gradient(135deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.6) 50%, rgba(0, 0, 0, 0.6) 100%), url('https://ticket.mysticraft.xyz/assets/mysti-banner.png');
@@ -42,7 +42,7 @@
             0%, 100% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
         }
-        
+
         .container {
             width: 100%;
             max-width: 450px;
@@ -64,7 +64,7 @@
             font-size: 24px;
             margin-bottom: 5px;
         }
-        
+
         .mc-panel {
             border: 2px solid;
             border-color: #fff #555 #555 #fff;
@@ -72,20 +72,20 @@
             padding: 15px;
             margin: 5px;
         }
-        
+
         h1 {
             color: #404040;
             margin-bottom: 5px;
             font-size: 32px;
             text-shadow: none;
         }
-        
+
         .subtitle {
             color: #555;
             font-size: 18px;
             margin-bottom: 20px;
         }
-        
+
         .error-message {
             background: #fee;
             border: 2px solid #c33;
@@ -94,7 +94,7 @@
             margin-bottom: 20px;
             font-size: 18px;
         }
-        
+
         .login-button {
             display: flex;
             align-items: center;
@@ -114,7 +114,7 @@
             text-shadow: 2px 2px #3f3f3f;
             transition: all 0.1s;
         }
-        
+
         .login-button:hover {
             background: #9e9e9e;
         }
@@ -124,7 +124,7 @@
             padding-top: 12px;
             padding-bottom: 8px;
         }
-        
+
         .discord-icon {
             font-size: 24px;
             filter: drop-shadow(1px 1px 0px rgba(0,0,0,0.5));
@@ -138,11 +138,11 @@
             <div class="mc-panel">
                 <h1>🎫 MystiCraft Support</h1>
                 <p class="subtitle">Take a glance at all your past closed MystiCraft support tickets</p>
-                
+
                 {% if error %}
                 <div class="error-message">{{ error }}</div>
                 {% endif %}
-                
+
                 <a href="https://ticket.mysticraft.xyz/login" class="login-button">
                     <i class="fab fa-discord discord-icon"></i>
                     Discord Login

@@ -1,7 +1,7 @@
-import discord
 import datetime
-import aiohttp
 
+import aiohttp
+import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View
@@ -43,7 +43,7 @@ class WebEvent(commands.Cog):
         color: str = None,
     ) -> None:
         view = View()
-        
+
         if color is None:
             embedColor = discord.Color.blurple()
         else:
@@ -51,11 +51,15 @@ class WebEvent(commands.Cog):
             if hex.startswith("#"):
                 hex = hex[1:]
             async with aiohttp.ClientSession() as session:
-                async with session.get("https://www.thecolorapi.com/id", params={"hex": hex}) as server:
+                async with session.get(
+                    "https://www.thecolorapi.com/id", params={"hex": hex}
+                ) as server:
                     if server.status == 200:
                         js = await server.json()
                         try:
-                            embedColor = discord.Color(int(f"0x{js['hex']['clean']}", 16))
+                            embedColor = discord.Color(
+                                int(f"0x{js['hex']['clean']}", 16)
+                            )
                         except:
                             embedColor = discord.Color.blurple()
 
@@ -86,20 +90,35 @@ class WebEvent(commands.Cog):
         view.add_item(button)
 
         try:
-            embed.set_footer(text=interaction.guild.name, icon_url=interaction.guild.icon.url)
+            embed.set_footer(
+                text=interaction.guild.name, icon_url=interaction.guild.icon.url
+            )
         except Exception:
             embed.set_footer(text=interaction.guild.name)
 
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
 
         if role is not None:
-            if not(interaction.user.guild_permissions.mention_everyone): 
-                return await interaction.response.send_message("<:no:1036810470860013639> You don't have permissions to mention `@everyone`, `@here`, or other roles!", ephemeral=True)
-            await interaction.channel.send(f"<:blurplemic:1108805037230129302> {role.mention} **• New {game.name} Web Event**", embed=embed, view=view)
+            if not (interaction.user.guild_permissions.mention_everyone):
+                return await interaction.response.send_message(
+                    "<:no:1036810470860013639> You don't have permissions to mention `@everyone`, `@here`, or other roles!",
+                    ephemeral=True,
+                )
+            await interaction.channel.send(
+                f"<:blurplemic:1108805037230129302> {role.mention} **• New {game.name} Web Event**",
+                embed=embed,
+                view=view,
+            )
         else:
-            await interaction.channel.send(f"<:blurplemic:1108805037230129302> **• New {game.name} Web Event**", embed=embed, view=view)
+            await interaction.channel.send(
+                f"<:blurplemic:1108805037230129302> **• New {game.name} Web Event**",
+                embed=embed,
+                view=view,
+            )
 
-        await interaction.response.send_message("<:yes:1036811164891480194> Sent!", ephemeral=True)
+        await interaction.response.send_message(
+            "<:yes:1036811164891480194> Sent!", ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot) -> None:

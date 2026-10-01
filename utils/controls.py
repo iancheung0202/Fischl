@@ -1,10 +1,11 @@
-import os
-import sys
 import asyncio
 import base64
+import os
+import sys
 
 from aiohttp import web
-from assets.secret import AUTH_USER, AUTH_PASS, API_KEY
+from assets.secret import API_KEY, AUTH_PASS, AUTH_USER
+
 
 class BotControlServer:
     def __init__(self, bot, host="0.0.0.0", port=8086):
@@ -58,7 +59,7 @@ class BotControlServer:
         return web.Response(
             status=401,
             text="Authentication required",
-            headers={"WWW-Authenticate": 'Basic realm="Bot Control"'}
+            headers={"WWW-Authenticate": 'Basic realm="Bot Control"'},
         )
 
     async def handle_restart(self, request):

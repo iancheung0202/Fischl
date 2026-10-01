@@ -2,6 +2,7 @@ from flask import Flask, jsonify
 
 app = Flask(__name__)
 
-@app.route('/')
+
+@app.route("/")
 def status():
     return jsonify(status="ok")

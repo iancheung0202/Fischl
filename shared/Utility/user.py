@@ -1,6 +1,6 @@
-import discord
 import datetime
 
+import discord
 from discord import app_commands
 from discord.ext import commands
 
@@ -22,14 +22,22 @@ class User(commands.Cog):
             user = interaction.user
 
         if hasattr(user, "roles") and len(user.roles) > 1:
-            sorted_roles = [role for role in sorted(user.roles, key=lambda role: role.position, reverse=True) if role.id != interaction.guild.default_role.id]
+            sorted_roles = [
+                role
+                for role in sorted(
+                    user.roles, key=lambda role: role.position, reverse=True
+                )
+                if role.id != interaction.guild.default_role.id
+            ]
             roles_str = ""
             total_length = 0
             included_roles = []
 
             for i, role in enumerate(sorted_roles):
                 role_mention = f"<@&{role.id}>"
-                next_length = total_length + len(role_mention) + (2 if included_roles else 0)
+                next_length = (
+                    total_length + len(role_mention) + (2 if included_roles else 0)
+                )
                 remaining = len(sorted_roles) - (i + 1)
                 suffix = f" ({remaining} more roles)" if remaining > 0 else ""
                 if next_length + len(suffix) <= 1024:

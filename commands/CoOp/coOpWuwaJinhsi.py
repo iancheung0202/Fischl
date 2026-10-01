@@ -1,11 +1,12 @@
-import discord
 import datetime
 import random
 import re
 
+import discord
 from discord.ext import commands
 
 CO_OP_CHANNEL_ID = 1242625641669595156
+
 
 async def closeCoOpRequest(interaction):
     match = re.search(r"<@(\d+)>", interaction.message.content)
@@ -253,7 +254,13 @@ class CoOpViewWuwa(discord.ui.View):
     async def copyrawuid(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        uid = "".join([char for char in str(interaction.message.embeds[0].fields[0]) if char.isdigit()])
+        uid = "".join(
+            [
+                char
+                for char in str(interaction.message.embeds[0].fields[0])
+                if char.isdigit()
+            ]
+        )
         await interaction.response.send_message(uid, ephemeral=True)
 
 

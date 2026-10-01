@@ -1,17 +1,17 @@
 import discord
 import pandas as pd
-
 from discord.ext import commands
 from firebase_admin import db
 
-class ReputationSystem(commands.Cog): 
+
+class ReputationSystem(commands.Cog):
     def __init__(self, bot):
         self.client = bot
-    
-    @commands.Cog.listener() 
+
+    @commands.Cog.listener()
     async def on_message(self, message):
-        
-        if message.author == self.client.user or message.author.bot == True: 
+
+        if message.author == self.client.user or message.author.bot == True:
             return
 
         if message.guild.id == 717029019270381578:
@@ -23,13 +23,15 @@ class ReputationSystem(commands.Cog):
             enabled = False
             if coop:
                 for key, value in coop.items():
-                    if (value["Server ID"] == message.guild.id):
+                    if value["Server ID"] == message.guild.id:
                         enabled = True
                         break
             if not enabled:
                 return
             try:
-                id = int(message.content.split(" ")[1].replace("<@", "").replace(">", ""))
+                id = int(
+                    message.content.split(" ")[1].replace("<@", "").replace(">", "")
+                )
                 username = (await message.guild.fetch_member(id)).name
             except Exception:
                 id = message.author.id
@@ -40,8 +42,8 @@ class ReputationSystem(commands.Cog):
 
             ogrep = 0
             for key, val in reps.items():
-                if id in val['Users']:
-                    ogrep = val['Users'][id]
+                if id in val["Users"]:
+                    ogrep = val["Users"][id]
                     break
 
             await message.channel.send(f"**{username}**: **{ogrep}** rep")
@@ -52,7 +54,7 @@ class ReputationSystem(commands.Cog):
             enabled = False
             if coop:
                 for key, value in coop.items():
-                    if (value["Server ID"] == message.guild.id):
+                    if value["Server ID"] == message.guild.id:
                         enabled = True
                         break
             if not enabled:
@@ -85,7 +87,11 @@ class ReputationSystem(commands.Cog):
                 if user:
                     desc += f"{count}. **{user.name}** `({user.id})` - **{row['points']}**\n"
 
-            embed = discord.Embed(title=f"Global Reputation Leaderboard - Top {num}", description=desc, color=0xEB7660)
+            embed = discord.Embed(
+                title=f"Global Reputation Leaderboard - Top {num}",
+                description=desc,
+                color=0xEB7660,
+            )
             await message.channel.send(embed=embed)
 
         elif message.content.lower().startswith("-giverep"):
@@ -94,7 +100,7 @@ class ReputationSystem(commands.Cog):
             enabled = False
             if coop:
                 for key, value in coop.items():
-                    if (value["Server ID"] == message.guild.id):
+                    if value["Server ID"] == message.guild.id:
                         enabled = True
                         max_rep = value["Max Rep"]
                         roles = value["Roles"]
@@ -110,17 +116,25 @@ class ReputationSystem(commands.Cog):
                 id = int(parts[1].replace("<@", "").replace(">", ""))
                 rep = int(parts[2])
             except ValueError:
-                await message.reply("<:no:1036810470860013639> Invalid format. Use `-giverep @user amount`")
+                await message.reply(
+                    "<:no:1036810470860013639> Invalid format. Use `-giverep @user amount`"
+                )
                 return
 
             if rep > max_rep:
-                await message.reply(f"<:no:1036810470860013639> You can't give more than {max_rep} reps at once.")
+                await message.reply(
+                    f"<:no:1036810470860013639> You can't give more than {max_rep} reps at once."
+                )
                 return
             elif id == message.author.id:
-                await message.reply("<:no:1036810470860013639> You can't give yourself reps!")
+                await message.reply(
+                    "<:no:1036810470860013639> You can't give yourself reps!"
+                )
                 return
             elif rep <= 0:
-                await message.reply("<:no:1036810470860013639> You must give at least 1 rep.")
+                await message.reply(
+                    "<:no:1036810470860013639> You must give at least 1 rep."
+                )
                 return
 
             username = (await message.guild.fetch_member(id)).name
@@ -145,9 +159,17 @@ class ReputationSystem(commands.Cog):
             for role_id in unlocked_roles:
                 user = await message.guild.fetch_member(id)
                 await user.add_roles(message.guild.get_role(int(role_id)))
-                embeds.append(discord.Embed(description=f"**{username}** just earned a new role: **{message.guild.get_role(int(role_id)).mention}**", color=discord.Color.green()))
-            await message.channel.send(f"<:yes:1036811164891480194> Gave `{rep}` Rep to **{username}** (current - `{newrep}`)", embeds=embeds)
+                embeds.append(
+                    discord.Embed(
+                        description=f"**{username}** just earned a new role: **{message.guild.get_role(int(role_id)).mention}**",
+                        color=discord.Color.green(),
+                    )
+                )
+            await message.channel.send(
+                f"<:yes:1036811164891480194> Gave `{rep}` Rep to **{username}** (current - `{newrep}`)",
+                embeds=embeds,
+            )
 
 
-async def setup(bot): 
-  await bot.add_cog(ReputationSystem(bot))
+async def setup(bot):
+    await bot.add_cog(ReputationSystem(bot))

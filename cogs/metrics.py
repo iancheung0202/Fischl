@@ -1,10 +1,11 @@
-import psutil
 import socket
 
+import psutil
 from aiohttp import web
 from aioprometheus import Counter, Gauge
 from aioprometheus.service import Service
 from discord.ext import commands, tasks
+
 
 class MetricsCog(commands.Cog):
     def __init__(self, bot):
@@ -28,7 +29,9 @@ class MetricsCog(commands.Cog):
         )
 
         self.bot_guilds = Gauge("bot_guilds", "Number of guilds the bot is in.")
-        self.bot_users = Gauge("bot_users", "Number of unique users visible to the bot.")
+        self.bot_users = Gauge(
+            "bot_users", "Number of unique users visible to the bot."
+        )
         self.bot_latency = Gauge("bot_latency_seconds", "Heartbeat latency in seconds.")
 
         self.cpu_usage_percent = Gauge("cpu_usage_percent", "CPU usage percentage.")
@@ -64,7 +67,11 @@ class MetricsCog(commands.Cog):
             self.memory_used_gb.set({}, memory_used_gb)
             self.memory_total_gb.set({}, memory_total_gb)
             self.memory_percent.set({}, memory_percent)
-            ram_usage_gb = mem_usage.rss / (1024**3) if hasattr(mem_usage, 'rss') else memory_used_gb
+            ram_usage_gb = (
+                mem_usage.rss / (1024**3)
+                if hasattr(mem_usage, "rss")
+                else memory_used_gb
+            )
             self.ram_usage_gb.set({}, ram_usage_gb)
         except Exception as e:
             print(f"System stats update failed: {e}")
@@ -92,6 +99,7 @@ class MetricsCog(commands.Cog):
     @commands.Cog.listener()
     async def on_socket_event_type(self, event_type):
         self.events_counter.inc({"event": event_type})
+
 
 async def setup(bot):
     await bot.add_cog(MetricsCog(bot))
