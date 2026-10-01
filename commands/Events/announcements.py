@@ -1,21 +1,32 @@
 import discord
 from utils.commands import SlashCommand
 
-from commands.Events.config import DOT_EMOTE, MONEYDANCE_EMOTE
+from commands.Events.config import DOT_EMOTE, MORA_EMOTE, MONEYDANCE_EMOTE
 
 announcement_embed = discord.Embed(
+    title="",
     description=(
-        f"## <:CharlotteHeart:1191594476263702528> **Elite Track Just Got a HUGE Upgrade!** {MONEYDANCE_EMOTE}\n"
-        "If you've been thinking about supporting Fischl, you can start this season. The Elite Track now packs a ridiculous amount of value for a tiny seasonal price.\n"
-        "### <:YanfeiNote:1335644122253623458> **What Rewards Can I Unlock**\n"
-        f"-# {DOT_EMOTE} **New:** Custom GIF backgrounds, custom fonts, custom accent colors, shop and domain upgrade discounts, and immediate daily chest spawning\n"
-        f"-# {DOT_EMOTE} *Animated profile frames, additional mora boosts, gift tax reductions, and minigame summons are still available throughout the track!*\n"
-        "### <:PinkCelebrate:1204614140044386314> Get the Elite Track by visiting https://fischl.app/profile and selecting this server!\n"
-        "-# You get way more cosmetics, more convenience, and more progression in one place. "
-        "This is the best-value way to support the bot and keep development going. <:PaimonWow:1188553806456291489>\n"
+        "## <:PaimonWow:1188553806456291489> **Shhhhh...** <:HuTaoEvil:1350630212617896120>\n"
+        f"Your favorite Genshin characters have been getting *restless*... {MONEYDANCE_EMOTE}\n"
+        "### <:CharlotteHeart:1191594476263702528> **Go see for yourself:** https://fischl.app/profile\n"
+        "-# *This is just the beginning...* <:AyakaShine:1191592023946432522>"
     ),
     color=discord.Color.gold()
-).set_footer(text="A new currency called Sigils have arrived! Admins can enable it via /events settings")
+)
+
+# announcement_embed = discord.Embed(
+#     description=(
+#         f"## <:CharlotteHeart:1191594476263702528> **Elite Track Just Got a HUGE Upgrade!** {MONEYDANCE_EMOTE}\n"
+#         "If you've been thinking about supporting Fischl, you can start this season. The Elite Track now packs a ridiculous amount of value for a tiny seasonal price.\n"
+#         "### <:YanfeiNote:1335644122253623458> **What Rewards Can I Unlock**\n"
+#         f"-# {DOT_EMOTE} **New:** Custom GIF backgrounds, custom fonts, custom accent colors, shop and domain upgrade discounts, and immediate daily chest spawning\n"
+#         f"-# {DOT_EMOTE} *Animated profile frames, additional mora boosts, gift tax reductions, and minigame summons are still available throughout the track!*\n"
+#         "### <:PinkCelebrate:1204614140044386314> Get the Elite Track by visiting https://fischl.app/profile and selecting this server!\n"
+#         "-# You get way more cosmetics, more convenience, and more progression in one place. "
+#         "This is the best-value way to support the bot and keep development going. <:PaimonWow:1188553806456291489>\n"
+#     ),
+#     color=discord.Color.gold()
+# ).set_footer(text="A new currency called Sigils have arrived! Admins can enable it via /events settings")
 
 # discord.Embed(
 #     title="",

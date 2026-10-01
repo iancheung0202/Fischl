@@ -433,7 +433,7 @@ characters_dict = {
     "Nicole": {
         "line": "Happy Birthday, USER! I hid your birthday gift inside a chest and set up a bunch of puzzles for you to solve. Come on, I'll guide you through it!",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a0/Nicole_Icon.png",
-        "birthday": "09-28",
+        "birthday": "09-29",
     },
     "Xingqiu": {
         "line": "May this day of your birth be filled with much mirth, USER!\nAccording to historical records, Tiancheng's stone bridge was formed by a fallen rock spear thrown by the Geo Archon Morax in battle. If you walk along the bridge on your birthday and throw some Mora into the sea from both sides, you will be blessed in the coming year... \nUSER, your birthday only comes once a year, so be quick about it if you wanna go... I'm not kidding, it's true! Go try it and you'll see!",
