@@ -7,3 +7,4 @@ __pycache__/
 *enabledChannels.py
 *tagEnabledGuilds.py
 *enabledGuilds.py
+.DS_Store
