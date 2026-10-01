@@ -53,9 +53,6 @@ DEFAULT_CHAT_MAX_CAP = 60
 DEFAULT_CHAT_MSG_RANGE = (15, 20)
 
 BALANCE_COMMAND = "mora"
-<<<<<<< HEAD
-PROFILE_LINK_BUTTON = discord.ui.Button(label="Expeditions", style=discord.ButtonStyle.link, url=f"https://fischl.app/profile", emoji="<a:legacy:1345876714240213073>", row=1, disabled=False)
-=======
 PROFILE_LINK_BUTTON = discord.ui.Button(
     label="Earn Daily Rewards",
     style=discord.ButtonStyle.link,
@@ -64,7 +61,6 @@ PROFILE_LINK_BUTTON = discord.ui.Button(
     row=1,
     disabled=False,
 )
->>>>>>> 4ed052fa05bd4566f64a9a1e1e81bb35ba7dd6aa
 
 FRAMES_DIRECTORY = "./assets/Profile Frame"
 INVENTORY_BG_PATH = "./assets/Mora Inventory Background"

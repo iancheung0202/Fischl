@@ -1,11 +1,7 @@
 import discord
 
-<<<<<<< HEAD
-from commands.Events.config import DOT_EMOTE, MORA_EMOTE, MONEYDANCE_EMOTE
-=======
-from commands.Events.config import DOT_EMOTE, MONEYDANCE_EMOTE
-from utils.commands import SlashCommand
->>>>>>> 4ed052fa05bd4566f64a9a1e1e81bb35ba7dd6aa
+from commands.Events.config import MONEYDANCE_EMOTE
+# from utils.commands import SlashCommand
 
 announcement_embed = discord.Embed(
     title="",
@@ -15,7 +11,6 @@ announcement_embed = discord.Embed(
         "### <:CharlotteHeart:1191594476263702528> **Go see for yourself:** https://fischl.app/profile\n"
         "-# *This is just the beginning...* <:AyakaShine:1191592023946432522>"
     ),
-<<<<<<< HEAD
     color=discord.Color.gold()
 )
 
@@ -32,12 +27,6 @@ announcement_embed = discord.Embed(
 #     ),
 #     color=discord.Color.gold()
 # ).set_footer(text="A new currency called Sigils have arrived! Admins can enable it via /events settings")
-=======
-    color=discord.Color.gold(),
-).set_footer(
-    text="A new currency called Sigils have arrived! Admins can enable it via /events settings"
-)
->>>>>>> 4ed052fa05bd4566f64a9a1e1e81bb35ba7dd6aa
 
 # discord.Embed(
 #     title="",
