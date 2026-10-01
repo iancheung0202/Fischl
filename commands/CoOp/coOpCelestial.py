@@ -1,13 +1,14 @@
-import discord
 import datetime
 import random
 import re
 
-from firebase_admin import db
+import discord
 from discord.ext import commands
 from enkapy import Enka
+from firebase_admin import db
 
 CO_OP_CHANNEL_ID = 1230900481023541258
+
 
 async def closeCoOpRequest(interaction):
     match = re.search(r"<@(\d+)>", interaction.message.content)
@@ -49,7 +50,7 @@ class CoOpHelpModal(discord.ui.Modal):
             placeholder="Enter your UID",
             required=True,
             default=str(uid_default) if uid_default else "",
-            max_length=10
+            max_length=10,
         )
         self.wl = discord.ui.TextInput(
             label="Your World Level",
@@ -57,21 +58,21 @@ class CoOpHelpModal(discord.ui.Modal):
             placeholder="Enter only a number",
             required=True,
             default=str(wl_default) if wl_default else "",
-            max_length=1
+            max_length=1,
         )
         self.runs = discord.ui.TextInput(
             label="Number of Runs",
             style=discord.TextStyle.short,
             placeholder="Enter only a number",
             required=True,
-            max_length=2
+            max_length=2,
         )
         self.request = discord.ui.TextInput(
             label="Your Help Request",
             style=discord.TextStyle.long,
             placeholder="What do you need help on?",
             required=True,
-            max_length=2000
+            max_length=2000,
         )
         self.add_item(self.uid)
         self.add_item(self.wl)
@@ -84,8 +85,8 @@ class CoOpHelpModal(discord.ui.Modal):
         uid_value = self.uid.value.strip()
         if uid_value:
             ref = db.reference("/Co-Op-UID")
-            ref.child(user_id).update({'UID': uid_value})
-                
+            ref.child(user_id).update({"UID": uid_value})
+
         coop_channel = interaction.client.get_channel(CO_OP_CHANNEL_ID)
         if "NA" in self.title:
             helperRole = interaction.guild.get_role(1324388256166580294)
@@ -110,9 +111,15 @@ class CoOpHelpModal(discord.ui.Modal):
         )
         embed.add_field(name="UID", value=f"> {self.uid.value}", inline=True)
         embed.add_field(name="World Level", value=f"> WL{self.wl.value}", inline=True)
-        embed.add_field(name="Runs", value=f"> {self.runs.value} run{'s' if self.runs.value.isdigit() and int(self.runs.value) > 1 else ''}", inline=True)
+        embed.add_field(
+            name="Runs",
+            value=f"> {self.runs.value} run{'s' if self.runs.value.isdigit() and int(self.runs.value) > 1 else ''}",
+            inline=True,
+        )
         embed.add_field(name="Request", value=f"> {self.request.value}", inline=False)
-        embed.set_footer(icon_url=interaction.guild.icon.url, text=interaction.guild.name)
+        embed.set_footer(
+            icon_url=interaction.guild.icon.url, text=interaction.guild.name
+        )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
 
         emote = random.choice(
@@ -319,10 +326,10 @@ class CoOpButtonView(discord.ui.View):
         user_id = str(interaction.user.id)
         ref = db.reference("/Co-Op-UID")
         try:
-            uid = int(ref.child(user_id).get()['UID'])
+            uid = int(ref.child(user_id).get()["UID"])
         except Exception:
             uid = None
-        
+
         wl = None
         if uid:
             try:
@@ -335,43 +342,51 @@ class CoOpButtonView(discord.ui.View):
                 wl = None
         return uid, wl
 
-    @discord.ui.button(label='NA', style=discord.ButtonStyle.blurple, custom_id='nacoopcelestial')
+    @discord.ui.button(
+        label="NA", style=discord.ButtonStyle.blurple, custom_id="nacoopcelestial"
+    )
     async def na(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid, wl = await self.fetch_uid_and_wl(interaction)
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label='EU', style=discord.ButtonStyle.blurple, custom_id='eucoopcelestial')
+    @discord.ui.button(
+        label="EU", style=discord.ButtonStyle.blurple, custom_id="eucoopcelestial"
+    )
     async def eu(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid, wl = await self.fetch_uid_and_wl(interaction)
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label='Asia', style=discord.ButtonStyle.blurple, custom_id='asiacoopcelestial')
+    @discord.ui.button(
+        label="Asia", style=discord.ButtonStyle.blurple, custom_id="asiacoopcelestial"
+    )
     async def asia(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid, wl = await self.fetch_uid_and_wl(interaction)
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label='SAR', style=discord.ButtonStyle.blurple, custom_id='sarcoopcelestial')
+    @discord.ui.button(
+        label="SAR", style=discord.ButtonStyle.blurple, custom_id="sarcoopcelestial"
+    )
     async def sar(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid, wl = await self.fetch_uid_and_wl(interaction)
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 

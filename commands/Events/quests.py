@@ -1,10 +1,10 @@
-import discord
 import datetime
-import time
-import random
 import json
-import asyncpg
+import random
+import time
 
+import asyncpg
+import discord
 from discord.ext import commands
 
 try:
@@ -12,12 +12,20 @@ try:
 except ImportError as e:
     YES_EMOTE = "✅"
 
-from commands.Events.config import QUEST_TYPES, QUEST_GOAL_PRESETS, QUEST_DESCRIPTIONS, QUEST_XP_REWARDS, QUEST_BONUS_XP
+from commands.Events.config import (
+    QUEST_BONUS_XP,
+    QUEST_DESCRIPTIONS,
+    QUEST_GOAL_PRESETS,
+    QUEST_TYPES,
+    QUEST_XP_REWARDS,
+)
+
 
 def get_next_daily_reset():
     now = datetime.datetime.now(datetime.timezone.utc)
     next_day = now + datetime.timedelta(days=1)
     return int(next_day.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
 
 def get_next_weekly_reset():
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -25,19 +33,27 @@ def get_next_weekly_reset():
     if days_until_sunday == 0:
         days_until_sunday = 7
     next_sunday = now + datetime.timedelta(days=days_until_sunday)
-    return int(next_sunday.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    return int(
+        next_sunday.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
+
 
 def get_next_monthly_reset():
     now = datetime.datetime.now(datetime.timezone.utc)
     if now.month == 12:
-        next_month = now.replace(year=now.year+1, month=1, day=1)
+        next_month = now.replace(year=now.year + 1, month=1, day=1)
     else:
-        next_month = now.replace(month=now.month+1, day=1)
-    return int(next_month.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        next_month = now.replace(month=now.month + 1, day=1)
+    return int(
+        next_month.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
+
 
 def generate_quests(duration: str) -> dict:
     num_quests = 2 if duration == "daily" else 3
-    available_types = [q for q in QUEST_TYPES if duration in QUEST_GOAL_PRESETS.get(q, {})]
+    available_types = [
+        q for q in QUEST_TYPES if duration in QUEST_GOAL_PRESETS.get(q, {})
+    ]
     selected = random.sample(available_types, num_quests)
     quests = {}
     for q in selected:
@@ -45,9 +61,11 @@ def generate_quests(duration: str) -> dict:
         quests[q] = {"current": 0, "goal": goal}
     return quests
 
+
 async def ensure_quests_table(pool: asyncpg.Pool) -> None:
     async with pool.acquire() as conn:
-        await conn.execute("""
+        await conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS minigame_quests (
                 guild_id VARCHAR(64) NOT NULL,
                 user_id VARCHAR(64) NOT NULL,
@@ -61,8 +79,12 @@ async def ensure_quests_table(pool: asyncpg.Pool) -> None:
                 extra_data TEXT,
                 PRIMARY KEY (guild_id, user_id, cycle_type, quest_name)
             )
-        """)
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_quests_user ON minigame_quests(user_id)")
+        """
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_quests_user ON minigame_quests(user_id)"
+        )
+
 
 async def get_quest_data(pool: asyncpg.Pool, guildID: int, userID: int) -> dict:
     # Read-only. Does NOT perform resets (that's update_quest(..., refresh_only=True))
@@ -72,13 +94,22 @@ async def get_quest_data(pool: asyncpg.Pool, guildID: int, userID: int) -> dict:
         rows = await conn.fetch(
             "SELECT cycle_type, end_time, quest_name, current_progress, goal_progress, completed, bonus_awarded, extra_data "
             "FROM minigame_quests WHERE guild_id = $1 AND user_id = $2",
-            str(guildID), str(userID)
+            str(guildID),
+            str(userID),
         )
 
     quest_data = {}
     for r in rows:
         duration = r["cycle_type"]
-        dur_data = quest_data.setdefault(duration, {"quests": {}, "completed": {}, "end_time": r["end_time"], "bonus_awarded": False})
+        dur_data = quest_data.setdefault(
+            duration,
+            {
+                "quests": {},
+                "completed": {},
+                "end_time": r["end_time"],
+                "bonus_awarded": False,
+            },
+        )
         q_entry = {"current": r["current_progress"], "goal": r["goal_progress"]}
         if r["extra_data"]:
             try:
@@ -93,7 +124,10 @@ async def get_quest_data(pool: asyncpg.Pool, guildID: int, userID: int) -> dict:
 
     return quest_data
 
-async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, client, refresh_only=False):
+
+async def update_quest(
+    userID: int, guildID: int, channelID: int, quest_dict, client, refresh_only=False
+):
     pool = client.pool
     await ensure_quests_table(pool)
 
@@ -103,6 +137,7 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
     messages = []
 
     from commands.Events.helperFunctions import get_xp_boost
+
     xp_boost = await get_xp_boost(client.pool, guildID, userID)
 
     for duration in ["daily", "weekly", "monthly"]:
@@ -110,7 +145,9 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
             rows = await conn.fetch(
                 "SELECT quest_name, current_progress, goal_progress, completed, bonus_awarded, extra_data, end_time "
                 "FROM minigame_quests WHERE guild_id = $1 AND user_id = $2 AND cycle_type = $3",
-                gid_s, uid_s, duration
+                gid_s,
+                uid_s,
+                duration,
             )
 
         end_time = rows[0]["end_time"] if rows else 0
@@ -129,7 +166,9 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                 async with conn.transaction():
                     await conn.execute(
                         "DELETE FROM minigame_quests WHERE guild_id = $1 AND user_id = $2 AND cycle_type = $3",
-                        gid_s, uid_s, duration
+                        gid_s,
+                        uid_s,
+                        duration,
                     )
                     for q_name, q in new_quests.items():
                         await conn.execute(
@@ -139,12 +178,20 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                                  current_progress, goal_progress, completed, bonus_awarded, extra_data)
                             VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, FALSE, NULL)
                             """,
-                            gid_s, uid_s, duration, new_end, q_name, q["current"], q["goal"]
+                            gid_s,
+                            uid_s,
+                            duration,
+                            new_end,
+                            q_name,
+                            q["current"],
+                            q["goal"],
                         )
                 rows = await conn.fetch(
                     "SELECT quest_name, current_progress, goal_progress, completed, bonus_awarded, extra_data, end_time "
                     "FROM minigame_quests WHERE guild_id = $1 AND user_id = $2 AND cycle_type = $3",
-                    gid_s, uid_s, duration
+                    gid_s,
+                    uid_s,
+                    duration,
                 )
 
         if refresh_only:
@@ -160,7 +207,11 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                     extra = json.loads(r["extra_data"])
                 except (TypeError, ValueError):
                     extra = {}
-            quests[r["quest_name"]] = {"current": r["current_progress"], "goal": r["goal_progress"], "extra_data": extra}
+            quests[r["quest_name"]] = {
+                "current": r["current_progress"],
+                "goal": r["goal_progress"],
+                "extra_data": extra,
+            }
             if r["completed"]:
                 completed[r["quest_name"]] = True
             if r["bonus_awarded"]:
@@ -212,7 +263,10 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                         quests[q_name]["current"],
                         q_name in completed,
                         json.dumps(extra) if extra else None,
-                        gid_s, uid_s, duration, q_name
+                        gid_s,
+                        uid_s,
+                        duration,
+                        q_name,
                     )
 
         if len(quests) > 0:
@@ -233,13 +287,15 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                 async with pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE minigame_quests SET bonus_awarded = TRUE WHERE guild_id = $1 AND user_id = $2 AND cycle_type = $3",
-                        gid_s, uid_s, duration
+                        gid_s,
+                        uid_s,
+                        duration,
                     )
 
     if total_xp > 0:
         from commands.Events.event import add_xp
-        from commands.Events.trackData import check_tier_rewards
         from commands.Events.helperFunctions import TierRewardsView
+        from commands.Events.trackData import check_tier_rewards
 
         tier, old_xp, new_xp = await add_xp(userID, guildID, total_xp, client)
         channel = client.get_channel(channelID)
@@ -251,18 +307,17 @@ async def update_quest(userID: int, guildID: int, channelID: int, quest_dict, cl
                 new_xp=new_xp,
                 channel=channel,
                 client=client,
-                pool=client.pool
+                pool=client.pool,
             )
             desc = "\n".join(messages) + f"\n\n**Total XP earned:** `{total_xp}` XP"
             await channel.send(
                 content=f"<@{userID}>",
                 embed=discord.Embed(
-                    title="🎉 Quests Completed!",
-                    description=desc,
-                    color=0x22d65e
+                    title="🎉 Quests Completed!", description=desc, color=0x22D65E
                 ),
-                view=TierRewardsView(free_embed, elite_embed)
+                view=TierRewardsView(free_embed, elite_embed),
             )
-        
+
+
 async def setup(bot: commands.Bot) -> None:
     await ensure_quests_table(bot.pool)

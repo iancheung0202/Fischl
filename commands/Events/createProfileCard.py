@@ -6,15 +6,15 @@ import aiohttp
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont, ImageSequence
 
 from commands.Events.config import (
-    FRAMES_DIRECTORY,
     DEFAULT_BG_PATH,
     FONT_PATH,
     FONT_PRESETS,
-    PROFILE_CARD_PATH,
-    GUILD_MORA_EMOTE,
+    FRAMES_DIRECTORY,
     GLOBAL_MORA_EMOTE,
-    GUILD_SIGIL_EMOTE,
     GLOBAL_SIGIL_EMOTE,
+    GUILD_MORA_EMOTE,
+    GUILD_SIGIL_EMOTE,
+    PROFILE_CARD_PATH,
 )
 
 # Matches Discord's custom emote format: <:name:id> or <a:name:id>
@@ -58,7 +58,9 @@ async def ensure_emote_asset(emote_str: str, asset_name: str) -> str | None:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
-                    print(f"Failed to download emote asset {asset_name} from {url}: HTTP {resp.status}")
+                    print(
+                        f"Failed to download emote asset {asset_name} from {url}: HTTP {resp.status}"
+                    )
                     return None
                 data = await resp.read()
 
@@ -93,6 +95,7 @@ def resolve_font_path(font_name: str | None) -> str:
     font_path = FONT_PRESETS.get(font_name, FONT_PATH)
     return font_path if os.path.exists(font_path) else FONT_PATH
 
+
 def resolve_text_color(base_color, accent_color, strength: float):
     if not accent_color:
         return base_color
@@ -117,14 +120,20 @@ GRID_COLUMN_GAP = 36
 GRID_BOTTOM_PADDING = 13
 GRID_ROW_HEIGHT = 36
 
-PILL_TEXT_COLOR = (205, 205, 210)  # muted gray-white so it doesn't compete with the value text
+PILL_TEXT_COLOR = (
+    205,
+    205,
+    210,
+)  # muted gray-white so it doesn't compete with the value text
 PILL_PAD_X = 9
 PILL_PAD_Y = 4
 PILL_GAP = 10  # space between the value text and the rank pill
 PILL_BLUR_RADIUS = 6
 PILL_TINT_COLOR = (20, 20, 24)  # dark blackish-gray tint over the blurred glass
 PILL_TINT_ALPHA = 190  # high opacity so the pill actually reads against busy art
-PILL_TEXT_SIZE_SHRINK = 6  # how much smaller the pill's own text renders vs. the sizing font
+PILL_TEXT_SIZE_SHRINK = (
+    6  # how much smaller the pill's own text renders vs. the sizing font
+)
 
 
 def format_currency_value(value: str) -> str:
@@ -153,12 +162,16 @@ def draw_glass_pill(card_image, draw, x, y, w, h, text, text_font):
         region = card_image.crop((x0, y0, x1, y1))
         blurred = region.filter(ImageFilter.GaussianBlur(PILL_BLUR_RADIUS))
         rounded_mask = Image.new("L", (x1 - x0, y1 - y0), 0)
-        ImageDraw.Draw(rounded_mask).rounded_rectangle([0, 0, x1 - x0, y1 - y0], radius=h / 2, fill=255)
+        ImageDraw.Draw(rounded_mask).rounded_rectangle(
+            [0, 0, x1 - x0, y1 - y0], radius=h / 2, fill=255
+        )
         card_image.paste(blurred, (x0, y0), rounded_mask)
 
         tint = Image.new("RGBA", (x1 - x0, y1 - y0), (0, 0, 0, 0))
         ImageDraw.Draw(tint).rounded_rectangle(
-            [0, 0, x1 - x0, y1 - y0], radius=h / 2, fill=(*PILL_TINT_COLOR, PILL_TINT_ALPHA)
+            [0, 0, x1 - x0, y1 - y0],
+            radius=h / 2,
+            fill=(*PILL_TINT_COLOR, PILL_TINT_ALPHA),
         )
         card_image.paste(tint, (x0, y0), tint)
 
@@ -170,7 +183,15 @@ def draw_glass_pill(card_image, draw, x, y, w, h, text, text_font):
     draw.text((text_x, text_y), text, font=text_font, fill=PILL_TEXT_COLOR)
 
 
-def draw_currency_panel(card_image, draw, guild_entries, global_entries, value_font, pill_text_font, accent_color):
+def draw_currency_panel(
+    card_image,
+    draw,
+    guild_entries,
+    global_entries,
+    value_font,
+    pill_text_font,
+    accent_color,
+):
     """Draws the currency panel as two columns spanning the full card width:
 
         [icon] 15,702,790  #3      [icon] 17,441,950  #3
@@ -211,7 +232,16 @@ def draw_currency_panel(card_image, draw, guild_entries, global_entries, value_f
             pill_w, pill_h = measure_pill_size(rank_display, value_font)
             pill_x = text_x + value_w + PILL_GAP
             pill_y = row_y + (GRID_ROW_HEIGHT - pill_h) / 2
-            draw_glass_pill(card_image, draw, pill_x, pill_y, pill_w, pill_h, rank_display, pill_text_font)
+            draw_glass_pill(
+                card_image,
+                draw,
+                pill_x,
+                pill_y,
+                pill_w,
+                pill_h,
+                rank_display,
+                pill_text_font,
+            )
 
 
 async def createProfileCard(
@@ -228,11 +258,13 @@ async def createProfileCard(
     filename: str = PROFILE_CARD_PATH,
     profile_frame: str = None,
     accent_color_hex: str = None,
-    font_name: str = None
+    font_name: str = None,
 ):
     # Avatar
     if user.avatar is None:
-        im_avatar = Image.open("assets/DefaultIcon.png").convert("RGBA").resize((128, 128))
+        im_avatar = (
+            Image.open("assets/DefaultIcon.png").convert("RGBA").resize((128, 128))
+        )
     else:
         avatar_bytes = await user.avatar.with_static_format("png").with_size(128).read()
         im_avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
@@ -257,10 +289,18 @@ async def createProfileCard(
 
     # Currency icons (downloaded from the configured Discord emotes on first use)
     currency_asset_paths = await ensure_all_currency_assets()
-    guild_mora_icon = load_currency_icon(currency_asset_paths.get("guild_mora"), GRID_ICON_SIZE)
-    guild_sigils_icon = load_currency_icon(currency_asset_paths.get("guild_sigils"), GRID_ICON_SIZE)
-    global_mora_icon = load_currency_icon(currency_asset_paths.get("global_mora"), GRID_ICON_SIZE)
-    global_sigils_icon = load_currency_icon(currency_asset_paths.get("global_sigils"), GRID_ICON_SIZE)
+    guild_mora_icon = load_currency_icon(
+        currency_asset_paths.get("guild_mora"), GRID_ICON_SIZE
+    )
+    guild_sigils_icon = load_currency_icon(
+        currency_asset_paths.get("guild_sigils"), GRID_ICON_SIZE
+    )
+    global_mora_icon = load_currency_icon(
+        currency_asset_paths.get("global_mora"), GRID_ICON_SIZE
+    )
+    global_sigils_icon = load_currency_icon(
+        currency_asset_paths.get("global_sigils"), GRID_ICON_SIZE
+    )
 
     guild_currency_entries = [
         (guild_mora_icon, guild_mora, guild_rank),
@@ -270,7 +310,7 @@ async def createProfileCard(
         (global_mora_icon, global_mora, global_rank),
         (global_sigils_icon, global_sigils, global_sigils_rank),
     ]
-    
+
     # Helper function for animated images
     def load_image_frames(path):
         if not os.path.exists(path):
@@ -280,27 +320,37 @@ async def createProfileCard(
             frames = []
             durations = []
             disposals = []
-            if path.lower().endswith('.gif'):
+            if path.lower().endswith(".gif"):
                 for frame in ImageSequence.Iterator(im):
-                    frames.append(frame.convert('RGBA'))
-                    durations.append(frame.info.get('duration', 100))
-                    disposals.append(frame.info.get('disposal', 2))
+                    frames.append(frame.convert("RGBA"))
+                    durations.append(frame.info.get("duration", 100))
+                    disposals.append(frame.info.get("disposal", 2))
                 return frames, durations, disposals
             else:
-                return [im.convert('RGBA')], [100], [2]
+                return [im.convert("RGBA")], [100], [2]
         except Exception as e:
             print(f"Error loading {path}: {e}")
             return None, None, None
 
-    bg_animated = bg and bg.lower().endswith('.gif') and os.path.exists(bg)
-    frame_animated = profile_frame and profile_frame.lower().endswith('.gif') and os.path.exists(f"{FRAMES_DIRECTORY}/{profile_frame}")
+    bg_animated = bg and bg.lower().endswith(".gif") and os.path.exists(bg)
+    frame_animated = (
+        profile_frame
+        and profile_frame.lower().endswith(".gif")
+        and os.path.exists(f"{FRAMES_DIRECTORY}/{profile_frame}")
+    )
 
     # Create an animated profile card
-    if bg_animated or frame_animated:  
-        bg_frames, bg_durations, bg_disposals = load_image_frames(bg) or ([Image.new('RGBA', (720, 256), (0, 0, 0, 255))], [100], [2])
+    if bg_animated or frame_animated:
+        bg_frames, bg_durations, bg_disposals = load_image_frames(bg) or (
+            [Image.new("RGBA", (720, 256), (0, 0, 0, 255))],
+            [100],
+            [2],
+        )
         frame_path = f"{FRAMES_DIRECTORY}/{profile_frame}" if profile_frame else None
-        frame_frames, frame_durations, frame_disposals = load_image_frames(frame_path) or ([None], [100], [2])
-        
+        frame_frames, frame_durations, frame_disposals = load_image_frames(
+            frame_path
+        ) or ([None], [100], [2])
+
         if len(bg_frames) > 1:
             total_frames = len(bg_frames)
             durations = bg_durations
@@ -308,13 +358,15 @@ async def createProfileCard(
             if len(frame_frames) == 1:
                 frame_frames = frame_frames * total_frames
             else:
-                frame_frames = [frame_frames[i % len(frame_frames)] for i in range(total_frames)]
+                frame_frames = [
+                    frame_frames[i % len(frame_frames)] for i in range(total_frames)
+                ]
         else:
             total_frames = len(frame_frames)
             durations = frame_durations
             disposals = frame_disposals
             bg_frames = bg_frames * total_frames
-        
+
         output_frames = []
         for i in range(total_frames):
             frame = bg_frames[i].copy()
@@ -331,14 +383,32 @@ async def createProfileCard(
 
             # Draw text
             draw = ImageDraw.Draw(frame)
-            draw.text((200, 45), user.display_name, font=font_display, fill=accent_color or (255, 255, 255))
-            draw.text((200, 100), user.name, font=font_username, fill=resolve_text_color((225, 225, 225), accent_color, 0.5))
-            draw_currency_panel(frame, draw, guild_currency_entries, global_currency_entries, font_grid_value, font_grid_pill, accent_color)
+            draw.text(
+                (200, 45),
+                user.display_name,
+                font=font_display,
+                fill=accent_color or (255, 255, 255),
+            )
+            draw.text(
+                (200, 100),
+                user.name,
+                font=font_username,
+                fill=resolve_text_color((225, 225, 225), accent_color, 0.5),
+            )
+            draw_currency_panel(
+                frame,
+                draw,
+                guild_currency_entries,
+                global_currency_entries,
+                font_grid_value,
+                font_grid_pill,
+                accent_color,
+            )
 
             output_frames.append(frame)
-        
+
         # Save animated GIF
-        if not filename.lower().endswith('.gif'):
+        if not filename.lower().endswith(".gif"):
             filename = filename.rsplit(".", 1)[0] + ".gif"
 
         output_frames[0].save(
@@ -360,7 +430,11 @@ async def createProfileCard(
 
     # Avatar
     im_bg.paste(im_avatar, (40, 30), im_avatar)
-    im_profile_frame = Image.open(f"{FRAMES_DIRECTORY}/{profile_frame}").convert("RGBA") if profile_frame else None
+    im_profile_frame = (
+        Image.open(f"{FRAMES_DIRECTORY}/{profile_frame}").convert("RGBA")
+        if profile_frame
+        else None
+    )
 
     # Profile frame
     if im_profile_frame:
@@ -371,16 +445,35 @@ async def createProfileCard(
         paste_x = center_x - frame_w // 2
         paste_y = center_y - frame_h // 2
         im_bg.paste(im_profile_frame, (paste_x, paste_y), im_profile_frame)
-        
+
     # Draw text
     draw = ImageDraw.Draw(im_bg)
-    draw.text((200, 45), user.display_name, font=font_display, fill=accent_color or (255, 255, 255))
-    draw.text((200, 100), user.name, font=font_username, fill=resolve_text_color((225, 225, 225), accent_color, 0.5))
-    draw_currency_panel(im_bg, draw, guild_currency_entries, global_currency_entries, font_grid_value, font_grid_pill, accent_color)
+    draw.text(
+        (200, 45),
+        user.display_name,
+        font=font_display,
+        fill=accent_color or (255, 255, 255),
+    )
+    draw.text(
+        (200, 100),
+        user.name,
+        font=font_username,
+        fill=resolve_text_color((225, 225, 225), accent_color, 0.5),
+    )
+    draw_currency_panel(
+        im_bg,
+        draw,
+        guild_currency_entries,
+        global_currency_entries,
+        font_grid_value,
+        font_grid_pill,
+        accent_color,
+    )
 
     # Save static image
     im_bg.save(filename)
     return filename
+
 
 async def setup(bot):
     pass

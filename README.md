@@ -25,7 +25,7 @@ Fischl is a cloud-hosted bot, so you **do not need to clone or run it yourself**
 
 2. **Access the dashboard** to configure settings, enable features, and view analytics: [Fischl Dashboard](https://fischl.app/dashboard)
 
-3. **Start using commands** directly in your server. Use `/help` to view all the functionalities and commands. 
+3. **Start using commands** directly in your server. Use `/help` to view all the functionalities and commands.
 
 ## Contributing
 
@@ -51,4 +51,3 @@ Fischl is **proprietary software**.
 * You are welcome to **contribute via GitHub pull requests**, but these contributions **cannot be used to create a separate instance of Fischl**.
 
 All rights reserved.
-

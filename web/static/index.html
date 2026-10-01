@@ -71,7 +71,7 @@
    <div class="heading" id="heading">
       <h1 class="title" style="font-size: 30px !important; margin-bottom: -10px;">Time to join thousands of Genshin users.</h1>
       <h1 class="display-5 title" style="font-size: 55px !important; margin-bottom: 10px;">Invite <span class="glow-text">Fischl</span></h1>
-      <p class="subtitle"><b>Fischl</b> is a multi-purpose and Genshin-based <b>verified Discord bot</b> <span class='app-badge' title='Verified Bot'>APP</span> ready to boost up your 
+      <p class="subtitle"><b>Fischl</b> is a multi-purpose and Genshin-based <b>verified Discord bot</b> <span class='app-badge' title='Verified Bot'>APP</span> ready to boost up your
          server!<br />Features customizable <b>ticket system, co-op matchmaking, chat minigames, partnership system</b>, and more 👀</p>
       <a class="btn btn-lg glow" href="https://discord.com/api/oauth2/authorize?client_id=732422232273584198&scope=bot%20applications.commands" role="button" target="_blank"><i class="fas fa-plus"></i> Invite The Bot</a>
       <!-- <a href="/dashboard" class="btn btn-lg glow glow-yellow">
@@ -136,7 +136,7 @@
         <button class="discord-button" onclick="openCoOpForm('Asia')">Asia</button>
         <button class="discord-button" onclick="openCoOpForm('SAR')">SAR</button>
       </div>
-      
+
       <div id="coopForm" style="display: none; max-width: 420px; margin: 0 auto; background: #2f3136; border-radius: 8px; padding: 16px; text-align: left; font-family: 'Inter', sans-serif; color: #dcddde; box-shadow: 0 0 10px rgba(0,0,0,0.2);">
         <div style="font-weight: 600; font-size: 16px; color: white; margin-bottom: 10px;" id="coopFormTitle">Request Co-op Help - NA</div>
         <div style="margin-bottom: 12px;">
@@ -160,7 +160,7 @@
           <button class="discord-button" onclick="submitCoOpForm()">Submit</button>
         </div>
       </div>
-      
+
       <div id="coopRequestContent" style="text-align: left; max-width: 420px; margin: 0 auto; display: none;"></div>
       <div id="coopRequest" class="discord-embed" style="display: none;"></div>
       <div id="coopRequestButtons" style="text-align: left; max-width: 420px; margin: 6px auto 0; display: none;">
@@ -212,7 +212,7 @@
     </div>
     <div class="feature-img">
       <div class="discord-chat" style="max-width: 420px; background-color: #36393f; border-radius: 8px; padding: 16px; font-family: 'Inter', sans-serif;">
-        
+
         <!-- <div class="message not-grouped">
           <img class='avatar' src='assets/oz.png' />
           <div class='content'>
@@ -220,7 +220,7 @@
             <div class='text'>hi</div>
           </div>
         </div> -->
-        
+
         <div id="chatMessages">
           <div class="message not-grouped">
             <img class='avatar' src='https://cdn.discordapp.com/avatars/732422232273584198/624035e5e9a841bfd3020e35a0a5c0a0.png?size=1024' />
@@ -230,7 +230,7 @@
             </div>
           </div>
         </div>
-        
+
         <div style="display: flex; margin-top: 15px; gap: 8px;">
           <input type="text" id="userMessage" placeholder="Type a message..." style="flex: 1; padding: 8px; border-radius: 4px; border: none; background: #40444b; color: white;">
           <button id="sendButton" class="discord-button" style="padding: 8px 16px;">Send</button>
@@ -242,7 +242,7 @@
   <section class="feature-section" id="minigames">
     <div class="feature-text">
       <h2>🎮 Chat Minigames</h2>
-      <p>Fischl spawns random mini-games in active chats to keep your server engaged, with members competing for leaderboard rankings!</p>  
+      <p>Fischl spawns random mini-games in active chats to keep your server engaged, with members competing for leaderboard rankings!</p>
       <div class="legend">
           <div class="legend-item">
               <i class="fas fa-user"></i>
@@ -283,14 +283,14 @@
       <div id="partnershipButton" style="text-align: left; max-width: 420px; margin: 6px auto 0;">
         <button class="discord-button" onclick="openPartnershipModal()">Request Partnership</button>
       </div>
-      
+
       <div id="partnershipSuccess" class="discord-embed" style="display: none; border-left: 4px solid #3ba55d;">
         <div class="discord-embed-title">Request Submitted!</div>
         <div class="discord-embed-description">
           Your partnership request has been created in <span class="mention">#partner-requests</span>. Our staff will review it soon!
         </div>
       </div>
-      
+
       <div id="partnershipThread" class="discord-embed" style="display: none; border-left: 4px solid #faa81a; margin-top: 4px;">
         <div class="discord-embed-title">New Partnership Request</div>
         <div class="discord-embed-description">
@@ -305,13 +305,13 @@
           <div class="embed-field"><strong>Status</strong><span id="status-text">🟡 Pending Review</span></div>
         </div>
       </div>
-      
+
       <div id="partnershipButtons" style="text-align: left; max-width: 420px; margin: 6px auto 0; display: none; gap: 8px;">
         <button class="discord-button" onclick="document.getElementById('partnershipThread').style.borderLeftColor = '#3ba55d'; document.getElementById('status-text').innerHTML = '🟢 Accepted';" style="background-color: rgb(0,134,58);">Accept</button>
         <button class="discord-button-red" onclick="document.getElementById('partnershipThread').style.borderLeftColor = '#ed4245'; document.getElementById('status-text').innerHTML = '🔴 Rejected';">Reject</button>
         <button class="discord-button" onclick="resetPartnershipDemo()">Reset Demo</button>
       </div>
-      
+
       <div id="partnershipError" class="discord-embed" style="display: none; border-left: 4px solid #ed4245;">
         <div class="discord-embed-title">Invalid Invite</div>
         <div class="discord-embed-description">
@@ -343,7 +343,7 @@
           <h2>🎂 Birthday Wishes</h2>
           <p>Celebrates your server members’ birthdays with messages from their favorite Genshin Impact characters.</p>
       </div>
-      
+
       <div class="feature-img">
           <div class="calendar-container" id="calendar-container">
               <div class="calendar-header">
@@ -353,7 +353,7 @@
                       <button class="nav-btn" id="next-month"><i class="fas fa-chevron-right"></i></button>
                   </div>
               </div>
-              
+
               <div class="day-names">
                   <div>Sun</div>
                   <div>Mon</div>
@@ -363,10 +363,10 @@
                   <div>Fri</div>
                   <div>Sat</div>
               </div>
-              
+
               <div class="calendar-grid" id="calendar-grid"></div>
           </div>
-          
+
           <div class="birthday-display" id="birthday-display" style="display: none;">
                 <div class="message not-grouped" style="margin-top: 0px;">
                   <img class='avatar' src='https://static.wikia.nocookie.net/gensin-impact/images/f/f1/Venti_Icon.png' id="character-avatar"/>

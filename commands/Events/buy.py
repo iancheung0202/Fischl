@@ -1,27 +1,69 @@
-import discord
-import time
-import datetime
 import asyncio
 import copy
+import datetime
+import time
 
+import discord
 from discord import app_commands
 from discord.ext import commands
-from commands.Events.helperFunctions import TierRewardsView, get_guild_mora, get_total_mora, subtractGuildMora, subtract_global_mora, add_inventory_item, get_user_inventory, apply_discount, get_shop_discount, get_shop_items, get_shop_item_by_name, process_pending_stock_edits as process_pending_stock_edits_helper, get_sigils_balance, get_global_sigils_balance, subtract_guild_sigils, subtract_global_sigils, update_shop_item_stock_by_name
+
+from commands.Events.config import (
+    BALANCE_COMMAND,
+    CONFUSED_EMOTE,
+    CURRENCY_INFO,
+    HAPPY_EMOTE,
+    HMM_EMOTE,
+    LOADING_EMOTE,
+    MORA_TO_XP_RATIO,
+    NO_STOCK_EMOTE,
+    SHRUG_EMOTE,
+    SIGILS_TO_XP_RATIO,
+    THINK_EMOTE,
+)
+from commands.Events.helperFunctions import (
+    TierRewardsView,
+    add_inventory_item,
+    apply_discount,
+    get_global_sigils_balance,
+    get_guild_mora,
+    get_shop_discount,
+    get_shop_item_by_name,
+    get_shop_items,
+    get_sigils_balance,
+    get_total_mora,
+    get_user_inventory,
+)
+from commands.Events.helperFunctions import (
+    process_pending_stock_edits as process_pending_stock_edits_helper,
+)
+from commands.Events.helperFunctions import (
+    subtract_global_mora,
+    subtract_global_sigils,
+    subtract_guild_sigils,
+    subtractGuildMora,
+    update_shop_item_stock_by_name,
+)
 from utils.commands import SlashCommand
 
-from commands.Events.config import BALANCE_COMMAND, HMM_EMOTE, THINK_EMOTE, NO_STOCK_EMOTE, LOADING_EMOTE, SHRUG_EMOTE, HAPPY_EMOTE, CONFUSED_EMOTE, CURRENCY_INFO, MORA_TO_XP_RATIO, SIGILS_TO_XP_RATIO
-
 global_purchase_queue = asyncio.Queue()
+
 
 def get_currency_display(currency_type: str) -> str:
     info = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])
     return f"{info['emoji']}"
 
-def format_discounted_price(original_cost: int, discounted_cost: int, discount_percent: int, currency_type: str = "guild_mora") -> str:
+
+def format_discounted_price(
+    original_cost: int,
+    discounted_cost: int,
+    discount_percent: int,
+    currency_type: str = "guild_mora",
+) -> str:
     currency_display = get_currency_display(currency_type)
     if discount_percent <= 0 or discounted_cost >= original_cost:
         return f"{currency_display} **{original_cost:,}**"
     return f"{currency_display} ~~**{original_cost:,}**~~ ➜ **{discounted_cost:,}** (-{discount_percent}%)"
+
 
 async def purchase_worker():
     while True:
@@ -37,10 +79,12 @@ async def purchase_worker():
         finally:
             global_purchase_queue.task_done()
 
+
 async def process_pending_stock_edits(guild_id: int, pool=None):
     if pool is None:
         return 0
     return await process_pending_stock_edits_helper(pool, guild_id)
+
 
 async def purchase_autocomplete(
     interaction: discord.Interaction,
@@ -62,7 +106,9 @@ async def purchase_autocomplete(
         reward_name = reward[0]
         reward_cost = reward[2]
         currency_type = reward[5] if len(reward) > 5 else "guild_mora"
-        currency_label = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])["label"]
+        currency_label = CURRENCY_INFO.get(currency_type, CURRENCY_INFO["guild_mora"])[
+            "label"
+        ]
 
         if isinstance(reward_name, int) or str(reward_name).isdigit():
             role = interaction.guild.get_role(int(reward_name))
@@ -77,16 +123,21 @@ async def purchase_autocomplete(
             and role
             and current.lower() in role.name.lower()
         ):
-            choices.append(app_commands.Choice(name=choice_name[:100], value=str(reward_name)))
+            choices.append(
+                app_commands.Choice(name=choice_name[:100], value=str(reward_name))
+            )
 
     return choices[:25]
 
+
 class PurchaseRequest:
-    __slots__ = ('interaction', 'itemName', 'timestamp')
+    __slots__ = ("interaction", "itemName", "timestamp")
+
     def __init__(self, interaction, itemName):
         self.interaction = interaction
         self.itemName = itemName
         self.timestamp = time.time()
+
 
 async def check_balance(pool, uid, gid, amount, currency_type):
     if currency_type == "guild_mora":
@@ -98,6 +149,7 @@ async def check_balance(pool, uid, gid, amount, currency_type):
     elif currency_type == "global_sigils":
         return await get_global_sigils_balance(pool, uid) >= amount
     return False
+
 
 async def deduct_balance(pool, uid, gid, channel_id, amount, currency_type):
     if currency_type == "guild_mora":
@@ -111,8 +163,16 @@ async def deduct_balance(pool, uid, gid, channel_id, amount, currency_type):
         return await subtract_global_sigils(pool, uid, gid, amount)
     return False
 
+
 class ConfirmPurchaseView(discord.ui.View):
-    def __init__(self, bot, itemName = "", allowed_user_id: int = None, currency_type: str = "guild_mora", discounted_cost: int = 0):
+    def __init__(
+        self,
+        bot,
+        itemName="",
+        allowed_user_id: int = None,
+        currency_type: str = "guild_mora",
+        discounted_cost: int = 0,
+    ):
         self.bot = bot
         self.itemName = itemName
         self.allowed_user_id = allowed_user_id
@@ -141,17 +201,23 @@ class ConfirmPurchaseView(discord.ui.View):
     async def process_purchase(self, request):
         interaction, itemName = request.interaction, request.itemName
 
-        if (datetime.datetime.now(datetime.timezone.utc) - interaction.created_at).total_seconds() > 15 * 60 - 30:
+        if (
+            datetime.datetime.now(datetime.timezone.utc) - interaction.created_at
+        ).total_seconds() > 15 * 60 - 30:
             embed = discord.Embed(
                 title="Purchase Expired",
                 description="Your purchase request timed out. Please try again.",
-                color=discord.Color.red()
+                color=discord.Color.red(),
             )
             return await interaction.edit_original_response(embed=embed)
 
-        processed = await process_pending_stock_edits(interaction.guild.id, interaction.client.pool)
+        processed = await process_pending_stock_edits(
+            interaction.guild.id, interaction.client.pool
+        )
         if processed > 0:
-            print(f"Processed {processed} scheduled stock updates for guild {interaction.guild.id}")
+            print(
+                f"Processed {processed} scheduled stock updates for guild {interaction.guild.id}"
+            )
             await asyncio.sleep(1)
 
         roleName = self.itemName
@@ -160,20 +226,31 @@ class ConfirmPurchaseView(discord.ui.View):
             async with interaction.client.pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT title, description, timestamp FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND title = $3 ORDER BY timestamp DESC LIMIT 10",
-                    interaction.user.id, interaction.guild.id, roleName
+                    interaction.user.id,
+                    interaction.guild.id,
+                    roleName,
                 )
                 current_time = time.time()
                 for row in rows:
-                    desc = (row['description'] or '').lower()
-                    if any(keyword in desc for keyword in ["welkin", "pass", "voucher", "nitro"]):
-                        purchase_time = int(row['timestamp'].timestamp()) if hasattr(row['timestamp'], 'timestamp') else int(row['timestamp'])
+                    desc = (row["description"] or "").lower()
+                    if any(
+                        keyword in desc
+                        for keyword in ["welkin", "pass", "voucher", "nitro"]
+                    ):
+                        purchase_time = (
+                            int(row["timestamp"].timestamp())
+                            if hasattr(row["timestamp"], "timestamp")
+                            else int(row["timestamp"])
+                        )
                         if current_time - purchase_time < 60 * 60 * 24 * 45:
                             embed = discord.Embed(
                                 title="<:keksweat:1381225834110652497> Miss Xianyun wants to give someone else a chance!",
                                 description=f"You have already purchased **{roleName}** recently. You can only buy this item again <t:{int(60 * 60 * 24 * 45 + purchase_time)}:R>.",
-                                color=discord.Color.red()
+                                color=discord.Color.red(),
                             )
-                            await interaction.edit_original_response(embed=embed, view=None)
+                            await interaction.edit_original_response(
+                                embed=embed, view=None
+                            )
                             return
 
         try:
@@ -189,12 +266,14 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=None)
             return
 
-        item_entry = await get_shop_item_by_name(interaction.client.pool, interaction.guild.id, roleName)
+        item_entry = await get_shop_item_by_name(
+            interaction.client.pool, interaction.guild.id, roleName
+        )
         if item_entry is None:
             embed = discord.Embed(
                 title="Error",
                 description="This item could not be found in the shop anymore.",
-                color=discord.Color.red()
+                color=discord.Color.red(),
             )
             await interaction.edit_original_response(embed=embed, view=None)
             return
@@ -204,7 +283,9 @@ class ConfirmPurchaseView(discord.ui.View):
         cannotBuyAgain = not (len(item_entry) > 3 and item_entry[3])
 
         is_mora_currency = currency_type in ("guild_mora", "global_mora")
-        shop_discount = await get_shop_discount(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        shop_discount = await get_shop_discount(
+            interaction.client.pool, interaction.guild.id, interaction.user.id
+        )
         discountedCost = apply_discount(itemCost, shop_discount)
         final_cost = discountedCost
 
@@ -223,7 +304,13 @@ class ConfirmPurchaseView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=None)
             return
 
-        has_balance = await check_balance(interaction.client.pool, interaction.user.id, interaction.guild.id, final_cost, currency_type)
+        has_balance = await check_balance(
+            interaction.client.pool,
+            interaction.user.id,
+            interaction.guild.id,
+            final_cost,
+            currency_type,
+        )
 
         if not has_balance:
             currency_display = get_currency_display(currency_type)
@@ -237,7 +324,9 @@ class ConfirmPurchaseView(discord.ui.View):
             if gangRole is not None:
                 await interaction.user.add_roles(gangRole)
 
-            inventory = await get_user_inventory(interaction.client.pool, interaction.user.id, interaction.guild.id)
+            inventory = await get_user_inventory(
+                interaction.client.pool, interaction.user.id, interaction.guild.id
+            )
             already_owns = any(item[0] == str(roleName) for item in inventory)
 
             if already_owns and cannotBuyAgain:
@@ -253,8 +342,24 @@ class ConfirmPurchaseView(discord.ui.View):
             desc = item_entry[1]
             timestamp = int(time.mktime(datetime.datetime.now().timetuple()))
 
-            await add_inventory_item(interaction.client.pool, interaction.user.id, interaction.guild.id, title, desc, final_cost, timestamp, pinned=False)
-            await deduct_balance(interaction.client.pool, interaction.user.id, interaction.guild.id, interaction.channel.id, final_cost, currency_type)
+            await add_inventory_item(
+                interaction.client.pool,
+                interaction.user.id,
+                interaction.guild.id,
+                title,
+                desc,
+                final_cost,
+                timestamp,
+                pinned=False,
+            )
+            await deduct_balance(
+                interaction.client.pool,
+                interaction.user.id,
+                interaction.guild.id,
+                interaction.channel.id,
+                final_cost,
+                currency_type,
+            )
 
             currency_display = get_currency_display(currency_type)
             xp_earned = ""
@@ -273,12 +378,23 @@ class ConfirmPurchaseView(discord.ui.View):
             )
 
             from commands.Events.event import add_xp
-            from commands.Events.trackData import check_tier_rewards
             from commands.Events.quests import update_quest
+            from commands.Events.trackData import check_tier_rewards
 
-            await update_quest(interaction.user.id, interaction.guild.id, interaction.channel.id, {"purchase_items": 1}, interaction.client)
+            await update_quest(
+                interaction.user.id,
+                interaction.guild.id,
+                interaction.channel.id,
+                {"purchase_items": 1},
+                interaction.client,
+            )
 
-            tier, old_xp, new_xp = await add_xp(interaction.user.id, interaction.guild.id, int(final_cost * xp_ratio), interaction.client)
+            tier, old_xp, new_xp = await add_xp(
+                interaction.user.id,
+                interaction.guild.id,
+                int(final_cost * xp_ratio),
+                interaction.client,
+            )
             print(f"Added {int(final_cost * xp_ratio)} XP from purchase.")
             free_embed, elite_embed = await check_tier_rewards(
                 guild_id=interaction.guild.id,
@@ -287,9 +403,16 @@ class ConfirmPurchaseView(discord.ui.View):
                 new_xp=new_xp,
                 channel=interaction.channel,
                 client=interaction.client,
-                pool=interaction.client.pool
+                pool=interaction.client.pool,
             )
-            await interaction.edit_original_response(embed=embed, view=TierRewardsView(free_embed, elite_embed) if xp_earned != "" else None)
+            await interaction.edit_original_response(
+                embed=embed,
+                view=(
+                    TierRewardsView(free_embed, elite_embed)
+                    if xp_earned != ""
+                    else None
+                ),
+            )
 
             items = await get_shop_items(interaction.client.pool, interaction.guild.id)
             og_item = None
@@ -299,25 +422,39 @@ class ConfirmPurchaseView(discord.ui.View):
                     break
             if og_item and len(og_item) > 4 and og_item[4] > 0:
                 new_stock = og_item[4] - 1
-                await update_shop_item_stock_by_name(interaction.client.pool, interaction.guild.id, roleName, new_stock)
+                await update_shop_item_stock_by_name(
+                    interaction.client.pool, interaction.guild.id, roleName, new_stock
+                )
 
             link = (await interaction.original_response()).jump_url
-            print(f"{interaction.user.name} ({interaction.user.id}) have paid {final_cost:,} {currency_type} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}")
+            print(
+                f"{interaction.user.name} ({interaction.user.id}) have paid {final_cost:,} {currency_type} and now own {role_mention} in {interaction.guild.name} ({interaction.guild.id}) → {link}"
+            )
 
             try:
                 async with interaction.client.pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE minigame_inventory SET link = $3 WHERE uid = $1 AND gid = $2 AND title = $4 AND timestamp = $5",
-                        interaction.user.id, interaction.guild.id, link, str(roleName), timestamp
+                        interaction.user.id,
+                        interaction.guild.id,
+                        link,
+                        str(roleName),
+                        timestamp,
                     )
-                print(f"Logged purchase link to minigame_inventory for user {interaction.user.id} in guild {interaction.guild.id}")
+                print(
+                    f"Logged purchase link to minigame_inventory for user {interaction.user.id} in guild {interaction.guild.id}"
+                )
             except Exception as e:
                 print(f"Error logging purchase link: {e}")
 
     @discord.ui.button(label="Purchase Item", style=discord.ButtonStyle.green)
-    async def purchaseItem(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def purchaseItem(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         if interaction.user.id != self.allowed_user_id:
-            await interaction.response.send_message("You can't perform this action.", ephemeral=True)
+            await interaction.response.send_message(
+                "You can't perform this action.", ephemeral=True
+            )
             return
 
         try:
@@ -334,14 +471,14 @@ class ConfirmPurchaseView(discord.ui.View):
             embed = discord.Embed(
                 title="Purchase Queued",
                 description=f"Your purchase is in queue. Please wait while we validate your purchase {LOADING_EMOTE}",
-                color=discord.Color.orange()
+                color=discord.Color.orange(),
             )
             await interaction.edit_original_response(embed=embed)
         else:
             processing_embed = discord.Embed(
                 title="Processing Purchase",
                 description=f"Validating your purchase {LOADING_EMOTE}",
-                color=discord.Color.gold()
+                color=discord.Color.gold(),
             )
             await interaction.edit_original_response(embed=processing_embed)
 
@@ -355,7 +492,9 @@ class ConfirmPurchaseView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         if interaction.user.id != self.allowed_user_id:
-            await interaction.response.send_message("You can't perform this action.", ephemeral=True)
+            await interaction.response.send_message(
+                "You can't perform this action.", ephemeral=True
+            )
             return
         await interaction.message.delete()
 
@@ -410,14 +549,16 @@ class Buy(commands.Cog):
             f"<@&{item}>" if isinstance(item, int) or item.isdigit() else item
         )
 
-        shop_discount = await get_shop_discount(interaction.client.pool, interaction.guild.id, interaction.user.id)
+        shop_discount = await get_shop_discount(
+            interaction.client.pool, interaction.guild.id, interaction.user.id
+        )
 
         if shop_discount > 0:
-            discounted_cost = apply_discount(itemCost, shop_discount) 
-            purchase_price_text = format_discounted_price(itemCost, discounted_cost, shop_discount, currency_type)
-            purchase_description = (
-                f"Are you sure you want to purchase **{role_mention}** for {purchase_price_text}?"
+            discounted_cost = apply_discount(itemCost, shop_discount)
+            purchase_price_text = format_discounted_price(
+                itemCost, discounted_cost, shop_discount, currency_type
             )
+            purchase_description = f"Are you sure you want to purchase **{role_mention}** for {purchase_price_text}?"
         else:
             discounted_cost = itemCost
             purchase_description = f"Are you sure you want to purchase **{role_mention}** for {currency_display} **{itemCost:,}**?"
@@ -425,13 +566,13 @@ class Buy(commands.Cog):
         embed = discord.Embed(
             title=f"{THINK_EMOTE} Confirm Purchase",
             description=purchase_description,
-            color=discord.Color.gold()
+            color=discord.Color.gold(),
         )
         embed.set_footer(text="Purchase buttons will timeout in 30 seconds")
-        view = ConfirmPurchaseView(self.bot, item, interaction.user.id, currency_type, discounted_cost)
-        view.message = await interaction.followup.send(
-            embed=embed, view=view
+        view = ConfirmPurchaseView(
+            self.bot, item, interaction.user.id, currency_type, discounted_cost
         )
+        view.message = await interaction.followup.send(embed=embed, view=view)
 
     @buy.error
     async def buy_error(self, interaction: discord.Interaction, error):
@@ -450,6 +591,7 @@ class Buy(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             raise error
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Buy(bot))

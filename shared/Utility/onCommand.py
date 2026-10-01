@@ -1,25 +1,27 @@
-import discord
-import datetime
-import aiohttp
 import base64
+import datetime
 
+import aiohttp
+import discord
 from discord import app_commands
 from discord.ext import commands
+
 try:
-    from assets.secret import DATABASE_USER, DATABASE_PASSWORD, NTFY_LINK
+    from assets.secret import DATABASE_PASSWORD, DATABASE_USER, NTFY_LINK
 except ImportError:
     DATABASE_USER = ""
     DATABASE_PASSWORD = ""
     NTFY_LINK = ""
 
+
 def extract_params(options):
     params = []
     for opt in options:
-        if 'options' in opt:
-            params.extend(extract_params(opt['options'])) # nested subcommands
-        elif 'value' in opt:
-            raw_value = opt['value']
-            param_type = opt.get('type', 3)
+        if "options" in opt:
+            params.extend(extract_params(opt["options"]))  # nested subcommands
+        elif "value" in opt:
+            raw_value = opt["value"]
+            param_type = opt.get("type", 3)
             if param_type == 6:  # user
                 formatted = f"<@{raw_value}>"
             elif param_type == 7:  # channel
@@ -34,6 +36,7 @@ def extract_params(options):
 
     return params
 
+
 class OnCommand(commands.Cog):
     def __init__(self, bot):
         self.client = bot
@@ -42,7 +45,7 @@ class OnCommand(commands.Cog):
     async def on_app_command_error(self, interaction, error):
         error_message = f"Command: {interaction.command.qualified_name if interaction.command else 'Unknown'}\nError: {str(error)[:500]}"
         print(f"Error in app command: {error}")
-        
+
         async with aiohttp.ClientSession() as session:
             auth = aiohttp.BasicAuth(DATABASE_USER, DATABASE_PASSWORD)
             try:
@@ -50,7 +53,7 @@ class OnCommand(commands.Cog):
                     NTFY_LINK,
                     data=error_message,
                     auth=auth,
-                    timeout=aiohttp.ClientTimeout(total=5)
+                    timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     if resp.status != 200:
                         print(f"Failed to send ntfy notification: {resp.status}")
@@ -62,19 +65,19 @@ class OnCommand(commands.Cog):
         print(interaction.data)  # Debugging prints as requested
         channel = self.client.get_channel(1030892842308091987)
         if isinstance(command, app_commands.Command):  # Slash command
-            options = interaction.data.get('options', [])
+            options = interaction.data.get("options", [])
             full_command = f"/{command.qualified_name}"
             params_list = extract_params(options)
             if params_list:
                 full_command += " " + " ".join(params_list)
         else:  # Context menu command
-            target_id = interaction.data.get('target_id', '')
-            if command.type == discord.AppCommandType.user: 
+            target_id = interaction.data.get("target_id", "")
+            if command.type == discord.AppCommandType.user:
                 full_command = f"{command.qualified_name} (User: <@{target_id}>)"
             else:
                 full_command = f"{command.qualified_name} (Message ID: {target_id})"
 
-        full_command = full_command.replace('\n', ' ').replace('`', '\'')
+        full_command = full_command.replace("\n", " ").replace("`", "'")
         if len(full_command) > 1000:
             full_command = full_command[:1000] + "..."
 

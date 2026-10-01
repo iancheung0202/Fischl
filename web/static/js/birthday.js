@@ -644,29 +644,29 @@ function renderCalendar(month, year) {
         dayElement.className = 'calendar-day';
         dayElement.textContent = day;
         const formattedDate = `${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-        
+
         const hasBirthday = Object.values(characters_dict).some(
             character => character.birthday === formattedDate
         );
-        
-        const isToday = day === today.getDate() && 
-                        month === today.getMonth() && 
+
+        const isToday = day === today.getDate() &&
+                        month === today.getMonth() &&
                         year === today.getFullYear();
-        
+
         if (isToday) {
             dayElement.classList.add('today-color');
             dayElement.style.color = '#e0e0ff';
             dayElement.style.fontWeight = '600';
         }
-        
+
         if (hasBirthday) {
             dayElement.classList.add('has-birthday');
-            
+
             dayElement.addEventListener('click', () => {
                 showBirthday(formattedDate);
             });
         }
-        
+
         calendarGrid.appendChild(dayElement);
     }
 }
@@ -675,19 +675,19 @@ function showBirthday(date) {
     const character = Object.values(characters_dict).find(
         char => char.birthday === date
     );
-    
+
     if (character) {
         characterAvatar.src = character.icon;
         characterName.textContent = Object.keys(characters_dict).find(
             key => characters_dict[key] === character
         );
-        
+
         const message = character.line.replace(/USER/g, '<b>definitely_not_oz</b>');
         birthdayMessage.innerHTML = message;
-        
+
         const randomColor = '#' + Math.floor(Math.random()*16777215).toString(16);
         birthdayEmbed.style.borderLeftColor = randomColor;
-        
+
         birthdayContent.style.display = 'block';
         calendarContainer.style.display = 'none';
         calendarGrid.style.display = 'none';
@@ -703,7 +703,7 @@ function setupEventListeners() {
         }
         renderCalendar(currentMonth, currentYear);
     });
-    
+
     nextMonthBtn.addEventListener('click', () => {
         currentMonth++;
         if (currentMonth > 11) {
@@ -712,7 +712,7 @@ function setupEventListeners() {
         }
         renderCalendar(currentMonth, currentYear);
     });
-    
+
     backBtn.addEventListener('click', () => {
         birthdayContent.style.display = 'none';
         calendarContainer.style.display = 'block';

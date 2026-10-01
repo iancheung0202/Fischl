@@ -1,7 +1,7 @@
-import discord
-
-from discord.ui import Button, Select, View
 from typing import List, Optional
+
+import discord
+from discord.ui import Button, Select, View
 
 SUPER_PREV_EMOJI = "<:fastbackward:1351972112696479824>"
 PREV_EMOJI = "<:backarrow:1351972111010369618>"
@@ -14,7 +14,7 @@ class BaseSortSelect(discord.ui.Select):
     def __init__(self, options_list, default, initial_author=None, custom_id="sort"):
         self.initial_author = initial_author
         options = []
-        
+
         for label, emoji in options_list:
             options.append(
                 discord.SelectOption(
@@ -23,7 +23,7 @@ class BaseSortSelect(discord.ui.Select):
                     default=(label == default),
                 )
             )
-        
+
         super().__init__(
             placeholder="Choose the Sorting",
             max_values=1,
@@ -48,15 +48,17 @@ class BasePaginationView(View):
         self.page = 0
         self.initial_author = initial_author
         self.message: Optional[discord.Message] = None
-        self.original_footers = [page.footer.text if page.footer else None for page in pages]
-        
+        self.original_footers = [
+            page.footer.text if page.footer else None for page in pages
+        ]
+
         if self.pages:
             first_page = self.pages[0]
             footer_text = f"Page 1 of {len(self.pages)}"
             if self.original_footers[0]:
                 footer_text += f" • {self.original_footers[0]}"
             first_page.set_footer(text=footer_text)
-        
+
         self._update_button_states()
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -86,7 +88,9 @@ class BasePaginationView(View):
 
     async def on_timeout(self) -> None:
         self.clear_items()
-        self.add_item(Button(label="Timed out", style=discord.ButtonStyle.grey, disabled=True))
+        self.add_item(
+            Button(label="Timed out", style=discord.ButtonStyle.grey, disabled=True)
+        )
 
         try:
             if self.message:

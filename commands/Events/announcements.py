@@ -1,7 +1,11 @@
 import discord
-from utils.commands import SlashCommand
 
+<<<<<<< HEAD
 from commands.Events.config import DOT_EMOTE, MORA_EMOTE, MONEYDANCE_EMOTE
+=======
+from commands.Events.config import DOT_EMOTE, MONEYDANCE_EMOTE
+from utils.commands import SlashCommand
+>>>>>>> 4ed052fa05bd4566f64a9a1e1e81bb35ba7dd6aa
 
 announcement_embed = discord.Embed(
     title="",
@@ -11,6 +15,7 @@ announcement_embed = discord.Embed(
         "### <:CharlotteHeart:1191594476263702528> **Go see for yourself:** https://fischl.app/profile\n"
         "-# *This is just the beginning...* <:AyakaShine:1191592023946432522>"
     ),
+<<<<<<< HEAD
     color=discord.Color.gold()
 )
 
@@ -27,6 +32,12 @@ announcement_embed = discord.Embed(
 #     ),
 #     color=discord.Color.gold()
 # ).set_footer(text="A new currency called Sigils have arrived! Admins can enable it via /events settings")
+=======
+    color=discord.Color.gold(),
+).set_footer(
+    text="A new currency called Sigils have arrived! Admins can enable it via /events settings"
+)
+>>>>>>> 4ed052fa05bd4566f64a9a1e1e81bb35ba7dd6aa
 
 # discord.Embed(
 #     title="",
@@ -120,7 +131,7 @@ announcement_embed = discord.Embed(
 #     ).set_footer(text="Why are we doing this? We just launched our brand new profile website and dashboard! Check them out!"),
 #     ephemeral=True,
 #     view=View().add_item(Button(label="Complete your daily challenge", url="https://fischl.app/profile", style=discord.ButtonStyle.link))
-# ) 
+# )
 
 # await interaction.followup.send(
 #     embed=discord.Embed(
@@ -271,6 +282,7 @@ announcement_embed = discord.Embed(
 #     ),
 #     ephemeral=True
 # )
+
 
 async def setup(bot):
     pass

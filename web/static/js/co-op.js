@@ -24,9 +24,9 @@ function submitCoOpForm() {
     const wl = document.getElementById('coopWL').value || '8';
     const runs = document.getElementById('coopRuns').value || '1';
     const request = document.getElementById('coopRequestText').value || 'Need help with weekly boss';
-    
+
     document.getElementById('coopForm').style.display = 'none';
-    
+
     let color, helperRole;
     switch(currentRegion) {
     case 'NA':
@@ -52,7 +52,7 @@ function submitCoOpForm() {
     document.getElementById('coopRequestContent').style.display = 'block';
     document.getElementById('coopRequestContent').style.color = '#f3f4f6';
     document.getElementById('coopRequestContent').style.marginBottom = '4px';
-    
+
     const embed = document.getElementById('coopRequest');
     embed.innerHTML = `
     <div class="discord-embed-title">${currentRegion} Region Co-op Request</div>
@@ -70,7 +70,7 @@ function submitCoOpForm() {
     `;
     embed.style.borderLeft = `4px solid ${color}`;
     embed.style.display = 'block';
-    
+
     document.getElementById('coopRequestButtons').style.display = 'flex';
     document.getElementById('coopRequestButtons').style.gap = '8px';
 }
@@ -79,7 +79,7 @@ function closeCoOpRequest() {
     document.getElementById('coopRequestContent').style.display = 'none';
     document.getElementById('coopRequest').style.display = 'none';
     document.getElementById('coopRequestButtons').style.display = 'none';
-    
+
     document.getElementById('coopInitial').style.display = 'block';
     document.getElementById('coopInitialButtons').style.display = 'flex';
 }

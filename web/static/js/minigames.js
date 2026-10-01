@@ -15,14 +15,14 @@ function getRandomEmojis(count) {
 function startMemoryGame() {
     document.getElementById('minigameInitial').style.display = 'none';
     document.getElementById('minigameButton').style.display = 'none';
-    
+
     const display = document.getElementById('minigameDisplay');
     display.style.display = 'block';
-    
+
     gameState.emojis = getRandomEmojis(3);
     gameState.chosenColumn = Math.floor(Math.random() * 3) + 1;
     gameState.chosenEmote = gameState.emojis[gameState.chosenColumn - 1];
-    
+
     const embed = document.getElementById('minigameEmbed');
     embed.style.display = "block";
     embed.innerHTML = `
@@ -45,7 +45,7 @@ function startMemoryGame() {
         </div>
     </div>
     `;
-    
+
     document.getElementById('minigameControls').innerHTML = '';
     setTimeout(showMemoryQuestion, 4000);
 }
@@ -58,12 +58,12 @@ function showMemoryQuestion() {
         Now, which of the following emote was in <strong>Column ${gameState.chosenColumn}</strong>?
     </div>
     `;
-    
+
     const controls = document.getElementById('minigameControls');
     controls.innerHTML = '';
-    
+
     const shuffledEmojis = [...gameState.emojis].sort(() => 0.5 - Math.random());
-    
+
     shuffledEmojis.forEach(emoji => {
     const button = document.createElement('button');
     button.className = 'discord-button';
@@ -80,10 +80,10 @@ function showMemoryQuestion() {
 function checkMemoryAnswer(selectedEmoji) {
     const isCorrect = selectedEmoji === gameState.chosenEmote;
     const reward = isCorrect ? Math.floor(Math.random() * 2001) + 3000 : 0;
-    
+
     const embed = document.getElementById('minigameEmbed');
     const controls = document.getElementById('minigameControls');
-    
+
     if (isCorrect) {
     embed.innerHTML = `
         <div class="discord-embed-title">Memory Game - Success! 🎉</div>
@@ -105,7 +105,7 @@ function checkMemoryAnswer(selectedEmoji) {
         </div>
     `;
     }
-    
+
     controls.innerHTML = '';
     const playAgain = document.createElement('button');
     playAgain.className = 'discord-button';

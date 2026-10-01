@@ -1,15 +1,19 @@
-import discord
 import asyncio
 
+import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFont
+
 from commands.Events.helperFunctions import addMora
+
 
 def rgb_to_hex(r, g, b):
     hex_code = "#{:02X}{:02X}{:02X}".format(r, g, b)
     return hex_code
 
+
 ### ------ LEVEL UP IMAGE CARD HOYO'S CAFE ------ ###
+
 
 async def createLevelImage(
     user, level, levelRole, bg="./assets/levelbg.png", filename="./assets/levelup.png"
@@ -104,7 +108,9 @@ async def createLevelImage(
 
     return filename
 
+
 ### ------ LEVEL UP IMAGE CARD CELESTIAL ------ ###
+
 
 async def createLevelImageCelestial(
     user,
@@ -180,7 +186,9 @@ async def createLevelImageCelestial(
 
     return filename
 
+
 ### ------ LEVEL UP IMAGE CARD MEROPIDE BULLETIN ------ ###
+
 
 class ShowPerksBulletin(discord.ui.View):
     def __init__(self):
@@ -199,57 +207,58 @@ class ShowPerksBulletin(discord.ui.View):
             title=f"❤︎ Level Roles & Perks - {interaction.guild.name} ❤︎",
             description="""As you yap in this server, you gain points known as XP. The more points you get, the higher level you unlock and these levels unlock new perks you can use within the server.
 
-<@&1286681773178097758> 
+<@&1286681773178097758>
 <:reply:1036792837821435976> Create Nickname
-<:reply:1036792837821435976> Create Invite 
+<:reply:1036792837821435976> Create Invite
 
-<@&1283012357379067957> 
+<@&1283012357379067957>
 <:reply:1036792837821435976> Access to Upload Attachments/Files/Media
 
-<@&1283012636266598441> 
+<@&1283012636266598441>
 <:reply:1036792837821435976> Embed GIFs and Links in Chat
 
-<@&1283012710099058761> 
+<@&1283012710099058761>
 <:reply:1036792837821435976> Send Voice Messages
 
 <@&1292799049744912415>
 <:reply:1036792837821435976> Create Polls
 
-<@&1283012776557547573> 
+<@&1283012776557547573>
 <:reply:1036792837821435976> Qualification to Apply for Staff
 <:reply:1036792837821435976> +1 Entry in Giveaways (2 entries total)
 
-<@&1283013027528183808> 
-<:reply:1036792837821435976> Create Public Threads 
+<@&1283013027528183808>
+<:reply:1036792837821435976> Create Public Threads
 
-<@&1283013419100012587> 
+<@&1283013419100012587>
 <:reply:1036792837821435976> Create Private Thread
 
-<@&1283013489878634497> 
-<:reply:1036792837821435976> Send Text to Speech Messages 
+<@&1283013489878634497>
+<:reply:1036792837821435976> Send Text to Speech Messages
 <:reply:1036792837821435976> +1 Entry in Giveaways (3 entries total)
 
-<@&1283013595004796978> 
+<@&1283013595004796978>
 <:reply:1036792837821435976> Access to #👻〢xp-farm channel
 
-<@&1283013665401999413> 
+<@&1283013665401999413>
 <:reply:1036792837821435976> +1 Entry in Giveaways (4 entries total)
 
-<@&1283013746486284359> 
-<:reply:1036792837821435976> Setup Voice Channel Status 
+<@&1283013746486284359>
+<:reply:1036792837821435976> Setup Voice Channel Status
 
-<@&1283013850551287850> 
+<@&1283013850551287850>
 <:reply:1036792837821435976> Request to Speak in Stage Channels
 <:reply:1036792837821435976> +1 Entry in Giveaways (5 entries total)
 
-<@&1283013913503338526> 
+<@&1283013913503338526>
 <:reply:1036792837821435976> Priority Speaker in Stage Channels
 
-<@&1283013992104595526> 
+<@&1283013992104595526>
 <:reply:1036792837821435976> Access to #⭐〢exclusive Channel
 <:reply:1036792837821435976> +1 Entry in Giveaways (6 entries total)""",
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 async def createLevelImageBulletin(
     user,
@@ -370,7 +379,9 @@ async def createLevelImageBulletin(
 
     return filename
 
+
 ### ------ LEVEL UP IMAGE CARD TEVYAT TIMES ------ ###
+
 
 async def createLevelImageTevyatTimes(
     user,
@@ -466,7 +477,9 @@ async def createLevelImageTevyatTimes(
 
     return filename
 
+
 ### ------ LEVEL UP IMAGE CARD JINHSI MAINS ------ ###
+
 
 async def createLevelImageJinhsi(
     user,
@@ -555,6 +568,7 @@ async def createLevelImageJinhsi(
     im1.save(filename)
 
     return filename
+
 
 class LevelUpTrigger(commands.Cog):
     def __init__(self, bot):
@@ -686,9 +700,7 @@ class LevelUpTrigger(commands.Cog):
             await chn.send(message.content, file=discord.File(filename))
 
         ### TEVYAT TIMES LEVELLING UP CARD ###
-        if (
-            message.channel.id == 1253526260844335124
-        ):  
+        if message.channel.id == 1253526260844335124:
             id = int(message.content.replace("<@", "").replace(">", ""))
             member = await message.guild.fetch_member(id)
             level = int(
@@ -746,6 +758,7 @@ class RemoveLevelZeroRole(commands.Cog):
         ):
             levelRole = discord.utils.get(after.guild.roles, name="Level 0 - Newbie")
             await after.remove_roles(levelRole)
+
 
 async def setup(bot):
     await bot.add_cog(LevelUpTrigger(bot))

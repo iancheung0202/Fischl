@@ -1,13 +1,15 @@
-import discord
 import datetime
 import random
 import re
 
-from firebase_admin import db
+import discord
 from discord import app_commands
 from discord.ext import commands
 from enkapy import Enka
+from firebase_admin import db
+
 from utils.commands import SlashCommand
+
 
 async def closeCoOpRequest(interaction):
     match = re.search(r"<@(\d+)>", interaction.message.content)
@@ -24,7 +26,9 @@ async def closeCoOpRequest(interaction):
         emote_pattern = r"<:[^:]+:[0-9]+>"
         modifiedContent = re.sub(emote_pattern, "<:yes:1036811164891480194>", content)
         modifiedContent = re.sub(
-            r"is requesting for.*", "no longer needs co-op help. <:resolved:1364813186028797984>", modifiedContent
+            r"is requesting for.*",
+            "no longer needs co-op help. <:resolved:1364813186028797984>",
+            modifiedContent,
         )
         modifiedContent = modifiedContent.replace("**", "")
         await interaction.response.edit_message(
@@ -38,7 +42,7 @@ async def closeCoOpRequest(interaction):
 
 
 class CoOpHelpModal(discord.ui.Modal):
-    
+
     def __init__(self, title="Request Co-op Help", uid_default=None, wl_default=None):
         super().__init__(title=title, timeout=None)
         self.uid = discord.ui.TextInput(
@@ -47,7 +51,7 @@ class CoOpHelpModal(discord.ui.Modal):
             placeholder="Enter your UID",
             required=True,
             default=str(uid_default) if uid_default else "",
-            max_length=10
+            max_length=10,
         )
         self.wl = discord.ui.TextInput(
             label="Your World Level",
@@ -55,21 +59,21 @@ class CoOpHelpModal(discord.ui.Modal):
             placeholder="Enter only a number",
             required=True,
             default=str(wl_default) if wl_default else "",
-            max_length=1
+            max_length=1,
         )
         self.runs = discord.ui.TextInput(
             label="Number of Runs",
             style=discord.TextStyle.short,
             placeholder="Enter only a number",
             required=True,
-            max_length=2
+            max_length=2,
         )
         self.request = discord.ui.TextInput(
             label="Your Help Request",
             style=discord.TextStyle.long,
             placeholder="What do you need help on?",
             required=True,
-            max_length=2000
+            max_length=2000,
         )
         self.add_item(self.uid)
         self.add_item(self.wl)
@@ -82,8 +86,8 @@ class CoOpHelpModal(discord.ui.Modal):
         uid_value = self.uid.value.strip()
         if uid_value:
             ref = db.reference("/Co-Op-UID")
-            ref.child(user_id).update({'UID': uid_value})
-        
+            ref.child(user_id).update({"UID": uid_value})
+
         ref = db.reference("/Co-Op")
         coop = ref.get()
         for key, value in coop.items():
@@ -125,21 +129,29 @@ class CoOpHelpModal(discord.ui.Modal):
         )
         embed.add_field(name="UID", value=f"> {self.uid.value}", inline=True)
         embed.add_field(name="World Level", value=f"> WL{self.wl.value}", inline=True)
-        embed.add_field(name="Runs", value=f"> {self.runs.value} run{'s' if self.runs.value.isdigit() and int(self.runs.value) > 1 else ''}", inline=True)
+        embed.add_field(
+            name="Runs",
+            value=f"> {self.runs.value} run{'s' if self.runs.value.isdigit() and int(self.runs.value) > 1 else ''}",
+            inline=True,
+        )
         embed.add_field(name="Request", value=f"> {self.request.value}", inline=False)
         try:
-            embed.set_footer(icon_url=interaction.guild.icon.url, text=interaction.guild.name)
+            embed.set_footer(
+                icon_url=interaction.guild.icon.url, text=interaction.guild.name
+            )
         except Exception:
             embed.set_footer(text=interaction.guild.name)
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        emote = random.choice(["<:yae_hi:1364813223307645000>", "<:lumine_hello:1364813205016412211>"])
+        emote = random.choice(
+            ["<:yae_hi:1364813223307645000>", "<:lumine_hello:1364813205016412211>"]
+        )
         msg = await coop_channel.send(
             content=f"**{emote} {interaction.user.mention} is requesting for co-op** - {helperRole.mention}",
             embed=embed,
             view=CoOpView(),
         )
-            
+
         await interaction.response.send_message(
             f"<:yes:1036811164891480194> [Co-op Request Sent]({msg.jump_url})",
             ephemeral=True,
@@ -147,7 +159,7 @@ class CoOpHelpModal(discord.ui.Modal):
         thread = await msg.create_thread(
             name=f"{interaction.user.name} - {embedTitle}", auto_archive_duration=1440
         )
-        
+
         ref = db.reference("/Co-Op Sticky Panel")
         stickies = ref.get()
         try:
@@ -195,12 +207,18 @@ class UnClaimButton(discord.ui.View):
         ogMsg = await interaction.channel.fetch_message(id)
         embed = ogMsg.embeds[0]
         desc = embed.description
-        if f"<:yes:1036811164891480194> *Claimed by {interaction.user.mention}* \n" not in desc:
+        if (
+            f"<:yes:1036811164891480194> *Claimed by {interaction.user.mention}* \n"
+            not in desc
+        ):
             await interaction.response.send_message(
-                content="<:no:1036810470860013639> You haven't claimed the request yet.", ephemeral=True
+                content="<:no:1036810470860013639> You haven't claimed the request yet.",
+                ephemeral=True,
             )
             return
-        desc = desc.replace(f"<:yes:1036811164891480194> *Claimed by {interaction.user.mention}* \n", "")
+        desc = desc.replace(
+            f"<:yes:1036811164891480194> *Claimed by {interaction.user.mention}* \n", ""
+        )
         embed.description = desc
         content = ogMsg.content
         await ogMsg.edit(content=content, embed=embed, view=CoOpView())
@@ -280,14 +298,14 @@ class CoOpView(discord.ui.View):
                 if role.id == SAR_HELPER_ROLE_ID:
                     correct = True
                     break
-                    
+
         # LIYUE HARBOR: CARRY COMMITTEE
         if interaction.guild.id == 1073116154798809098:
             for role in interaction.user.roles:
                 if role.id == 1145946099270549535:
                     correct = True
                     break
-                    
+
         if not (correct):
             await interaction.response.send_message(
                 "**<:no:1036810470860013639> Warning:** You cannot claim the request because you don't have the corresponding region co-op helper role. You can still coordinate with the member in the thread though.",
@@ -297,9 +315,7 @@ class CoOpView(discord.ui.View):
 
         await thread.send(f"Request claimed by {interaction.user.mention}. ")
         embed = interaction.message.embeds[0]
-        newEmbedDescription = (
-            f"<:yes:1036811164891480194> *Claimed by {interaction.user.mention}* \n{embed.description}"
-        )
+        newEmbedDescription = f"<:yes:1036811164891480194> *Claimed by {interaction.user.mention}* \n{embed.description}"
         embed.description = newEmbedDescription
         content = interaction.message.content
         await interaction.message.edit(content=content, embed=embed, view=CoOpView())
@@ -325,7 +341,13 @@ class CoOpView(discord.ui.View):
     async def copyrawuid(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        uid = "".join([char for char in str(interaction.message.embeds[0].fields[0]) if char.isdigit()])
+        uid = "".join(
+            [
+                char
+                for char in str(interaction.message.embeds[0].fields[0])
+                if char.isdigit()
+            ]
+        )
         await interaction.response.send_message(uid, ephemeral=True)
 
 
@@ -348,15 +370,15 @@ class CoOpViewResolved(discord.ui.View):
 class CoOpButtonViewSystem(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        
+
     async def fetch_uid_and_wl(self, interaction):
         user_id = str(interaction.user.id)
         ref = db.reference("/Co-Op-UID")
         try:
-            uid = int(ref.child(user_id).get()['UID'])
+            uid = int(ref.child(user_id).get()["UID"])
         except Exception:
             uid = None
-        
+
         wl = None
         if uid:
             try:
@@ -393,7 +415,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
@@ -421,7 +443,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
@@ -449,7 +471,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
@@ -477,7 +499,7 @@ class CoOpButtonViewSystem(discord.ui.View):
         modal = CoOpHelpModal(
             title=f"Request Co-op Help - {button.label}",
             uid_default=uid,
-            wl_default=str(wl) if wl is not None else None
+            wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
 
@@ -874,7 +896,7 @@ class CoOpRepEnableModal(discord.ui.Modal, title="Enable/Edit Reputation System"
                 interaction.guild.id: {
                     "Server ID": interaction.guild.id,
                     "Max Rep": max_rep,
-                    "Roles": "None", 
+                    "Roles": "None",
                 }
             }
             for key, value in data.items():
@@ -926,8 +948,11 @@ class CoOp(commands.GroupCog, name="co-op"):
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @coop_disable.error
-    async def coop_disable_error(self, interaction: discord.Interaction, error: Exception):
+    async def coop_disable_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -945,7 +970,9 @@ class CoOp(commands.GroupCog, name="co-op"):
         footer_icon="Shows server icon in the footer of the embed? (Must have footer text first)",
         footer_time="Shows the time of the embed being sent?",
     )
-    @app_commands.checks.bot_has_permissions(create_public_threads=True, send_messages_in_threads=True)
+    @app_commands.checks.bot_has_permissions(
+        create_public_threads=True, send_messages_in_threads=True
+    )
     @app_commands.checks.has_permissions(manage_messages=True, manage_guild=True)
     async def coop_panel(
         self,
@@ -1027,8 +1054,11 @@ class CoOp(commands.GroupCog, name="co-op"):
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @coop_panel.error
-    async def coop_panel_error(self, interaction: discord.Interaction, error: Exception):
+    async def coop_panel_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="setup", description="Setup co-op system in the server")
@@ -1039,7 +1069,9 @@ class CoOp(commands.GroupCog, name="co-op"):
         asia_helper_role="Co-Op Asia Helper role",
         sar_helper_role="Co-Op SAR Helper role",
     )
-    @app_commands.checks.bot_has_permissions(create_public_threads=True, send_messages_in_threads=True, manage_channels=True)
+    @app_commands.checks.bot_has_permissions(
+        create_public_threads=True, send_messages_in_threads=True, manage_channels=True
+    )
     @app_commands.checks.has_permissions(manage_messages=True, manage_guild=True)
     async def coop_setup(
         self,
@@ -1090,8 +1122,11 @@ class CoOp(commands.GroupCog, name="co-op"):
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         await interaction.response.send_message(embed=embed)
+
     @coop_setup.error
-    async def coop_setup_error(self, interaction: discord.Interaction, error: Exception):
+    async def coop_setup_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -1144,8 +1179,11 @@ class CoOp(commands.GroupCog, name="co-op"):
             await interaction.response.send_message(
                 embed=embed, view=CoOpRepEnableView(), ephemeral=True
             )
+
     @coop_reputation.error
-    async def coop_reputation_error(self, interaction: discord.Interaction, error: Exception):
+    async def coop_reputation_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
 

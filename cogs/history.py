@@ -3,12 +3,11 @@ import hashlib
 import hmac
 import threading
 import time
-
 from collections import OrderedDict, defaultdict
-from discord.ext import commands
-from flask import Flask, jsonify, request
 
 from assets.secret import MSG_HISTORY_API_KEY
+from discord.ext import commands
+from flask import Flask, jsonify, request
 
 CHANNEL_ID = 1106664283250626671
 RATE_LIMIT_PER_MINUTE = 60
@@ -64,7 +63,9 @@ class MessageHistoryAPICog(commands.Cog):
         self.last_update = time.time()
 
     def etag(self):
-        return hashlib.sha1(f"{self.revision}:{len(self.messages)}".encode()).hexdigest()
+        return hashlib.sha1(
+            f"{self.revision}:{len(self.messages)}".encode()
+        ).hexdigest()
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -101,14 +102,18 @@ class MessageHistoryAPICog(commands.Cog):
                 "global_name": getattr(author, "global_name", None),
                 "display_name": getattr(author, "display_name", author.name),
                 "bot": author.bot,
-                "avatar_url": author.display_avatar.url if author.display_avatar else None
+                "avatar_url": (
+                    author.display_avatar.url if author.display_avatar else None
+                ),
             }
         return {
             "id": str(message.id),
             "author": author_data,
             "content": message.content,
             "timestamp": message.created_at.isoformat(),
-            "edited_timestamp": message.edited_at.isoformat() if message.edited_at else None
+            "edited_timestamp": (
+                message.edited_at.isoformat() if message.edited_at else None
+            ),
         }
 
     def summary_payload(self):
@@ -197,7 +202,9 @@ class MessageHistoryAPICog(commands.Cog):
         return resp
 
     def warming(self):
-        resp = jsonify({"error": "Cache warming, full message history is still being fetched"})
+        resp = jsonify(
+            {"error": "Cache warming, full message history is still being fetched"}
+        )
         resp.status_code = 503
         resp.headers["Retry-After"] = "30"
         resp.headers["Cache-Control"] = "no-cache"
@@ -206,7 +213,9 @@ class MessageHistoryAPICog(commands.Cog):
     def cached(self, data):
         etag = self.etag()
         if_match = request.headers.get("If-None-Match")
-        if if_match and etag in [token.strip().strip('"') for token in if_match.split(",")]:
+        if if_match and etag in [
+            token.strip().strip('"') for token in if_match.split(",")
+        ]:
             resp = self.app.response_class(status=304)
         else:
             resp = jsonify(data)

@@ -1,13 +1,13 @@
 discord.py
-discord 
-Flask 
-bs4 
+discord
+Flask
+bs4
 requests
 firebase-admin
 emoji
 aiohttp
 async-timeout
-Pillow 
+Pillow
 asyncio
 enka.py
 pytz

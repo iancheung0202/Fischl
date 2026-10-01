@@ -1,9 +1,17 @@
-import discord
 import re
 
+import discord
 from discord.ext import commands
 
-roles = [1180400455105384528, 1176357434365841518, 1200204308570980422, 1178303001140666488, 1188174906060439726, 1239907587651276930]
+roles = [
+    1180400455105384528,
+    1176357434365841518,
+    1200204308570980422,
+    1178303001140666488,
+    1188174906060439726,
+    1239907587651276930,
+]
+
 
 class RefreshStaffViewCelestial(discord.ui.View):
     def __init__(self):
@@ -15,8 +23,10 @@ class RefreshStaffViewCelestial(discord.ui.View):
         custom_id="rawcelestial",
         emoji="🗒️",
     )
-    async def refreshstaffview(self, interaction: discord.Interaction, button: discord.ui.Button):
-        
+    async def refreshstaffview(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+
         msg = ""
         for roleID in roles:
             role = interaction.guild.get_role(roleID)
@@ -33,9 +43,15 @@ class RefreshStaffViewCelestial(discord.ui.View):
             description=f"**The following list consists of all our official staff members:**\n{msg}",
             colour=0x46E1EC,
         )
-        embed.set_image(url="https://media.discordapp.net/attachments/1152640894328127539/1199936623949926472/CelestialBanner.png")
-        embed.set_footer(text='Click "View Raw List" if text looks like <@692254240290242601>')
-        edited = await interaction.message.edit(embed=embed, view=RefreshStaffViewCelestial())
+        embed.set_image(
+            url="https://media.discordapp.net/attachments/1152640894328127539/1199936623949926472/CelestialBanner.png"
+        )
+        embed.set_footer(
+            text='Click "View Raw List" if text looks like <@692254240290242601>'
+        )
+        edited = await interaction.message.edit(
+            embed=embed, view=RefreshStaffViewCelestial()
+        )
 
         message = f"{edited.embeds[0].title}\n{edited.embeds[0].description}"
         pattern = r"`.*?`"
@@ -67,10 +83,18 @@ class RefreshStaffViewCelestial(discord.ui.View):
             description=f"**The following list consists of all our official staff members:**\n{msg}",
             colour=0x46E1EC,
         )
-        embed.set_image(url="https://media.discordapp.net/attachments/1152640894328127539/1199936623949926472/CelestialBanner.png")
-        embed.set_footer(text='Click "View Raw List" if text looks like <@692254240290242601>')
+        embed.set_image(
+            url="https://media.discordapp.net/attachments/1152640894328127539/1199936623949926472/CelestialBanner.png"
+        )
+        embed.set_footer(
+            text='Click "View Raw List" if text looks like <@692254240290242601>'
+        )
         await interaction.message.edit(embed=embed, view=RefreshStaffViewCelestial())
-        await interaction.response.send_message("<:refresh:1048779043287351408> The staff list is successfully refreshed!", ephemeral=True)
+        await interaction.response.send_message(
+            "<:refresh:1048779043287351408> The staff list is successfully refreshed!",
+            ephemeral=True,
+        )
+
 
 class LeaksAccessCelestial(discord.ui.View):
     def __init__(self):
@@ -180,6 +204,7 @@ class LeaksAccessCelestial(discord.ui.View):
                 ephemeral=True,
             )
 
+
 class StaffRoster(commands.Cog):
     def __init__(self, bot):
         self.client = bot
@@ -215,8 +240,11 @@ class StaffRoster(commands.Cog):
                 text='Click "View Raw List" if text looks like <@692254240290242601>'
             )
             await message.channel.send(embed=embed, view=RefreshStaffViewCelestial())
-        
-        if message.guild.id == 1168706427435622410 and message.content == "-leaksaccess":
+
+        if (
+            message.guild.id == 1168706427435622410
+            and message.content == "-leaksaccess"
+        ):
             await message.delete()
             embed = discord.Embed(
                 title="<:RaidenJam:1343391073439060028> Select below to gain access to leaks-related channels!",
@@ -224,6 +252,7 @@ class StaffRoster(commands.Cog):
                 color=0x2B2C31,
             )
             await message.channel.send(embed=embed, view=LeaksAccessCelestial())
+
 
 async def setup(bot):
     await bot.add_cog(StaffRoster(bot))

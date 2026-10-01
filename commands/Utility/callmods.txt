@@ -19,7 +19,7 @@ class ConfirmCallMods(discord.ui.View):
     embed = discord.Embed(title="Report Sent", description=f"Mods are on their way as we speak.", color=0x008000)
     embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
     await interaction.response.edit_message(embed=embed, view=None)
-    
+
 
   @discord.ui.button(label='No', style=discord.ButtonStyle.red, custom_id='nocallmods')
   async def nocallmods(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -48,7 +48,7 @@ class CallMods(commands.Cog):
     embed=discord.Embed(title="Are you sure you want to call the mods? :warning:", description="No matter the severity of the issue, you should feel obliged to click `Yes`. This function is usually used for reporting inappropriate content or heated arguments in the chat **at the current moment**. However, trolling or misusing this function will result in severe disciplinary actions.", color=0xFFFF00)
     embed.add_field(name="Context", value=context, inline=True)
     await interaction.response.send_message(embed=embed, view=ConfirmCallMods(), ephemeral=True)
-    
+
 
 async def setup(bot: commands.Bot) -> None:
   await bot.add_cog(CallMods(bot))
