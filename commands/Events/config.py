@@ -602,6 +602,45 @@ SEASONS = [
             {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
         ]
     ),
+    Season(
+        id=6,
+        name="Snezhnaya Festival",
+        start_ts=1790812801,   # October 1, 2026
+        end_ts=1798761600,     # January 1, 2027
+        track_data = [
+            {'tier': 1,  'xp_req': 1000, 'cumulative_xp': 1000,    'free': 'Drop Pack',                                                      'elite': 'Custom Accent Color'},
+            {'tier': 2,  'xp_req': 1000, 'cumulative_xp': 2000,    'free': 'Mora Gain Boost +5%',                                            'elite': 'Express Daily Chests'},
+            {'tier': 3,  'xp_req': 1000, 'cumulative_xp': 3000,    'free': '+3 Minigames Summon',                                            'elite': 'Custom Title'},
+            {'tier': 4,  'xp_req': 1000, 'cumulative_xp': 4000,    'free': 'Drop Pack',                                                      'elite': 'Mora Gain Boost +10%'},
+            {'tier': 5,  'xp_req': 1000, 'cumulative_xp': 5000,    'free': 'Unlocks Mora Gifting',                                           'elite': 'Mora Gift Tax -10%'},
+            {'tier': 6,  'xp_req': 1000, 'cumulative_xp': 6000,    'free': 'Server Title | Cryo Archon',              'elite': 'Shop Discount +10%'},
+            {'tier': 7,  'xp_req': 1000, 'cumulative_xp': 7000,   'free': 'Drop Pack',                                                       'elite': '+1 Chest Upgrade Limit'},
+            {'tier': 8,  'xp_req': 1000, 'cumulative_xp': 8000,   'free': '+1 Chest Upgrade Limit',                                          'elite': 'Kingdom Discount +10%'},
+            {'tier': 9,  'xp_req': 1000, 'cumulative_xp': 9000,   'free': 'Mora Gain Boost +5%',                                             'elite': 'Custom Card Font'},
+            {'tier': 10, 'xp_req': 1000, 'cumulative_xp': 10000,   'free': 'Drop Pack',                                                      'elite': 'Custom GIF Background'},
+            {'tier': 11, 'xp_req': 1000, 'cumulative_xp': 11000,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Jade Stone.gif'},
+            {'tier': 12, 'xp_req': 1000, 'cumulative_xp': 12000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Mora Gain Boost +10%'},
+            {'tier': 13, 'xp_req': 1000, 'cumulative_xp': 13000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gift Tax -10%'},
+            {'tier': 14, 'xp_req': 1000, 'cumulative_xp': 14000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Snowglobe.png',          'elite': 'Shop Discount +10%'},
+            {'tier': 15, 'xp_req': 1000, 'cumulative_xp': 15000,   'free': 'Drop Pack',                                                      'elite': '+30 Minigames Summon'},
+            {'tier': 16, 'xp_req': 2500, 'cumulative_xp': 17500,   'free': 'Mora Gift Tax -5%',                                              'elite': '+1 Chest Upgrade Limit'},
+            {'tier': 17, 'xp_req': 2500, 'cumulative_xp': 20000,   'free': 'Drop Pack',                                                      'elite': 'Kingdom Discount +10%'},
+            {'tier': 18, 'xp_req': 2500, 'cumulative_xp': 22500,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +10%'},
+            {'tier': 19, 'xp_req': 2500, 'cumulative_xp': 25000,   'free': '+1 Chest Upgrade Limit',                                         'elite': 'Shop Discount +10%'},
+            {'tier': 20, 'xp_req': 2500, 'cumulative_xp': 27500,   'free': 'Server Title | I\'m a little teapot',                      'elite': 'Kingdom Discount +10%'},
+            {'tier': 21, 'xp_req': 2500, 'cumulative_xp': 30000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Dragon Mouth.gif'},
+            {'tier': 22, 'xp_req': 2500, 'cumulative_xp': 32500,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gain Boost +10%'},
+            {'tier': 23, 'xp_req': 2500, 'cumulative_xp': 35000,   'free': 'Mora Gain Boost +5%',                                            'elite': '+1 Chest Upgrade Limit'},
+            {'tier': 24, 'xp_req': 2500, 'cumulative_xp': 37500,   'free': 'Mora Gift Tax -5%',                                              'elite': 'Shop Discount +10%'},
+            {'tier': 25, 'xp_req': 2500, 'cumulative_xp': 40000,   'free': 'Drop Pack',                                                      'elite': 'Kingdom Discount +10%'},
+            {'tier': 26, 'xp_req': 5000, 'cumulative_xp': 45000,   'free': 'Static Frame | ' + FRAMES_DIRECTORY + '/Mountains.png',          'elite': 'Animated Frame | ' + FRAMES_DIRECTORY + '/Holodragon.gif'},
+            {'tier': 27, 'xp_req': 5000, 'cumulative_xp': 50000,   'free': 'Mora Gain Boost +5%',                                            'elite': 'Mora Gain Boost +10%'},
+            {'tier': 28, 'xp_req': 5000, 'cumulative_xp': 55000,   'free': '+3 Minigames Summon',                                            'elite': 'Mora Gift Tax -10%'},
+            {'tier': 29, 'xp_req': 5000, 'cumulative_xp': 60000,   'free': 'Drop Pack',                                                      'elite': 'Shop Discount +10%'},
+            {'tier': 30, 'xp_req': 5000, 'cumulative_xp': 65000,   'free': 'Server Title | A Rekviem for the Underworld',                           'elite': 'Kingdom Discount +10%'},
+            {'tier': 31, 'xp_req': 5000, 'cumulative_xp': 70000,  'free': 'Prestige +1',                                                     'elite': 'Prestige +1'},
+        ]
+    ),
 ]
 
 REWARD_TYPES = {

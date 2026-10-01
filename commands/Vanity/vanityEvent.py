@@ -1,18 +1,18 @@
-import discord, firebase_admin, asyncio, datetime, time, aiohttp, ast
-from discord import app_commands
-from discord.ext import commands
-from firebase_admin import credentials, db
-from discord.ui import Button, View
-import importlib
+import discord
+import asyncio
+import datetime
+import time
+import aiohttp
+import ast
 import os
+
+from discord.ext import commands
+from firebase_admin import db
 
 from commands.Vanity.enabledGuilds import enabledGuilds
 
 ENABLED_GUILDS_PATH = "./commands/Vanity/enabledGuilds.py"
 
-# Guards all read-modify-write access to enabledGuilds.py so two concurrent
-# events (e.g. presence updates for two different guilds) can't race and
-# silently clobber each other's changes.
 enabled_guilds_lock = asyncio.Lock()
 
 last_modified = os.path.getmtime(ENABLED_GUILDS_PATH)
@@ -155,6 +155,29 @@ async def safe_send(channel_or_member, *args, context="", **kwargs):
     return None
 
 
+async def send_master_log(bot, guild, *args, embed=None, context="", skip_channel_id=None):
+    master = bot.get_channel(1555014249762398359)
+    master_embed = embed.copy() if embed is not None else discord.Embed()
+    master_embed.add_field(name="Guild", value=f"{guild.name} ({guild.id})")
+
+    return await safe_send(
+        master,
+        *args,
+        embed=master_embed,
+        allowed_mentions=discord.AllowedMentions.none(),
+        context=f"master log mirror: {context}",
+    )
+
+
+async def send_vanity_log(bot, chn, guild, *args, embed=None, context="", **kwargs):
+    """Send to the server's vanity log channel AND mirror to the master log channel."""
+    await safe_send(chn, *args, embed=embed, context=context, **kwargs)
+    await send_master_log(
+        bot, guild, *args, embed=embed, context=context,
+        skip_channel_id=getattr(chn, "id", None),
+    )
+
+
 def script(string, user, guild):
     if not string:
         return string
@@ -166,10 +189,6 @@ def script(string, user, guild):
     if "{user}" in string:
         string = string.replace("{user}", f"{user.name}")
 
-    # These four all need the configured role, so resolve it once instead of
-    # re-scanning `vanity` per placeholder. If the guild has no entry (stale
-    # cache, race with check_and_reload, etc.) or the role no longer exists,
-    # we log and leave the placeholder untouched rather than crashing.
     if any(tag in string for tag in ("{count}", "{count-th}", "{role}", "{rolename}")):
         entry = get_vanity_entry(guild.id)
         role = guild.get_role(entry["Role ID"]) if entry else None
@@ -258,9 +277,6 @@ class OnStatusUpdate(commands.Cog):
 
         role = after.guild.get_role(role_id) if role_id else None
         if role is None:
-            # The configured role no longer exists (deleted by someone) —
-            # disable the feature for this guild instead of repeatedly
-            # crashing on every future presence update.
             for key, val in vanity.items():
                 if val.get("Server ID") == after.guild.id:
                     try:
@@ -279,8 +295,10 @@ class OnStatusUpdate(commands.Cog):
                 colour=0xFF0000,
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await safe_send(
+            await send_vanity_log(
+                self.client,
                 chn,
+                after.guild,
                 "# Custom vanity role has been deleted by someone else.",
                 embed=embed,
                 context=f"role-deleted notice, guild {after.guild.id}",
@@ -314,7 +332,7 @@ class OnStatusUpdate(commands.Cog):
                     description=f":red_circle: {after.mention} has **removed** vanity link from their status."
                 )
                 embed.set_footer(text="Role removed")
-            await safe_send(chn, embed=embed, context=f"status-removed notice, guild {after.guild.id}")
+            await send_vanity_log(self.client, chn, after.guild, embed=embed, context=f"status-removed notice, guild {after.guild.id}")
 
         # Added vanity, go offline, removed vanity, go back online
         elif (link not in after_str) and (str(before.status) == "offline") and (role in after.roles):
@@ -326,7 +344,7 @@ class OnStatusUpdate(commands.Cog):
                 description=f":red_circle: {after.mention} has **removed** vanity link from their status."
             )
             embed.set_footer(text="Role removed")
-            await safe_send(chn, embed=embed, context=f"status-removed (offline path) notice, guild {after.guild.id}")
+            await send_vanity_log(self.client, chn, after.guild, embed=embed, context=f"status-removed (offline path) notice, guild {after.guild.id}")
 
         elif (link in after_str) and (role not in after.roles):
             try:
@@ -345,7 +363,7 @@ class OnStatusUpdate(commands.Cog):
                     description=f":green_circle: {after.mention} has **added** vanity link to their status."
                 )
                 embed.set_footer(text="Role added")
-            await safe_send(chn, embed=embed, context=f"status-added notice, guild {after.guild.id}")
+            await send_vanity_log(self.client, chn, after.guild, embed=embed, context=f"status-added notice, guild {after.guild.id}")
 
             # --- Thank-you message ---
             thanks_ref = db.reference("/Vanity Thanks")
@@ -440,6 +458,14 @@ class OnStatusUpdate(commands.Cog):
                     await safe_send(after, rendered_msg, embed=embed, context=f"thank-you DM, guild {after.guild.id}")
                 else:
                     await safe_send(thankyouChannel, rendered_msg, embed=embed, context=f"thank-you channel, guild {after.guild.id}")
+
+                await send_master_log(
+                    self.client,
+                    after.guild,
+                    rendered_msg,
+                    embed=embed,
+                    context=f"thank-you log, guild {after.guild.id}",
+                )
 
 
 async def setup(bot):

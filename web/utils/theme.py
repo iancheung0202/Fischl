@@ -139,7 +139,7 @@ def get_navbar(title, nav_links=None, show_dark_mode_button=True):
           <div class="flex h-16 items-center justify-between">
             <!-- Logo and title section -->
             <div class="flex items-center">
-              <a href="https://fischl.app/dashboard" class="flex items-center">
+              <a href="https://fischl.app/profile" class="flex items-center">
                 <img src="https://cdn.discordapp.com/avatars/732422232273584198/624035e5e9a841bfd3020e35a0a5c0a0.png?size=1024" 
                      alt="Fischl" 
                      class="h-8 w-8 sm:h-10 sm:w-10 rounded-full">

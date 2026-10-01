@@ -880,7 +880,7 @@ class Mora(commands.Cog):
                         }
 
                 def format_item(role, data, pinned=False):
-                    prefix = "📌 **Pinned:** " if pinned else "- -# "
+                    prefix = "📌 **Pinned:** " if pinned else "- "
                     if isinstance(role, int) or str(role).isdigit():  # Role
                         return (
                             f"{prefix}<@&{role}> **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
@@ -981,7 +981,7 @@ class Mora(commands.Cog):
             for ms in user_milestones:
                 is_role = isinstance(ms["reward"], int) or str(ms["reward"]).isdigit()
                 reward_display = f"<@&{ms['reward']}>" if is_role else ms["reward"]
-                milestones_text += f"- -# {reward_display} - *Earned at {MORA_EMOTE} `{ms['threshold']:,}` <t:{ms['timestamp']}:R>*\n"
+                milestones_text += f"- {reward_display} - *Earned at {MORA_EMOTE} `{ms['threshold']:,}` <t:{ms['timestamp']}:R>*\n"
         else:
             milestones_text = f"No {SlashCommand('milestones')} earned yet"
 

@@ -1,7 +1,9 @@
-import discord, asyncio, datetime, time, aiohttp
+import discord
+import time
+import os
+
 from discord.ext import commands, tasks
 from firebase_admin import db
-import os
 
 try:
     from .tagEnabledGuilds import enabledGuilds
@@ -60,23 +62,13 @@ class TagRoleHandler(commands.Cog):
         if not all_configs:
             return
 
-        log_chn = self.bot.get_channel(1026867655468126249)
+        log_chn = self.bot.get_channel(1555014249762398359)
 
         for guild_id in enabledGuilds:
             try:
                 guild = self.bot.get_guild(guild_id)
                 if not guild: 
                     continue
-
-                # Force chunk to ensure cache is up to date
-                # try:
-                #     if not guild.chunked:
-                #         await asyncio.wait_for(guild.chunk(), timeout=20.0)
-                #         print(f"Chunking guild {guild.name} ({guild.id}) with {guild.member_count} members")
-                # except asyncio.TimeoutError:
-                #     print(f"Timed out chunking guild {guild.name}")
-                # except Exception as e:
-                #     print(f"Error chunking guild {guild.name}: {e}")
                 
                 config = None
                 for _, val in all_configs.items():
@@ -208,8 +200,6 @@ class TagRoleHandler(commands.Cog):
         
         # Query by User instead of fetching all
         try:
-            # We query by User, then filter by Guild in memory (since we can only query 1 field)
-            # Assuming User ID is more selective than Guild ID
             snapshot = ref.order_by_child('User').equal_to(member.id).get()
             if snapshot:
                 for key, val in snapshot.items():

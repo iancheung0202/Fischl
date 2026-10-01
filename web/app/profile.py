@@ -2,7 +2,6 @@ import requests
 import traceback
 import html
 
-from firebase_admin import db
 from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, session, redirect, abort, jsonify
 
@@ -134,12 +133,10 @@ def api_profile_data():
 
     bot_guild_ids = {g["id"] for g in bot_guilds}
 
-    system_data = db.reference("/Chat Minigames System").get() or {}
-
-    guilds_with_events = [
-        g for g in guilds
-        if g["id"] in bot_guild_ids and check_events_enabled(g["id"], system_data)
-    ]
+    candidates = [g for g in guilds if g["id"] in bot_guild_ids]
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        enabled_flags = list(executor.map(lambda g: check_events_enabled(g["id"]), candidates))
+    guilds_with_events = [g for g, ok in zip(candidates, enabled_flags) if ok]
     guilds_sorted = sorted(guilds_with_events, key=lambda g: g["name"].lower())
 
     guild_cards = ""

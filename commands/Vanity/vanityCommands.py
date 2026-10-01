@@ -1,23 +1,17 @@
-import discord, firebase_admin, datetime, asyncio, time, emoji, ast, re
+import asyncio
+import discord
+import datetime
+import ast
+import re
+
 from firebase_admin import db
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, View
-import importlib
-import os
 
 ENABLED_GUILDS_PATH = "./commands/Vanity/enabledGuilds.py"
 
-# NOTE: vanityEvent.py has its own asyncio.Lock() guarding this same file.
-# Locks are per-process-module, so this one does NOT protect against a race
-# with that one if they're different Python objects at runtime. Ideally both
-# files should import a single shared lock/helper module for enabledGuilds.py
-# access. Flagging this rather than silently leaving the race in place.
 enabled_guilds_lock = asyncio.Lock()
 
-# A permissive-but-sane check for "discord.gg/xyz"-shaped invite links. This
-# doesn't verify the invite is real/live -- just that a later `.split(".")[1]`
-# won't blow up with an IndexError.
 LINK_PATTERN = re.compile(r"^[\w.-]+\.[a-zA-Z]{2,}/.+$")
 
 
@@ -158,9 +152,6 @@ class embed_modal(discord.ui.Modal, title = "Setup Vanity Roles Thank You Messag
     ref = db.reference("/Vanity Thanks")
     welcome = ref.get() or {}
 
-    # Default in case no matching config is found (shouldn't normally happen,
-    # since /vanity thanks writes this before showing the modal, but the
-    # original code would crash here with an UnboundLocalError if it did).
     thankyouChannel = "the configured channel"
     found = False
     for key, val in welcome.items():
@@ -234,10 +225,6 @@ class VanityCommands(commands.GroupCog, name="vanity"):
     role: discord.Role,
     log_channel: discord.TextChannel
   ) -> None:
-    # Validate the link format up front. The original code only discovered a
-    # malformed link when `link.split(".")[1]` crashed further down -- by
-    # which point a DB entry may already have been written with no rollback,
-    # and the user just sees a generic "interaction failed" with no reason.
     if not LINK_PATTERN.match(link):
       await interaction.response.send_message(
         ":x: That doesn't look like a valid invite link. Expected format: `discord.gg/yourinvite`.",
@@ -430,7 +417,6 @@ class VanityCommands(commands.GroupCog, name="vanity"):
 
     await interaction.response.send_modal(embed_modal())
     
-      
 
 async def setup(bot: commands.Bot) -> None:
   await bot.add_cog(VanityCommands(bot))
