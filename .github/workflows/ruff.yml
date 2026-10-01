@@ -4,52 +4,51 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
 
 jobs:
   ruff:
+    name: Ruff Auto-Fix
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run Ruff fixes
+      - name: Auto-fix lint issues
         uses: astral-sh/ruff-action@v3
         with:
-          args: check . --fix
+          args: check . --fix-only
 
-      - name: Format with Ruff
+      - name: Auto-format code
         uses: astral-sh/ruff-action@v3
         with:
           args: format .
 
-      - name: Commit Ruff fixes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet; then
-            echo "No Ruff fixes needed."
-          else
-            git add .
-            git commit -m "style: auto-fix with Ruff"
-            git push
-          fi
-
-      - name: Strict lint check
+      - name: Check remaining issues
         uses: astral-sh/ruff-action@v3
         with:
           args: check .
 
-      - name: Strict format check
+      - name: Check formatting
         uses: astral-sh/ruff-action@v3
         with:
           args: format --check .
+
+      - name: Commit Ruff fixes
+        run: |
+          if git diff --quiet; then
+            echo "No Ruff changes needed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add .
+          git commit -m "style: auto-fix with Ruff"
+          git push
