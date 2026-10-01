@@ -290,4 +290,3 @@ def wrap_page(title, content, nav_links, favicon_url=None):
       </script>
     </body>
     </html>"""
-

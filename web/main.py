@@ -6,17 +6,13 @@ from flask import Flask, redirect, request, session, abort, render_template
 from config.settings import API_BASE, CLIENT_ID, REDIRECT_URI, PROFILE_REDIRECT_URI, MYSTICRAFT_REDIRECT_URI, MYSTICRAFT_CLIENT_ID, MYSTICRAFT_CLIENT_SECRET, MYSTICRAFT_TOKEN
 
 from app.logs import logs
-from app.dashboard import dashboard
-from app.tickets import tickets
-from app.partnership import partnership
 from app.profile import profile
-from app.minigames import minigames
 
 app = Flask(__name__, static_url_path="")
 app.secret_key = os.urandom(24)
 app.url_map.strict_slashes = False
 
-blueprints = [logs, dashboard, tickets, partnership, profile, minigames]
+blueprints = [logs, profile]
 for blueprint in blueprints:
     app.register_blueprint(blueprint)
 
@@ -271,11 +267,11 @@ def variables():
         abort(404)
     return app.send_static_file("variables.html")
 
-@app.route("/tree")
-def tree():
-    if request.host != "ticket.mysticraft.xyz":
+@app.route("/legal")
+def legal():
+    if request.host != "fischl.app":
         abort(404)
-    return app.send_static_file("tree.html")
+    return app.send_static_file("legal/index.html")
 
 
 if __name__ == "__main__":
