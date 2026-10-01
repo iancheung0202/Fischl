@@ -25,6 +25,16 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/8/8a/Chevreuse_Icon.png",
         "birthday": "01-10",
     },
+    "Sandrone": {
+        "line": "Hmph, USER. Here, take this. I wouldn't normally give these out, but today's a special day — it marks the day you came into the world. I invited Arlecchino and Columbina, plus a few shared friends. I even baked a special cake for the occasion... so you'd best look forward to it.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/c/c8/Sandrone_Icon.png",
+        "birthday": "01-13",
+    },
+    "Columbina": {
+        "line": "Your birthday is on the same day every year? Wow, that's easy to remember, USER. Moon-Prayer Night is held at different times each year, so I can only estimate my birthday by sensing the moon. A birthday is such a joyous occasion, isn't it? Everyone gathers to dance while people make delicious offerings to give you. Huh...? Regular people's birthdays aren't like that? Gifts, cake, and friends...? Oh, that works too. Let's invite your friends to celebrate. I can sing you a song, and we can even ask Maalaus to paint a picture for you.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/3/35/Columbina_Icon.png",
+        "birthday": "01-14",
+    },
     "Diona": {
         "line": "Here you go — fried fish with my special sauce! ... Relax, USER, I didn't add anything strange! My cooking is actually really good when I want it to be — stop talking and try it already! Hmph... that's better... Oh, and uh, happy birthday, USER.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/4/40/Diona_Icon.png",
@@ -55,10 +65,15 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/b/b2/Lyney_Icon.png",
         "birthday": "02-02",
     },
-    "Aino": {
-        "line": "Looks like someone's waiting for an Aino surprise... Tada! Hehe, it's the Spinny Chanty Wishing Lantern! When you light the candle, it sings happy birthday and spins around. Isn't it fun, USER? If you like it, then you have to play with me next year too! Oh, uh, now you gotta make a wish, and you gotta say it out loud so I can hear it! Whatever you wish for, Aino the genius can make it come true!",
-        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a3/Aino_Icon.png/",
-        "birthday": "09-21",
+    "Vesna": {
+        "line": "Ding-dong! The moment has arrived! USER, you have no idea how hard it was for me to hold it in yesterday... But I had to, because saying it early is bad luck — you might get swallowed up by a snowstorm! Now, I can finally say it: Happy Birthday, my dear friend. May you stand as strong as the birch tree, never defeated by the wind and snow. Alright, that part's done. Next, tradition dictates that I've got to give our birthday superstar a few gentle tugs on the ear...",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/9/95/Vesna_Icon.png",
+        "birthday": "02-04",
+    },
+    "Alyosha": {
+        "line": "Happy Birthday, USER. It is today, isn't it? Y'know, where I come from, birthday celebrations are usually a luxury we can't afford. Good luck scrounging up enough flour and cream for a cake, or finding someone who sells anything but the bare essentials to use as a gift. But, I'll never begrudge a kid for wanting to celebrate their birthday. That's how it should be, and one day, I hope no child in Snezhnaya has to go without. So, I've decided to take your birthday very seriously, and I've put a lot of thought into the gift and card I got for you. Sometimes, you have to be the change you want to see in the world, right?",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/1/1d/Alyosha_Icon.png",
+        "birthday": "02-09",
     },
     "Alhaitham": {
         "line": "Happy birthday, USER. I've always thought people are a little too enthusiastic about celebrating the day they were born. Wouldn't it be better to apply all that enthusiasm towards their daily lives and improve their standards of living? But you seem to have done well for yourself. I didn't know what kind of gift to get, so I'll just set up a special application channel, reserved for your submissions alone.",
@@ -70,9 +85,20 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/e/e1/Beidou_Icon.png",
         "birthday": "02-14",
     },
+    "Varka": {
+        "line": "Come, board my ship. I've gathered the crew. The food and drink are all prepared. Today is your birthday, USER, so you are the captain. Haha, so: where should we set sail?",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/9/98/Varka_Icon.png",
+        "birthday": "02-17",
+    },
+    "Odette": {
+        "line": "Happy Birthday, USER! I was trying to think of what to get you... I usually receive things like flowers, ballet shoes, and music boxes, but I doubt that's what you have in mind. How about you simply... make a wish, here and now? Ideally, something within my power to grant, of course...",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/8/87/Odette_Icon.png",
+        "birthday": "02-20",
+    },
     "Kokomi": {
         "line": "Happy birthday, USER! So, what are your plans for the day? Oh, why don't we celebrate on Watatsumi Island? First, I'll take you out at daybreak to see the sunrise, then we can go diving during the heat of the day. In the evening, we can go for a stroll around Sangonomiya Shrine. If it rains, we'll find somewhere cozy to hide out with a few strategy books, and try to bake a cake together! In any case, no need to plan anything, the grand strategist has everything thought out for you!",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/f/ff/Sangonomiya_Kokomi_Icon.png",
+        "birthday": "02-22",
     },
     "Bennett": {
         "line": "Happy birthday, USER! Best of luck in the year ahead. Don't worry, bad luck isn't contagious! As long as I'm around, it'll be drawn to me and not you, so you're safe.",
@@ -107,6 +133,7 @@ characters_dict = {
     "Mizuki": {
         "line": "Today is a very special day for the both of us. Meeting you has given me the chance to witness a wondrous world of endless dreams... So, why don't we celebrate this occasion with a dreamscape for just the two of us? Of course, we'll need to build it from the ground up. So, tell me what you'd like to see, USER...",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/f/f6/Yumemizuki_Mizuki_Icon.png",
+        "birthday": "03-16",
     },
     "Noelle": {
         "line": "Since you're always so busy adventuring, there must be so many little things you never get round to, surely? Well, you need not worry about them adding up, because today, I am all yours — your exclusive maid for the entire day! Just leave it all to me, USER! ...Also, I'd like to take this opportunity to wish you a very happy birthday!",
@@ -121,11 +148,22 @@ characters_dict = {
     "Ayato": {
         "line": "Happy Birthday, USER! Now, how would you like to be Yashiro Commissioner for a day, hmm? All the work has been handled already, so you can focus on simply enjoying the feeling of having an enormous amount of executive power at your fingertips. Don't worry, the retainers won't dare question it, I'll be with you the entire time, hehe.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/2/27/Kamisato_Ayato_Icon.png",
+        "birthday": "03-26",
+    },
+    "Vodyanitsa": {
+        "line": "Happy Birthday, USER! I've set aside your gift. You can open it later. It's just some small trinkets, toys, and whatnot... Eh, but that's not the important part. You're free now, aren't you? In that case, come with me! We're going to my echo chamber. I got someone to buy me a Dance-Off Stage from Natlan a few days ago, along with a whole bunch of weird and wonderful instruments. I'm working on the best music event Snezhnaya's ever seen, and guess who's the first person to receive an invitation? That's right, it's you! Come on, let's sing the night away!",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/9/97/Vodyanitsa_Icon.png",
+        "birthday": "03-26",
     },
     "Sigewinne": {
         "line": "Happy Birthday, USER! From what I've observed, you're always going from one place to the next. So, I made a special skincare set just for you that's portable and practical. Come on, lay down and close your eyes, I'll show you how to use it. First, I'm gonna apply a wet compress to your face — but you can just splash some water on there if you're ever in a hurry... Next, we squeeze out a small amount of foam cleanser, gently massaging it in with a circular motion, following the muscle, before rinsing and drying... And lastly, we apply some moisturizer with Tidalga extract... And, we're done! You look radiant, and now it's time for lovely little you to go and enjoy your special day to the fullest!",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/3/37/Sigewinne_Icon.png",
         "birthday": "03-30",
+    },
+    "Lohen": {
+        "line": "Today's your birthday, USER, so I got you a mini-crossbow. I came up with the design myself. It should be the perfect size for your wrist... When did I measure your wrist? Don't worry, I did it by eye. You can trust my ability to gauge things like this — I'm vice captain of the 5th Company, after all. Oh, right, this crossbow can also fire backward, just in case someone sneaks up on you. You just press... here. Hahaha, no need to duck! The safety lock is still on. Do I look like the kind of person who gives a friend a crossbow just to watch them shoot themselves...",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/8/86/Lohen_Icon.png",
+        "birthday": "04-03",
     },
     "Aloy": {
         "line": "Never put much stock in birthdays. Where I come from, it's a time to celebrate your mother, not yourself. Even so, I wish you a, uh... happy day, USER.",
@@ -182,6 +220,11 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a2/Collei_Icon.png",
         "birthday": "05-08",
     },
+    "Zibai": {
+        "line": "Today is your birthday? Then we must celebrate, USER. I recall that it is customary for the elderly to eat Longevity Noodles... Hehe, and while you appear youthful, I suspect that if we were to count the years since your birth, you would in fact be older than most people in Liyue Harbor. In that sense, preparing a bowl of Longevity Noodles for you would not be an inappropriate gesture... Hmm? Of course I know how to make them. I may have joined the celestial ranks in my time, but I wasn't born with a silver spoon in my mouth... *sigh* Frankly, the only reason I no longer have much of an appetite these days is probably all that time I spent in the heavens without any facility to cook... But I digress. Eating is the second most important affair in the world, so we must ensure that you enjoy a good bowl of Longevity Noodles before the day is through.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/2/22/Zibai_Icon.png",
+        "birthday": "05-15",
+    },
     "Gorou": {
         "line": "Today's a momentous occasion, your birthday, USER! Allow me to arrange all the celebrations for you! We can make a bonfire on the beach and catch some fresh fish and crabs. I'll personally prepare a morale-boosting meal that would make even the highest-ranking generals jealous.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/f/fe/Gorou_Icon.png",
@@ -191,6 +234,11 @@ characters_dict = {
         "line": "Oh, USER, so today's your birthday? Well, I wouldn't know how to throw you a feast if I tried... so how about I sing you a song? For you alone, an audience of one. So... what song would you like to hear me sing? The choice is yours.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/9/9c/Yun_Jin_Icon.png",
         "birthday": "05-21",
+    },
+    "Linnea": {
+        "line": "Happy Birthday, USER... This isn't the most valuable gift, but it's something I've had in my collection for a long time... Please accept this fossil. See this? These are bone and feather impressions from a long-extinct bird species. They'll never fly again, and yet the moment that this one spread its wings has left an imprint that will last long into the future. So, even if life fades in the end, there will always be some proof of our existence left behind. May your life be as tenacious as an old tree, with each and every ring telling a beautiful tale.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a9/Linnea_Icon.png",
+        "birthday": "05-23",
     },
     "Fischl": {
         "line": "Well! If today is truly the anniversary of your birth, it shan't do for me not to mark the occasion. USER, you have my full attention. Speak! Speak to me of your wishes, that which you most desire to fulfill during your fleeting and harsh existence in this wretched world. Whatever that wish may be.",
@@ -205,6 +253,7 @@ characters_dict = {
     "Itto": {
         "line": "Today's an important day. I had to send the gang away, otherwise they'd be accusing me of favoritism. Here, take a look at this. I got you the greatest birthday gift combo ever! One top-grade Onikabuto — I'll have you know it took me three whole days and nights to catch this bad boy — one out-of-print collectible trading card that took me 300 rounds to get my hands on, and finally, a birthday song performance performed personally by yours truly! Happy Birthday to you, Happy Birthday to you, Happy Biiiirthday dear USER, Happy Birthday to youuuu!",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/7/7b/Arataki_Itto_Icon.png",
+        "birthday": "06-01",
     },
     "Escoffier": {
         "line": "Esteemed Traveler, USER, you are the \"ultimate variable\" of Teyvat, the one who brought a unique flavor to this world. A birthday celebration in your honor calls for a feast with eighty dishes at least — four meat, four wild game, four pastry, and two soup dishes, just to start... Still, gorging on food is no way to dine — it's a disservice to your health and to the dishes themselves... Thus, we shall just have to celebrate your birthday over the entire week! Ten dishes a day should do it. I want you to appreciate each one to the fullest. A culinary symphony awaits!",
@@ -254,6 +303,7 @@ characters_dict = {
     "Sara": {
         "line": "Excellent timing, USER. I will dispense with the formalities and get straight to the point — do you have a birthday wish? Providing that it does not conflict with the Almighty Shogun's grand cause, I will make every effort to see it come to fruition. To show that I am being completely serious, I will allow you to make not one, but five birthday wishes.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/d/df/Kujou_Sara_Icon.png",
+        "birthday": "07-14",
     },
     "Hu Tao": {
         "line": "Tonight the stars are dazzling and the moon majestic, it must be a special day... But just what day could it be... Haha, I know, I know! It's your birthday, USER! It really is a great day.",
@@ -268,6 +318,7 @@ characters_dict = {
     "Heizou": {
         "line": "USER, after I learned that today was your birthday, there was a brief moment when I really wanted to take you to a locked room chock-full of mechanisms and gifts, where you could only get out by solving all the puzzles... Hehe, it's actually really fun! You know, of course I wouldn't do anything like that unless I was sure you'd actually enjoy it. Here, come with me. There's this beautiful scenic spot I've gotta show you before the sun goes down.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/2/20/Shikanoin_Heizou_Icon.png",
+        "birthday": "07-24",
     },
     "Klee": {
         "line": "♪ Happy birthday to you, happy birthday to you, happy birthday dear traveler, happy birthday to you, USER! ♪ You're older than me right? That means you've had way more birthdays than me... I'm sooo jealous!",
@@ -277,6 +328,7 @@ characters_dict = {
     "Shinobu": {
         "line": "Happy birthday, USER! Here, take this special dart made from Naku Weed. Be careful, yep, that's the way to hold it... Make sure you predict the trajectory before you throw it... Hehe, I'm happy that you like it. Oh, don't treat it like a toy, it's still quite dangerous. If you want to practice a little more, I can teach you.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/b/b3/Kuki_Shinobu_Icon.png",
+        "birthday": "07-27",
     },
     "Yanfei": {
         "line": "Happy birthday, USER! Here, this is for you. I've collated legislation from all the nations — you're planning to go traveling, right? It will serve you well to familiarize yourself with the law of the different lands.\nDon't study too hard mind you, or else... I won't be of any use to you.",
@@ -358,6 +410,11 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/5/5b/Clorinde_Icon.png",
         "birthday": "09-20",
     },
+    "Aino": {
+        "line": "Looks like someone's waiting for an Aino surprise... Tada! Hehe, USER, it's the Spinny Chanty Wishing Lantern! When you light the candle, it sings happy birthday and spins around. Isn't it fun, USER? If you like it, then you have to play with me next year too! Oh, uh, now you gotta make a wish, and you gotta say it out loud so I can hear it! Whatever you wish for, Aino the genius can make it come true!",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a3/Aino_Icon.png",
+        "birthday": "09-21",
+    },
     "Emilie": {
         "line": "Happy birthday, USER! I know perfume preferences are extremely personal, but I took the liberty of choosing one I think you'll like. It's one of my own creations, actually, but it's not available to purchase yet. I tried to combine the floral and fruity notes found in nature around this time of year. I was going for more of a subtle scent. Anyway, I hope it brings you a little peace and comfort whenever you wear it.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/aa/Emilie_Icon.png",
@@ -371,6 +428,12 @@ characters_dict = {
     "Ayaka": {
         "line": "Come with me! We're not going far away — I promise it won't delay you too much.\nI managed to find out when your birthday was well in advance, USER, so I could prepare in good time. Hopefully this wasn't assuming too much, but I guessed you might prefer this to an expensive gift.\nIn honor of your birthday, please allow me to perform a fan dance for you.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/5/51/Kamisato_Ayaka_Icon.png",
+        "birthday": "09-28",
+    },
+    "Nicole": {
+        "line": "Happy Birthday, USER! I hid your birthday gift inside a chest and set up a bunch of puzzles for you to solve. Come on, I'll guide you through it!",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/a/a0/Nicole_Icon.png",
+        "birthday": "09-28",
     },
     "Xingqiu": {
         "line": "May this day of your birth be filled with much mirth, USER!\nAccording to historical records, Tiancheng's stone bridge was formed by a fallen rock spear thrown by the Geo Archon Morax in battle. If you walk along the bridge on your birthday and throw some Mora into the sea from both sides, you will be blessed in the coming year... \nUSER, your birthday only comes once a year, so be quick about it if you wanna go... I'm not kidding, it's true! Go try it and you'll see!",
@@ -410,6 +473,7 @@ characters_dict = {
     "Kazuha": {
         "line": "I heard it was your birthday, USER, so I wrote a haiku for you. Unfortunately, I'm not the most talented in this area, and after trying for several evenings, I was still only able to come up with the first two lines... I guess I'll just share what I've got so far, then. \"Sun and moon rejoice / Birds of dawn sing songs anew\"... Wait, don't say a word, I think the final line is coming to me... Yes, how about.... \"Far from home, with you.\" Anyway, Happy Birthday. Let's go and get you some cake, shall we?",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/e/e3/Kaedehara_Kazuha_Icon.png",
+        "birthday": "10-29",
     },
     "Xiangling": {
         "line": "Ah, USER, there you are! Come with me, I've prepared a birthday feast all for you! ... No really, USER, I insist! Which dish is your favorite? It's okay, take your time, try them all first, then let me know!",
@@ -429,6 +493,11 @@ characters_dict = {
     "Keqing": {
         "line": "Happy birthday, USER! I've got a very special gift for you. It might look like an ordinary old lantern, but this one runs on Electro energy and stays alight for a really long time. For those times when you need a little extra light in your life.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/5/52/Keqing_Icon.png",
+        "birthday": "11-20",
+    },
+    "Prune": {
+        "line": "Happy Birthday, USER! No need to look so surprised — not like it's hard to fish a date out of people. There is a crucial piece of information I didn't manage to uncover though... Your birthday wish! Huh? Saying it out loud means it won't come true? I disagree. That just makes it harder for people like me to help make it a reality. So, c'mon, no use beating around the bush. What do you want? You might think there's not much I can do, but I've saved up quite a bit of allowance. Besides, you're always saying how smart I am, so I'm sure it's something I can help with! Unless it's something like, 'buying a house in the center of Mondstadt with no mortgage.' But, you wouldn't wish for something that unreasonable... right?",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/9/99/Prune_Icon.png",
         "birthday": "11-20",
     },
     "Wriothesley": {
@@ -481,6 +550,11 @@ characters_dict = {
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/7/77/Gaming_Icon.png",
         "birthday": "12-22",
     },
+    "Illuga": {
+        "line": "USER, happy birthday, squadmate! Forget about commissions and adventures — days like this are reserved for close friends, full bellies, and catching up on sleep! I'll be standing watch, so you just focus on letting your hair down. And on the off-chance we get gate-crashers, I'll scare 'em off with my trusty lamp.",
+        "icon": "https://static.wikia.nocookie.net/gensin-impact/images/9/96/Illuga_Icon.png",
+        "birthday": "12-23",
+    },
     "Tighnari": {
         "line": "Happy birthday, USER! I picked out a potted plant in full bloom for you, along with a gardening guide. If anything happens to it, don't hesitate to find me at any time. This plant comes with a Forest Watcher lifetime guarantee.\nI'll have you know a lot of flowers are in season on your birthday. It took me forever to choose one. I'll get you a different species next year!",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/8/87/Tighnari_Icon.png",
@@ -527,7 +601,7 @@ characters_dict = {
         "birthday": "05-09",
     },
     "Skirk": {
-        "line": "Happy Birthday, USER! I know some people like to throw a huge party, while others prefer a quieter affair. I don't know which kind of person you are, but for me, birthdays are a time to reflect on the past year — sometimes with pride in my progress, other times with profound regret. ...It's probably best not to ascribe so much meaning to birthdays after all. Each place has its own festivals for celebrating the land, one's ancestors, friendship... but your birthday is the one day of the year that is meant just for you. Okay, speech over — once again, I wish you a Happy Birthday, and I hope you keep growing into the person you aspire to become. Feelings About Ascension: Intro Icon Character Ascension Unlocked Ascension Phase 1",
+        "line": "Happy Birthday, USER! I know some people like to throw a huge party, while others prefer a quieter affair. I don't know which kind of person you are, but for me, birthdays are a time to reflect on the past year — sometimes with pride in my progress, other times with profound regret. ...It's probably best not to ascribe so much meaning to birthdays after all. Each place has its own festivals for celebrating the land, one's ancestors, friendship... but your birthday is the one day of the year that is meant just for you. Okay, speech over — once again, I wish you a Happy Birthday, and I hope you keep growing into the person you aspire to become.",
         "icon": "https://static.wikia.nocookie.net/gensin-impact/images/0/03/Skirk_Icon.png",
         "birthday": "11-05",
     },

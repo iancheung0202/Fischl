@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Fischl · Expeditions</title>
+  <link rel="icon" href="https://cdn.discordapp.com/avatars/732422232273584198/624035e5e9a841bfd3020e35a0a5c0a0.png?size=64">
+  <link rel="preload" href="/world/ja-jp.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/world/world.css">
+</head>
+<body>
+  <div id="veil"><svg viewBox="-50 -50 100 100" class="compass"><circle r="44" fill="none" stroke="#d3bc8e"/><path d="M0-44L6 0 0 44-6 0Z M-44 0L0-6 44 0 0 6Z" fill="#d3bc8e"/></svg><p>Getting your map ready</p></div>
+  <div id="flash"></div>
+
+  <main id="world">
+    <div class="scroller" id="wscroll"><div class="canvas" id="wcanvas"><div id="wnodes"></div></div></div>
+    <header class="hud"><span class="pill title">Your servers</span><span class="grow"></span><span class="pill who"><img id="av" alt=""><b id="me"></b></span><a class="pill btn" href="/logout">Log out</a></header>
+  </main>
+
+  <section id="region" hidden>
+    <div class="scroller" id="rscroll"><div class="canvas" id="rcanvas"><svg id="rsvg" viewBox="0 0 1000 600"></svg></div></div>
+    <header class="hud"><button class="pill btn" id="back">← Map</button><span class="pill title" id="rname"></span><span class="grow"></span><button class="pill btn gold" id="openmenu">Pass &amp; board</button></header>
+    <div id="dock" class="card"></div>
+  </section>
+
+  <div id="sheet"><div class="card" id="spanel"></div></div>
+  <aside id="menu" class="card"><div class="mhead"><button class="tab sel" data-tab="pass">Season pass</button><button class="tab" data-tab="board">Wayfarers</button><span class="grow"></span><button class="btn" id="closemenu">Close</button></div><div id="mbody"></div></aside>
+  <div id="pp"><div class="card"><button class="btn" id="ppclose">Maybe later</button><br><br><h2>Elite track</h2><p class="hint">One season, this server only<br>USD ${{ boot.price }}</p><div id="ppbox"></div></div></div>
+  <div id="tip" class="card"></div><div id="toast"></div>
+
+  <script>window.BOOT = {{ boot|tojson }};</script>
+  <script src="/world/world.js" defer></script>
+</body>
+</html>
