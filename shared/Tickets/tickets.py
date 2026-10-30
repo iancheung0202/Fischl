@@ -2610,7 +2610,7 @@ class Ticket(commands.GroupCog, name="ticket"):
         description="Create a ticket for a user (Mods only, bypasses cooldown & blacklist)",
     )
     @app_commands.describe(user="Specify a user")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.has_permissions(manage_channels=True)
     async def ticket_create(
         self, interaction: discord.Interaction, user: discord.Member
     ):
