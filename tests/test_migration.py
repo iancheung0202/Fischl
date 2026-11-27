@@ -718,3 +718,58 @@ async def test_coop_move_stops_on_a_missing_field(pool, firebase, old_coop, tmp_
         async with pool.acquire() as connection, connection.transaction():
             await move.coop(connection, firebase_admin.db, str(tmp_path))
     assert await pool.fetchval("SELECT to_regclass('coop_servers')") is None
+
+
+async def test_winners_move_once(pool, firebase, tmp_path, monkeypatch):
+    import firebase_admin.db
+
+    before = {"1281655927791030293": "748745444527570945", "5": "6"}
+    firebase("/Weekly Leaderboard").set(before)
+    monkeypatch.setenv("EXPORT_FOLDER", str(tmp_path))
+    await move.winners(pool, firebase_admin.db)
+    rows = await pool.fetch("SELECT * FROM weekly_winners ORDER BY server_id")
+    assert [tuple(row) for row in rows] == [
+        (5, 6),
+        (1281655927791030293, 748745444527570945),
+    ]
+    saved = json.loads((tmp_path / "winners-export.json").read_text())
+    assert saved == {"Weekly Leaderboard": before}
+    assert firebase("/Weekly Leaderboard").get() == before
+    (tmp_path / "winners-export.json").unlink()
+    with pytest.raises(SystemExit):
+        await move.winners(pool, firebase_admin.db, str(tmp_path))
+    assert not (tmp_path / "winners-export.json").exists()
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("5", 6),
+        ("5", 6.0),
+        ("5", True),
+        ("5", "6.0"),
+        ("5", ""),
+        ("5", "06"),
+        ("5", " 6"),
+        ("five", "6"),
+        ("5", {"User ID": "6"}),
+    ],
+)
+async def test_winners_move_stops_on_ids_in_another_form(
+    pool, firebase, tmp_path, key, value
+):
+    import firebase_admin.db
+
+    firebase("/Weekly Leaderboard").set({"1": "2"})
+    firebase(f"/Weekly Leaderboard/{key}").set(value)
+    with pytest.raises((SystemExit, TypeError)):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.winners(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('weekly_winners')") is None
+
+
+async def test_winners_move_with_nothing_saved(pool, firebase, tmp_path):
+    import firebase_admin.db
+
+    await move.winners(pool, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT count(*) FROM weekly_winners") == 0

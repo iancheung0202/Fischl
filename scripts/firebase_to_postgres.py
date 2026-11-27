@@ -8,6 +8,7 @@ moved out of the repo:
     EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py topics
     EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py birthday
     EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py coop
+    EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py winners
 Firebase is only read, so the old copy stays as it was. Each system saves what
 it read to `<system>-export.json` next to that file (or in EXPORT_FOLDER), checks every row it wrote
 and refuses to run once its tables hold data."""
@@ -526,6 +527,28 @@ async def coop(pool, db, folder=None):
     )
 
 
+async def winners(pool, db, folder=None):
+    """Each server's current weekly leaderboard winner."""
+    from commands.Custom import winnerStore as store
+
+    await store.create(pool)
+    if await pool.fetchval("SELECT count(*) FROM weekly_winners"):
+        raise SystemExit("weekly_winners already has rows; Postgres is the live copy")
+    folder = folder or os.environ["EXPORT_FOLDER"]
+    saved = export(folder, "winners", db, ("Weekly Leaderboard",))["Weekly Leaderboard"]
+    ids = [str(key) for key in saved] + list(saved.values())
+    odd = [id for id in ids if type(id) is not str or not re.fullmatch(r"[1-9]\d*", id)]
+    if odd:
+        raise SystemExit(f"winners with an id in another form: {odd}")
+    rows = [(int(server), int(member)) for server, member in saved.items()]
+    for row in rows:
+        await store.crown(pool, *row)
+    await same(pool, "SELECT server_id, user_id FROM weekly_winners", rows, "winners")
+    if await pool.fetchval("SELECT count(*) FROM weekly_winners") != len(rows):
+        raise SystemExit("winners differ from Firebase")
+    print(f"winners: {len(rows)} servers; every row matches Firebase")
+
+
 SYSTEMS = {
     "tag": tag,
     "vanity": vanity,
@@ -533,6 +556,7 @@ SYSTEMS = {
     "topics": topics,
     "birthday": birthday,
     "coop": coop,
+    "winners": winners,
 }
 
 

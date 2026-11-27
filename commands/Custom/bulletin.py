@@ -3,14 +3,89 @@ import time
 import discord
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
-from commands.Events.helperFunctions import addMora
+from commands.Custom import winnerStore as store
+
+BULLETIN = 1281655927791030293
+LEADERBOARD_CHANNEL = 1312858564695687310
+WINNER_ROLE = 1313053449549512704
+WINNER_MORA = 100000
+MORA_SOURCE = 10
+
+INVITE_LINKS = ("discord.com/invite/", "discord.gg/", "discordapp.com/invite/")
+INVITE_CATEGORIES = [
+    1281655927791030302,
+    1299725218767568997,
+    1281690196357808240,
+    1301601587059490836,
+]
+INVITE_ROLES = (1282396278071890086, 1282395927168159876)
+MOD_LOG = 1288400196220227594
+
+RULES_CHANNEL = 1281655927971250305
+RULES_MESSAGE = 1297054467107328000
+ANNOUNCEMENTS = [
+    1281673438435741696,
+    1281675540511850639,
+    1281675690416279633,
+    1281675725216284753,
+]
+
+ABOUT = (
+    "The leaderboard will be updated every Saturday. The member who secures the top "
+    "position in the **text message leaderboard** will be granted the prestigious "
+    f"<@&{WINNER_ROLE}> role for the entire week, along with the following generous "
+    "reward:\n\n- The role comes with its own category and autorespond GIF\n- Members "
+    "will be able to mention your role any time (flex)\n\n> To view the current "
+    "leaderboard, please use </stats message:1025501230044286982>. Alternatively, you "
+    "can check your personal statistics by using </me:1025501230044286978>."
+)
+SAVE_MORA = """INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (gid, uid, cid, timestamp)
+    DO UPDATE SET count = $5"""
+
+
+def leaderboard(winner, link):
+    """Gives the two embeds that announce the week's winner."""
+    about = discord.Embed(title="Weekly Leaderboard", description=ABOUT, color=0x00FFAF)
+    week = discord.Embed(
+        description="***Presenting this week's leaderboard...***", color=0x00FFAF
+    )
+    week.add_field(
+        name="🏆 Top Message User",
+        value=f"<:reply:1036792837821435976> {winner.mention}",
+        inline=True,
+    )
+    week.set_image(url=link)
+    return [about, week]
+
+
+def deleted_invite(message):
+    """Gives the mod-log embed for a deleted invite link."""
+    embed = discord.Embed(
+        title="Auto Moderation - External Server Invites", color=discord.Color.red()
+    )
+    embed.add_field(
+        name="User:",
+        value=f"{message.author.mention} `({message.author.id})`",
+        inline=False,
+    )
+    embed.add_field(name="Channel(s):", value=message.channel.mention, inline=False)
+    embed.add_field(name="Message Content", value=message.content, inline=False)
+    embed.set_footer(text="Message deleted")
+    return embed
 
 
 class CustomCommands(commands.Cog):
+    """Meropide Bulletin's leaderboard, invite filter, rule lookup and auto-publish."""
+
     def __init__(self, bot):
         self.client = bot
+
+    async def cog_load(self):
+        """Makes sure the winners table is there."""
+        await store.create(self.client.pool)
 
     @app_commands.command(
         name="send-leaderboard",
@@ -28,177 +103,91 @@ class CustomCommands(commands.Cog):
         text_user: discord.Member,
         link: str,
     ) -> None:
-        if interaction.guild.id == 1281655927791030293:
-            chn = interaction.client.get_channel(1312858564695687310)
-            embed1 = discord.Embed(
-                title="Weekly Leaderboard",
-                description="The leaderboard will be updated every Saturday. The member who secures the top position in the **text message leaderboard** will be granted the prestigious <@&1313053449549512704> role for the entire week, along with the following generous reward:\n\n- The role comes with its own category and autorespond GIF\n- Members will be able to mention your role any time (flex)\n\n> To view the current leaderboard, please use </stats message:1025501230044286982>. Alternatively, you can check your personal statistics by using </me:1025501230044286978>.",
-                color=0x00FFAF,
-            )
-            embed2 = discord.Embed(
-                description="***Presenting this week's leaderboard...***",
-                color=0x00FFAF,
-            )
-            embed2.add_field(
-                name="🏆 Top Message User",
-                value=f"<:reply:1036792837821435976> {text_user.mention}",
-                inline=True,
-            )
-            embed2.set_image(url=link)
-            await chn.send(embeds=[embed1, embed2])
-            role = interaction.guild.get_role(1313053449549512704)
-            db_path = f"/Weekly Leaderboard/{interaction.guild.id}"
-            prev_winner_id = db.reference(db_path).get()
-
-            # Remove role from previous winner if they exist
-            if prev_winner_id:
-                prev_member = await interaction.guild.fetch_member(int(prev_winner_id))
-                if prev_member and role in prev_member.roles:
-                    await prev_member.remove_roles(role)
-
-            # Add role to new winner
-            await text_user.add_roles(role)
-
-            # Update database with new winner
-            db.reference(db_path).set(str(text_user.id))
-            await interaction.response.send_message(
-                content="The following embed is sent to <#1312858564695687310>:",
-                embeds=[embed1, embed2],
-            )
-
-            timestamp = int(time.time())
-            async with interaction.client.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (gid, uid, cid, timestamp)
-                    DO UPDATE SET count = $5
-                """,
-                    text_user.id,
-                    interaction.guild.id,
-                    10,
-                    timestamp,
-                    100000,
-                )
-
-            await interaction.followup.send(
-                f"<:yes:1036811164891480194> Added exactly <:MORA:1364030973611610205> `100,000` to <@{text_user.id}>'s inventory. \n-# This is not boosted and doesn't count towards quest progression.",
-                ephemeral=True,
-            )
-        else:
+        guild, pool = interaction.guild, interaction.client.pool
+        if guild.id != BULLETIN:
             return await interaction.response.send_message(
                 content="This command can only be used in the **Meropide Bulletin** server.",
                 ephemeral=True,
             )
+        embeds = leaderboard(text_user, link)
+        await interaction.client.get_channel(LEADERBOARD_CHANNEL).send(embeds=embeds)
+        role = guild.get_role(WINNER_ROLE)
+        last = await store.winner(pool, guild.id)
+        if last:
+            last = await guild.fetch_member(last)
+            if role in last.roles:
+                await last.remove_roles(role)
+        await text_user.add_roles(role)
+        await store.crown(pool, guild.id, text_user.id)
+        await interaction.response.send_message(
+            content=f"The following embed is sent to <#{LEADERBOARD_CHANNEL}>:",
+            embeds=embeds,
+        )
+        await pool.execute(
+            SAVE_MORA,
+            text_user.id,
+            guild.id,
+            MORA_SOURCE,
+            int(time.time()),
+            WINNER_MORA,
+        )
+        await interaction.followup.send(
+            "<:yes:1036811164891480194> Added exactly <:MORA:1364030973611610205> "
+            f"`100,000` to <@{text_user.id}>'s inventory. \n-# This is not boosted "
+            "and doesn't count towards quest progression.",
+            ephemeral=True,
+        )
 
     @commands.Cog.listener()
     async def on_message(self, message):
-
-        if message.author == self.client.user or message.author.bot == True:
+        """Runs Meropide Bulletin's three chat rules on a member's message."""
+        if message.author.bot or not message.guild or message.guild.id != BULLETIN:
             return
-
-        # MEROPIDE BULLETIN REPLACED SAPPHIRE INVITE LINK AUTOMOD RULE #
-
-        if message.guild.id == 1281655927791030293 and (
-            "discord.com/invite/" in message.content
-            or "discord.gg/" in message.content
-            or "discordapp.com/invite/" in message.content
-        ):
-            if (
-                message.channel.category.id
-                in [
-                    1281655927791030302,
-                    1299725218767568997,
-                    1281690196357808240,
-                    1301601587059490836,
-                ]
-                or message.guild.get_role(1282396278071890086) in message.author.roles
-                or message.guild.get_role(1282395927168159876) in message.author.roles
-            ):
-                pass
-            else:
-                invites = await message.guild.invites()
-                for invite in invites:
-                    if invite.code in message.content:
-                        ownServer = True
-                        break
-                    else:
-                        ownServer = False
-                if not ownServer:
-                    await message.delete()
-                    await message.channel.send(
-                        f"{message.author.mention}, no invite links!", delete_after=300
-                    )
-
-                    embed = discord.Embed(
-                        title="Auto Moderation - External Server Invites",
-                        color=discord.Color.red(),
-                    )
-                    embed.add_field(
-                        name="User:",
-                        value=f"{message.author.mention} `({message.author.id})`",
-                        inline=False,
-                    )
-                    embed.add_field(
-                        name="Channel(s):",
-                        value=f"{message.channel.mention}",
-                        inline=False,
-                    )
-                    embed.add_field(
-                        name="Message Content", value=message.content, inline=False
-                    )
-                    embed.set_footer(text=f"Message deleted")
-
-                    await message.guild.get_channel(1288400196220227594).send(
-                        embed=embed
-                    )
-
-        # MEROPIDE BULLETIN SERVER RULE TRIGGER PHRASES #
-
-        if (
-            message.guild.id == 1281655927791030293
-            and message.content.lower().startswith("-r")
-            and message.content.lower()[2:].isdigit()
-        ):
-            index = int(message.content.lower()[2:]) - 1  # Convert to 0-based index
-            if 0 <= index < 10:
-                try:
-                    channel = self.client.get_channel(1281655927971250305)
-                    if not channel:
-                        channel = await self.client.fetch_channel(1281655927971250305)
-
-                    msg = await channel.fetch_message(1297054467107328000)
-                    if index >= len(msg.embeds):
-                        await message.channel.send(
-                            "❌ That rule number doesn’t exist.", delete_after=10
-                        )
-                        return
-
-                    embed = msg.embeds[index]
-                    await message.channel.send(embed=embed)
-
-                except Exception as e:
-                    await message.channel.send(
-                        "⚠️ Failed to fetch the rule.", delete_after=10
-                    )
-                    print(f"Error fetching rule: {e}")
-
-        # MEROPIDE BULLETIN AUTO PUBLISH IN ANNOUNCEMENT CHANNELS #
-        channel_ids = [
-            1281673438435741696,
-            1281675540511850639,
-            1281675690416279633,
-            1281675725216284753,
-        ]
-        if (
-            message.guild.id == 1281655927791030293
-            and message.channel.id in channel_ids
-        ):
+        if any(link in message.content for link in INVITE_LINKS):
+            await self.filter_invite(message)
+        text = message.content.lower()
+        if text.startswith("-r") and text[2:].isdigit() and 1 <= int(text[2:]) <= 10:
+            if not await self.show_rule(message, int(text[2:]) - 1):
+                return
+        if message.channel.id in ANNOUNCEMENTS:
             try:
                 await message.publish()
             except Exception as e:
                 print(f"Error auto publishing message: {e}")
+
+    async def filter_invite(self, message):
+        """Deletes an invite to another server, unless the place or member may post one."""
+        guild, author = message.guild, message.author
+        if message.channel.category.id in INVITE_CATEGORIES or any(
+            guild.get_role(role) in author.roles for role in INVITE_ROLES
+        ):
+            return
+        invites = await guild.invites()
+        if not invites or any(invite.code in message.content for invite in invites):
+            return
+        await message.delete()
+        await message.channel.send(
+            f"{author.mention}, no invite links!", delete_after=300
+        )
+        await guild.get_channel(MOD_LOG).send(embed=deleted_invite(message))
+
+    async def show_rule(self, message, index):
+        """Posts one rule from the rules message; says False if there is no such rule."""
+        try:
+            channel = self.client.get_channel(RULES_CHANNEL)
+            if not channel:
+                channel = await self.client.fetch_channel(RULES_CHANNEL)
+            rules = (await channel.fetch_message(RULES_MESSAGE)).embeds
+            if index >= len(rules):
+                await message.channel.send(
+                    "❌ That rule number doesn’t exist.", delete_after=10
+                )
+                return False
+            await message.channel.send(embed=rules[index])
+        except Exception as e:
+            await message.channel.send("⚠️ Failed to fetch the rule.", delete_after=10)
+            print(f"Error fetching rule: {e}")
+        return True
 
 
 async def setup(bot):

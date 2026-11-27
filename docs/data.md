@@ -33,6 +33,7 @@ Each system keeps its tables and queries in one store file. `scripts/firebase_to
 | Topics | `commands/Utility/topicStore.py` | `topics` | `Topics` |
 | Birthday | `commands/Birthday/birthdayStore.py` | `birthdays`, `birthday_servers` | `Birthday`, `Birthday System` (its `Server Name` field was never read and is not copied) |
 | Co-op | `commands/CoOp/coOpStore.py` | `coop_servers`, `coop_panels`, `coop_uids` | `Co-Op` (its `Server Name` field was never read and is not copied), `Co-Op Sticky Panel`, `Co-Op-UID` |
+| Weekly leaderboard (Meropide Bulletin) | `commands/Custom/winnerStore.py` | `weekly_winners` | `Weekly Leaderboard` |
 
 ## Rules for moving data
 
