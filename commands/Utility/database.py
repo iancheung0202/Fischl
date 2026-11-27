@@ -14,6 +14,7 @@ SYNTAX_HELP = (
     "- Missing commas between columns\n"
     "- Wrong quote type (use double quotes for identifiers, single for strings)"
 )
+KINDS = ("SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP")
 # The first word found in an error's text decides which hint is shown with it.
 HINTS = {
     "permission": (
@@ -208,18 +209,24 @@ class ConfirmView(discord.ui.View):
         self.stop()
 
 
+def several(query):
+    """Says whether more than one statement was given; a semicolon inside text counts too."""
+    return ";" in query.strip().rstrip("; \n\t")
+
+
 async def confirm(interaction, pool, query, kind):
-    """Shows a CREATE, ALTER or DROP and waits for a yes before running it."""
+    """Shows a CREATE, ALTER, DROP or several statements and waits for a yes before running."""
+    warning = (
+        "This will modify the database schema. Make sure you know what you're doing!"
+    )
+    if several(query):
+        warning = "This holds more than one statement, and every one of them will run. Make sure you know what you're doing!"
     embed = discord.Embed(
         title=f"⚠️  {kind} Command - Proceed with Caution",
         description="Schema modification commands can significantly impact the database.",
         color=discord.Color.orange(),
     )
-    embed.add_field(
-        name="⚠️  Warning",
-        value="This will modify the database schema. Make sure you know what you're doing!",
-        inline=False,
-    )
+    embed.add_field(name="⚠️  Warning", value=warning, inline=False)
     embed.add_field(name="Query Preview", value=shown(query, 300), inline=False)
     view = ConfirmView(interaction.user.id, pool, query, kind)
     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -229,18 +236,18 @@ async def execute(interaction, query):
     """Sends the query to the handler for its first word."""
     pool = interaction.client.pool
     kind = query.split()[0].upper()
-    if kind == "SELECT":
-        await select(interaction, pool, query)
-    elif kind in ("INSERT", "UPDATE", "DELETE"):
-        await modify(interaction, pool, query, kind)
-    elif kind in ("CREATE", "ALTER", "DROP"):
-        await confirm(interaction, pool, query, kind)
-    else:
+    if kind not in KINDS:
         await interaction.followup.send(
             f"❓ Unknown command: `{kind}`\n\n"
             f"Supported: SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP",
             ephemeral=True,
         )
+    elif kind in ("CREATE", "ALTER", "DROP") or several(query):
+        await confirm(interaction, pool, query, kind)
+    elif kind == "SELECT":
+        await select(interaction, pool, query)
+    else:
+        await modify(interaction, pool, query, kind)
 
 
 class DatabaseCog(commands.Cog):

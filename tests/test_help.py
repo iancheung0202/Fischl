@@ -326,7 +326,6 @@ async def test_each_command_goes_to_the_first_category_that_fits():
         "update_rewards": None,
         "Edit Embed": None,
         "emotes": None,
-        "layout": None,
         "database": None,
         "Database": "Utility Commands",
     }

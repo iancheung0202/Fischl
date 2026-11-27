@@ -15,7 +15,6 @@ from commands.Utility import (
     sendcodes,
     sendwebevent,
     text,
-    v2,
 )
 
 OWNER, IMAGE_CHANNEL = 692254240290242601, 1026968305208131645
@@ -852,59 +851,6 @@ async def test_color_closes_its_session(monkeypatch):
     assert asked.closed
 
 
-# /layout
-
-REPLY = "<:reply:1036792837821435976>"
-
-
-async def test_layout_store_and_its_buttons():
-    cog, found = cog_of(v2), interaction()
-    said = command_of(cog, "layout")
-    assert said.description == "Display a Discord Components V2 layout example."
-    await run(cog, "layout", found)
-    (), sent = found.response.send_message.call_args
-    assert list(sent) == ["view"]
-    box, row = sent["view"].to_components()
-    star, line, boost = box.pop("components")
-    assert box == {"type": 17, "accent_color": 0x7289DA, "spoiler": False}
-    assert line == {"type": 14, "divider": True, "spacing": 1}
-    assert star["components"] == [
-        {
-            "type": 10,
-            "content": f"### Star Drop\n*{REPLY} Cost: 800*\n> A mysterious drop that contains random rewards. You can buy up to 10 every 24 hours. View the chances at </rates:1418097816458494003>! Use </stardrop:1418097816458494002> to open them.",
-        }
-    ]
-    assert boost["components"] == [
-        {
-            "type": 10,
-            "content": f"### XP Boost\n*{REPLY} Cost: 3500*\n> A mysterious relic from the far reaches of the cosmos, pulsing with otherworldly energy. When unleashed, it detonates in a radiant burst of alien light, flooding you with 115,000 XP in an instant. Legends say the bomb was crafted...",
-        }
-    ]
-    shown = [star["accessory"], boost["accessory"], *row["components"]]
-    assert [(found["style"], found["label"], found["disabled"]) for found in shown] == [
-        (1, "Purchase stardrop", False),
-        (1, "Purchase xpboost", False),
-        (2, "Previous", False),
-        (2, "Next", False),
-    ]
-    pressed = [
-        found
-        for found in sent["view"].walk_children()
-        if isinstance(found, discord.ui.Button)
-    ]
-    answers = []
-    for button in pressed:
-        press = interaction()
-        await button.callback(press)
-        answers.append(press.response.send_message.call_args)
-    assert answers == [
-        (("Purchased stardrop",), {"ephemeral": True}),
-        (("Purchased xpboost",), {"ephemeral": True}),
-        (("Clicked previous!",), {"ephemeral": True}),
-        (("Clicked next!",), {"ephemeral": True}),
-    ]
-
-
 # /database
 
 
@@ -1227,3 +1173,36 @@ async def test_database_schema_change_cancelled_or_failing(pool):
         == "Query Attempted"
     )
     assert view.is_finished()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "DELETE FROM pets WHERE age = 3; DROP TABLE pets",
+        "select 1; delete from pets;",
+        "UPDATE pets SET age = 1 ;\nINSERT INTO pets VALUES ('Amy', 4)",
+    ],
+)
+async def test_database_asks_before_running_more_than_one_statement(pool, query):
+    await pool.execute("CREATE TABLE pets (name TEXT PRIMARY KEY, age BIGINT)")
+    await pool.execute("INSERT INTO pets VALUES ('Oz', 3)")
+    found = await ask(pool, query)
+    (), sent = found.followup.send.call_args
+    assert sent["embed"].title.endswith(" Command - Proceed with Caution")
+    assert (
+        sent["embed"].fields[0].value.startswith("This holds more than one statement")
+    )
+    assert [child.label for child in sent["view"].children] == [
+        "⚠️  Execute",
+        "Cancel",
+    ]
+    assert await pool.fetchval("SELECT age FROM pets") == 3
+
+
+@pytest.mark.parametrize(
+    "query", ["DELETE FROM pets;", "DELETE FROM pets ; \n", "select * from pets;;"]
+)
+async def test_database_runs_one_statement_ending_in_a_semicolon_at_once(pool, query):
+    await pool.execute("CREATE TABLE pets (name TEXT PRIMARY KEY, age BIGINT)")
+    found = await ask(pool, query)
+    assert "view" not in found.followup.send.call_args.kwargs

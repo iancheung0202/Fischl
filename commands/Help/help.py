@@ -51,7 +51,6 @@ NOT_UTILITY = (
     "send-leaderboard",
     "Edit Embed",
     "emotes",
-    "layout",
     "database",
 )
 
