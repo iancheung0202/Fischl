@@ -1231,7 +1231,7 @@ async def ensure_minigame_inventory_table(pool):
                 pinned      BOOLEAN DEFAULT FALSE,
                 link        TEXT DEFAULT NULL,
 
-                PRIMARY KEY (uid, gid, title)
+                PRIMARY KEY (gid, uid, timestamp)
             )
         """
         )
