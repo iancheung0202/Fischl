@@ -1,3 +1,5 @@
+"""Drop packs: the mora drops a member opens one by one after reaching a tier."""
+
 import logging
 import random
 import time
@@ -22,6 +24,7 @@ from commands.Events.helperFunctions import (
 
 
 def generate_drops(multiplier=1.0):
+    """Rolls two to six drops, each with a size and its mora."""
     num_drops = random.randint(2, 6)
     drops = []
     for _ in range(num_drops):
@@ -33,6 +36,8 @@ def generate_drops(multiplier=1.0):
 
 
 class DropPackView(View):
+    """The Open Drop button, which reveals one drop per press and pays out after the last."""
+
     def __init__(self, guild_id, user_id, drops, xp_bonus):
         super().__init__(timeout=180)
         self.guild_id = guild_id
@@ -69,7 +74,7 @@ class DropPackView(View):
 
         embed = interaction.message.embeds[0]
         if self.current_index == 1:
-            embed.description += f"\n"
+            embed.description += "\n"
         embed.description += f"\n-# **Drop #{self.current_index}:** {drop['type']} - {MORA_EMOTE} `{drop['amount']:,}`"
 
         if self.current_index < len(self.drops):
@@ -134,6 +139,8 @@ class DropPackView(View):
 
 
 class DropPackDelete(discord.ui.Button):
+    """Lets the member who opened a pack delete its message."""
+
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.grey,
@@ -153,6 +160,7 @@ class DropPackDelete(discord.ui.Button):
 async def create_drop_pack(
     guild_id, user_id, channel, is_elite, is_bonus, tier, client=None
 ):
+    """Sends a new drop pack to the channel for the member to open."""
     mora_mult = (
         await get_channel_mora_multiplier(client.pool, channel.id) if client else 1.0
     )
