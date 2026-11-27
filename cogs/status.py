@@ -36,7 +36,6 @@ class StatusCog(commands.Cog):
         await asyncio.sleep(TURN)
         await self.show(LISTENING, "Website: fischl.app")
         await asyncio.sleep(TURN)
-        await self.show(PLAYING, "Support: discord.gg/kaycd3fxHh")
 
     @tasks.loop(minutes=1)
     async def status_heartbeat(self):

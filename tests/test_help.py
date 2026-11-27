@@ -6,6 +6,7 @@ import pytest
 
 from commands.Birthday import birthdayStore
 from commands.CoOp import coOpStore
+from commands.Events.helperFunctions import ensure_minigame_settings_table
 from commands.Help import help as help_page
 from commands.Sticky import stickyStore
 
@@ -430,9 +431,31 @@ async def config(found):
     return [(field["name"], field["value"]) for field in embed["fields"]]
 
 
+MINIGAME = (
+    "INSERT INTO minigame_settings (channel_id, minigames_enabled) VALUES ($1, $2)"
+)
+
+
+async def test_server_configuration_cuts_a_long_minigame_list(pool, firebase):
+    found = await stores(pool)
+    firebase("/Tickets").set({"a": {"Server ID": 99}})
+    firebase("/Welcome").set({"a": {"Server ID": 99}})
+    ids = [10**18 + number for number in range(40)]
+    found.guild.text_channels = [MagicMock(id=number) for number in ids]
+    for channel_id in ids:
+        await pool.execute(MINIGAME, channel_id, True)
+    value = dict(await config(found))["Chat Minigames"]
+    lines = value.split("\n")
+    assert lines[0] == f"{YES} Enabled" and lines[1] == f"{REPLY} <#{ids[0]}>"
+    kept = len(lines) - 2
+    assert lines[-1] == f"... *({40 - kept} more)*" and 0 < kept < 40
+    assert len(value) <= 1024
+
+
 async def stores(pool):
     for store in (coOpStore, birthdayStore, stickyStore):
         await store.create(pool)
+    await ensure_minigame_settings_table(pool)
     found = interaction()
     found.client.pool = pool
     found.guild.text_channels = [MagicMock(id=number) for number in (1, 2, 3)]
@@ -475,7 +498,8 @@ async def test_server_configuration_with_everything_on(pool, firebase):
     await birthdayStore.enable(pool, GUILD, 60, 61, 62, True)
     for channel_id in (3, 1, 1, 9, 777):
         await stickyStore.add(pool, channel_id, channel_id * 10, "rules")
-    firebase("/Chat Minigames System/1").set({"frequency": 5})
+    for channel_id, on in ((3, True), (1, True), (2, False), (777, True)):
+        await pool.execute(MINIGAME, channel_id, on)
     firebase("/Welcome").set(
         {
             "a": {
@@ -513,7 +537,7 @@ async def test_server_configuration_with_everything_on(pool, firebase):
             "Sticky Messages",
             f"{YES} Enabled\n{REPLY} <#1>\n{REPLY} <#1>\n{REPLY} <#3>\n{REPLY} <#9>\n",
         ),
-        ("Chat Minigames", f"{NO} Disabled"),
+        ("Chat Minigames", f"{YES} Enabled\n{REPLY} <#1>\n{REPLY} <#3>\n"),
         (
             "Welcome Messages",
             f"{YES} Enabled\n{REPLY} **Welcome Channel:** <#70>\n{REPLY} **Custom Image Background:** `Uploaded`\n",

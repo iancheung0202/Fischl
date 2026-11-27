@@ -41,4 +41,4 @@ Each system keeps its tables and queries in one store file. `scripts/firebase_to
 - Export first, copy with a script that stops when the tables already hold data, then compare every record.
 - The old copy stays until Ian says to delete it.
 
-`/help` used to look up `Chat Minigames System/<channel>` in Firebase for every text channel of a server. That path no longer exists (minigame channels are in the Postgres table `minigame_settings`), so the "Chat Minigames" line of View Server Configuration always said Disabled. It still does, without the lookups.
+`/help` used to look up `Chat Minigames System/<channel>` in Firebase for every text channel of a server. That path no longer exists, so the "Chat Minigames" line of View Server Configuration always said Disabled. It now lists the server's channels that have minigames on in the Postgres table `minigame_settings`.

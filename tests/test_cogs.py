@@ -72,7 +72,6 @@ async def test_status_takes_turns(no_loops, monkeypatch):
     assert shown == [
         (online, discord.ActivityType.playing, "Genshin Impact", 0),
         (online, discord.ActivityType.listening, "Website: fischl.app", 1),
-        (online, discord.ActivityType.playing, "Support: discord.gg/kaycd3fxHh", 2),
     ]
     assert waits == [30, 30]
 

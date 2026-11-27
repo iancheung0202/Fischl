@@ -277,6 +277,11 @@ def statistics(client):
     return embed
 
 
+MINIGAME_CHANNELS = "SELECT channel_id FROM minigame_settings WHERE minigames_enabled = TRUE AND channel_id = ANY($1::bigint[])"
+# Leaves room in a 1024-character field for the "more" line.
+FIELD_ROOM = 1024 - 16
+
+
 async def stuck_channels(pool, guild):
     """Gives the server's channel ids once per message stuck there, in channel order."""
     stuck = await stickyStore.channels(pool)
@@ -331,6 +336,20 @@ async def sticky(pool, guild):
     return stuck and enabled(*(f"<#{channel_id}>" for channel_id in stuck)) + "\n"
 
 
+async def minigames(pool, guild):
+    """Gives the field listing channels with chat minigames on, or nothing."""
+    places = [place.id for place in guild.text_channels]
+    found = {row["channel_id"] for row in await pool.fetch(MINIGAME_CHANNELS, places)}
+    lines = [f"{REPLY} <#{place}>\n" for place in places if place in found]
+    value, extra = f"{YES} Enabled\n", 0
+    for line in lines:
+        if len(value) + len(line) > FIELD_ROOM:
+            extra += 1
+        else:
+            value += line
+    return lines and value + (f"... *({extra} more)*" if extra else "")
+
+
 def welcome(guild):
     """Gives the welcome field, or None with welcomes off."""
     found = of_server("/Welcome", guild)
@@ -379,7 +398,7 @@ async def configuration(pool, guild):
         "Co-op System": await coop(pool, guild),
         "Birthday Wishes": await birthday(pool, guild),
         "Sticky Messages": await sticky(pool, guild),
-        "Chat Minigames": None,  # its Firebase path is gone, see docs/data.md
+        "Chat Minigames": await minigames(pool, guild),
         "Welcome Messages": welcome(guild),
         "Partnership System": partnership(guild),
         "Booster Roles": boosters(guild),
