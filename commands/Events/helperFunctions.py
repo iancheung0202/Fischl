@@ -774,6 +774,9 @@ async def count_user_inventory(
     return val or 0
 
 
+SAME_SECOND_ITEMS = 10
+
+
 async def add_inventory_item(
     pool: asyncpg.Pool,
     uid: int,
@@ -784,24 +787,26 @@ async def add_inventory_item(
     timestamp: int,
     pinned: bool = False,
     link: str = None,
-) -> None:
-    """Saves an item a member got, a second later when they already got one that second."""
-    while True:
+) -> int:
+    """Saves an item a member got and gives its timestamp, later by a second for each item they already got then."""
+    statement = "INSERT INTO minigame_inventory (uid, gid, title, description, cost, timestamp, pinned, link) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+    for taken in range(SAME_SECOND_ITEMS):
         try:
             await pool.execute(
-                "INSERT INTO minigame_inventory (uid, gid, title, description, cost, timestamp, pinned, link) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                statement,
                 uid,
                 gid,
                 str(title),
                 description,
                 cost,
-                timestamp,
+                timestamp + taken,
                 pinned,
                 link,
             )
-            return
+            return timestamp + taken
         except asyncpg.UniqueViolationError:
-            timestamp += 1
+            if taken == SAME_SECOND_ITEMS - 1:
+                raise
 
 
 async def get_pinned_item(pool: asyncpg.Pool, uid: int, gid: int) -> Optional[str]:

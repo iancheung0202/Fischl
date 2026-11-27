@@ -26,6 +26,7 @@ class Shop:
         self.inventory = []
         self.pending = 0
         self.history = []
+        self.later = 0
         self.queries = []
 
     def add(self, name, cost=100, multiple=True, stock=-1, currency="guild_mora"):
@@ -53,6 +54,7 @@ class Shop:
 
     async def add_inventory_item(self, pool, *args, **kwargs):
         self.calls.append(("item", args, kwargs))
+        return args[5] + self.later
 
     async def update_shop_item_stock_by_name(self, pool, gid, name, stock):
         self.calls.append(("stock", name, stock))
@@ -663,6 +665,14 @@ async def test_the_statements_sent_to_the_database(shop):
     assert link_args[:4] == (USER, buy.XIANYUN, "http://jump", "Welkin")
 
 
+async def test_link_goes_to_the_row_that_was_saved_a_second_later(shop):
+    shop.add("Hero", 100)
+    shop.later = 1
+    await purchase(shop, "Hero")
+    asked = next(call for call in shop.calls if call[0] == "item")[1][5]
+    assert shop.queries[-1][1][4] == asked + 1
+
+
 async def test_a_purchase_is_written_to_the_console(shop, capsys):
     shop.add("Hero", 100)
     shop.pending = 2
@@ -689,3 +699,16 @@ async def test_two_items_in_one_second_are_both_kept(pool):
         ("second", 101),
         ("third", 102),
     ]
+    assert await helperFunctions.add_inventory_item(pool, 1, 2, "x", "", 0, 100) == 103
+    assert await helperFunctions.add_inventory_item(pool, 1, 3, "x", "", 0, 100) == 100
+
+
+async def test_item_is_refused_after_ten_in_one_second(pool, monkeypatch):
+    from commands.Events import helperFunctions
+
+    await helperFunctions.ensure_minigame_inventory_table(pool)
+    monkeypatch.setattr(helperFunctions, "SAME_SECOND_ITEMS", 2)
+    for title in ("first", "second"):
+        await helperFunctions.add_inventory_item(pool, 1, 2, title, "", 0, 100)
+    with pytest.raises(helperFunctions.asyncpg.UniqueViolationError):
+        await helperFunctions.add_inventory_item(pool, 1, 2, "third", "", 0, 100)

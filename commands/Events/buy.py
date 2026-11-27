@@ -329,7 +329,7 @@ class ConfirmPurchaseView(discord.ui.View):
             )
 
         timestamp = int(time.mktime(datetime.datetime.now().timetuple()))
-        await add_inventory_item(
+        timestamp = await add_inventory_item(
             pool, user.id, guild.id, item[0], item[1], cost, timestamp, pinned=False
         )
         await deduct_balance(
