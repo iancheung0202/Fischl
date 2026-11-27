@@ -29,14 +29,13 @@ Fischl is a cloud-hosted bot, so you **do not need to clone or run it yourself**
 
 ## Contributing
 
-We welcome contributions to enhance Fischl! To get started:
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to send a change, and [AGENTS.md](AGENTS.md) has the rules and a map of the code.
 
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix.
-3. Make your changes and commit them.
-4. Push to your fork and submit a pull request.
-
-Please ensure your code adheres to the existing style.
+```bash
+pip install -r requirements.txt pytest pytest-asyncio pre-commit
+pytest
+pre-commit run --all-files
+```
 
 ## Support
 

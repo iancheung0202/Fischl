@@ -1,6 +1,7 @@
 import discord
 
 from commands.Events.config import MONEYDANCE_EMOTE
+
 # from utils.commands import SlashCommand
 
 announcement_embed = discord.Embed(
@@ -11,7 +12,7 @@ announcement_embed = discord.Embed(
         "### <:CharlotteHeart:1191594476263702528> **Go see for yourself:** https://fischl.app/profile\n"
         "-# *This is just the beginning...* <:AyakaShine:1191592023946432522>"
     ),
-    color=discord.Color.gold()
+    color=discord.Color.gold(),
 )
 
 # announcement_embed = discord.Embed(
