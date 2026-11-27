@@ -1,3 +1,5 @@
+"""`/help`: the command list by category, bot statistics and a server's settings."""
+
 import platform
 
 import discord
@@ -5,7 +7,6 @@ import firebase_admin
 import psutil
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, View
 from firebase_admin import db
 
 from commands.Birthday import birthdayStore
@@ -15,6 +16,266 @@ from utils.commands import SlashCommand
 
 BLANK = "<:blank:1036792889121980426>"
 REPLY = "<:reply:1036792837821435976>"
+YES = "<:yes:1036811164891480194>"
+NO = "<:no:1036810470860013639>"
+COLOR = 0x1DBCEB
+SUBCOMMAND = discord.AppCommandOptionType.subcommand
+NOT_AUTHOR = f"{NO} You are not the author of this command"
+DISABLED = f"{NO} Disabled"
+CATEGORY_COLOR = 0xFFFF00
+LOADING = "<a:loading:1026905298088243240>  Loading Server Configuration"
+LINKS = (
+    (
+        "Invite Bot",
+        "https://discord.com/api/oauth2/authorize?client_id=732422232273584198",
+        "<a:robot:1366940845697400935>",
+    ),
+    ("Support Server", "https://discord.gg/kaycd3fxHh", "<a:join:1366940843088543775>"),
+    ("Website", "https://fischl.app/", "<a:globe:1366940841829994557>"),
+)
+PLAIN_MINIGAMES = (
+    "customize",
+    "mora",
+    "buy",
+    "shop",
+    "milestones",
+    "gift",
+    "summon",
+    "chest",
+    "preview",
+)
+MINIGAMES = (*PLAIN_MINIGAMES, "events")
+NOT_UTILITY = (
+    "reload",
+    "update_rewards",
+    "send-leaderboard",
+    "Edit Embed",
+    "emotes",
+    "layout",
+    "database",
+)
+
+
+def named(*words):
+    """Gives a check for commands whose name holds one of the words."""
+    return lambda command: any(word in command.name for word in words)
+
+
+def is_minigame(command):
+    """Says if a command belongs to the chat minigames."""
+    board = "leaderboard" in command.name and "send" not in command.name
+    return board or named(*MINIGAMES)(command)
+
+
+def is_utility(command):
+    """Says if a command no other category took may be listed as a utility."""
+    return not named(*NOT_UTILITY)(command)
+
+
+def option_line(option):
+    """Gives the indented line for one option."""
+    return f"\n{BLANK}{REPLY} `{option.name}` - {option.description}"
+
+
+def subcommand_line(command, sub):
+    """Gives a subcommand's mention with what it does underneath."""
+    return f"</{command.name} {sub.name}:{command.id}>\n{REPLY} {sub.description}"
+
+
+def brief(command):
+    """Lists a command's subcommands without their options."""
+    return "".join(
+        (
+            f"\n\n{subcommand_line(command, sub)}"
+            if sub.type == SUBCOMMAND
+            else f"\n{option_line(sub)}"
+        )
+        for sub in command.options
+    )
+
+
+def full(command):
+    """Lists a command's subcommands, each with its options."""
+    return "".join(
+        (
+            f"\n\n{subcommand_line(command, sub)}"
+            + "".join(map(option_line, sub.options))
+            if sub.type == SUBCOMMAND
+            else f"\n{option_line(sub)}"
+        )
+        for sub in command.options
+    )
+
+
+def headed(command):
+    """Names the command itself."""
+    return f" \n\n{command.mention}\n{REPLY} {command.description}"
+
+
+def utility(command):
+    """Names the command, then lists its subcommands and options closely."""
+    return headed(command) + "".join(
+        (
+            f"\n{subcommand_line(command, sub)}"
+            + "".join(map(option_line, sub.options))
+            if sub.type == SUBCOMMAND
+            else option_line(sub)
+        )
+        for sub in command.options
+    )
+
+
+def minigame(command):
+    """Names a single minigame command, or lists the subcommands of a group."""
+    return headed(command) if command.name in PLAIN_MINIGAMES else full(command)
+
+
+def categories():
+    """Gives each category's title, emoji, intro, command check and way to list one."""
+    return (
+        (
+            "Tickets",
+            "🎫",
+            f"The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use {SlashCommand('ticket settings')} and the bot will guide you through the procedures of setting up your ticket system!",
+            named("ticket"),
+            brief,
+        ),
+        (
+            "Co-op System",
+            "🎮",
+            f"The following commands are used to setup co-op system in your server. Use {SlashCommand('co-op setup')} to starting setting up the co-op system, and the bot will guide you through the procedures!",
+            named("co-op"),
+            full,
+        ),
+        (
+            "Partnership Panels",
+            "🤝",
+            f"The following slash commands are for managing your server’s partnerships. When a user requests for partnership, a private thread is created, just like a ticket. Server representatives can be invited into the thread, and admins can easily add/remove partnered servers to the customizable and auto-updating partnership panels. Use {SlashCommand('partner setup')} to get started!",
+            named("partner"),
+            brief,
+        ),
+        (
+            "Sticky Messages",
+            "🫧",
+            f"The following slash commands are for setting up sticky messages in different channels. Sticky messages will be stayed at the bottom of the channel no matter what messages are sent afterwards. This function is especially useful when you need give your members a heads up on how to use this chat channel or what they need to know before going ahead and sending any messages. Use {SlashCommand('sticky enable')} to setup sticky messages in a channel.",
+            named("sticky"),
+            full,
+        ),
+        (
+            "Welcomer",
+            "👋",
+            f"The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use {SlashCommand('welcome setup')} to setup welcome messages.",
+            named("welcome"),
+            full,
+        ),
+        (
+            "Birthday Wishes",
+            "🎂",
+            f"The following slash commands are for wishing users in your server a happy birthday. Member will receive personalized birthday wishes from their favorite characters in servers that have this system enabled. Use {SlashCommand('birthday enable')} to setup birthday wishes in the server.",
+            named("birthday"),
+            full,
+        ),
+        (
+            "Chat Minigames",
+            "🎉",
+            f"The following slash commands are dedicated to random events that appear in a chat channel. Servers that have random events enabled will have exciting mini-games randomly spawned to the chat based on the chat activity and frequency you provided. Use {SlashCommand('events settings')} to setup and configure random chat events in the server.",
+            is_minigame,
+            minigame,
+        ),
+        (
+            "Booster Roles",
+            "💎",
+            f"The following slash commands are for rewarding your server boosters with customizable roles and thank-you messages. When a member boosts the server, the bot will automatically send a personalized thank-you message in a designated channel, and the booster can create a custom role. Use {SlashCommand('boosterrole setup')} to setup booster roles in your server.",
+            named("boosterrole"),
+            full,
+        ),
+        (
+            "Vanity/Tag Roles",
+            "👤",
+            "We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
+            named("vanity", "tag"),
+            full,
+        ),
+        (
+            "Utility Commands",
+            "🛠️",
+            "The following slash commands are used for basic functions that many bots offer. These commands are accessible to everyone in the server.",
+            is_utility,
+            utility,
+        ),
+    )
+
+
+def pages(listed):
+    """Sorts the commands into the first category that takes each: {title: page}."""
+    sorted_ = categories()
+    lists = {title: "" for title, *_ in sorted_}
+    for command in listed:
+        for title, _, _, takes, written in sorted_:
+            if takes(command):
+                lists[title] += written(command)
+                break
+    return {title: (emoji, intro, lists[title]) for title, emoji, intro, *_ in sorted_}
+
+
+def overview():
+    """Gives the embed that opens `/help`."""
+    embed = discord.Embed(
+        title="Fischl Help",
+        description="> <a:hoyoverse:1366950037728530472> Fischl is a powerful utility Discord bot **designed with all Hoyoverse communities in mind**. Trusted by numerous large servers, Fischl makes server management effortless with **easy-to-use systems** for *tickets, co-op matchmaking, partnerships, welcomes, birthdays, and fun minigames*. <:HuTaoWow:1253167030748840067>",
+        color=COLOR,
+    )
+    embed.add_field(
+        name="<:genshin_impact:1103720959950725190> Support Server",
+        value="Head over to our **[support server](https://discord.gg/kaycd3fxHh)** if you have any suggestions, questions or bug reports! :writing_hand:",
+        inline=True,
+    )
+    embed.add_field(
+        name="<:slash:1037445915348324505> Command Usage",
+        value="This bot uses [slash commands](https://discord.com/blog/welcome-to-the-new-era-of-discord-apps). Type `/` or **select a category** below to see the list of available bot commands.",
+        inline=True,
+    )
+    return embed
+
+
+def statistics(client):
+    """Gives the embed with the bot's packages, uptime and machine load."""
+    embed = discord.Embed(
+        title="Fischl Discord Bot Statistics <a:server:1366940847093841961>",
+        color=COLOR,
+    )
+    memory = psutil.virtual_memory()
+    embed.add_field(
+        name="<:info:1037445870469267638> Package Info",
+        value=(
+            f"```OS - {platform.system()}\n"
+            f"Python - {platform.python_version()}\n"
+            f"discord.py - {discord.__version__}\n"
+            f"Google Firebase - {firebase_admin.__version__}```"
+        ),
+        inline=False,
+    )
+    uptime = next(iter(db.reference("/Uptime").get().values()))["Uptime"]
+    embed.add_field(
+        name="<:dev:1037445830749204624>  Bot Metadata",
+        value=(
+            f"> App ID: `{client.application_id}`"
+            f"\n> Last Reboot: <t:{uptime}:R>"
+            f"\n> Servers Count: `{len(client.guilds)}`"
+            f"\n> API/Bot Latency: `{int(round(client.latency * 1000, 1))}ms`"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="📊  Bot Process Data",
+        value=(
+            f"> CPU Usage: `{psutil.cpu_percent(0.1)}%`"
+            f"\n> RAM Usage: `{memory.used/1000000000:.2f} GB`"
+            f"\n> Memory:  `{memory.used/(1024**3):.2f}/{memory.total/(1024**3):.2f} GB ({(memory.percent):.2f}%)`"
+        ),
+        inline=True,
+    )
+    return embed
 
 
 async def stuck_channels(pool, guild):
@@ -24,259 +285,189 @@ async def stuck_channels(pool, guild):
     return [place.id for place in places for _ in range(stuck.count(place.id))]
 
 
+def of_server(path, guild):
+    """Gives the first record under a Firebase path that is for this server, or None."""
+    records = db.reference(path).get().values()
+    return next((found for found in records if found["Server ID"] == guild.id), None)
+
+
+def enabled(*lines):
+    """Gives a field that says a system is on, one line per setting."""
+    return "\n".join([f"{YES} Enabled", *(f"{REPLY} {line}" for line in lines)])
+
+
+def tickets(guild):
+    """Gives the ticket field, or None with tickets off."""
+    found = of_server("/Tickets", guild)
+    return found and enabled(
+        f"**Category:** <#{found['Category ID']}>",
+        f"**Log Channel:** <#{found['Log Channel ID']}>",
+    )
+
+
+async def coop(pool, guild):
+    """Gives the co-op field, or None with co-op off."""
+    found = await coOpStore.server(pool, guild.id)
+    return found and enabled(
+        f"**Co-op Channel:** <#{found['channel_id']}>",
+        f"**NA Helper Role:** <@&{found['na_role_id']}>",
+        f"**EU Helper Role:** <@&{found['eu_role_id']}>",
+        f"**Asia Helper Role:** <@&{found['asia_role_id']}>",
+        f"**SAR Helper Role:** <@&{found['sar_role_id']}>",
+    )
+
+
+async def birthday(pool, guild):
+    """Gives the birthday field, or None with wishes off."""
+    found = await birthdayStore.server(pool, guild.id)
+    return found and enabled(
+        f"**Channel:** <#{found['channel_id']}>",
+        f"**Birthday Role:** <@&{found['role_id']}>",
+    )
+
+
+async def sticky(pool, guild):
+    """Gives the field listing channels with a stuck message, or nothing."""
+    stuck = await stuck_channels(pool, guild)
+    return stuck and enabled(*(f"<#{channel_id}>" for channel_id in stuck)) + "\n"
+
+
+def welcome(guild):
+    """Gives the welcome field, or None with welcomes off."""
+    found = of_server("/Welcome", guild)
+    if not found:
+        return None
+    channel = f"**Welcome Channel:** <#{found['Welcome Channel ID']}>"
+    image = "Uploaded" if found["Welcome Image Enabled"] else "Not uploaded"
+    return enabled(channel, f"**Custom Image Background:** `{image}`") + "\n"
+
+
+def partnership(guild):
+    """Gives the partnership field, or None with partnerships off."""
+    found = db.reference(f"/Partner/config/{guild.id}").get()
+    return found and enabled(
+        f"**Request Channel:** <#{found.get('request_channel')}>",
+        f"**Panel Channel:** <#{found.get('panel_channel')}>",
+        f"**Log Channel:** <#{found.get('log_channel')}>",
+        f"**Partner Role:** <@&{found.get('partner_role')}>",
+    )
+
+
+def boosters(guild):
+    """Gives the booster role field, or nothing with booster roles off."""
+    found = db.reference(f"Booster Role/{guild.id}").get()
+    return (
+        found
+        and "base_role" in found
+        and enabled(
+            f"**Base Role:** <@&{found.get('base_role')}>",
+            f"**System Channel:** <#{found.get('system_channel')}>",
+            f"**Public Channel:** <#{found.get('channel')}>",
+            f"**Log Channel:** <#{found.get('log')}>",
+        )
+    )
+
+
+async def configuration(pool, guild):
+    """Gives the embed that says which systems the server has on, and where."""
+    embed = discord.Embed(
+        title="Server Configuration <a:config:1366940834628505650>",
+        description=f"You could view the server settings of the bot in this page instantly. The configuration for **{guild.name}** is as follows:",
+        color=COLOR,
+    )
+    systems = {
+        "Ticket System": tickets(guild),
+        "Co-op System": await coop(pool, guild),
+        "Birthday Wishes": await birthday(pool, guild),
+        "Sticky Messages": await sticky(pool, guild),
+        "Chat Minigames": None,  # its Firebase path is gone, see docs/data.md
+        "Welcome Messages": welcome(guild),
+        "Partnership System": partnership(guild),
+        "Booster Roles": boosters(guild),
+    }
+    for name, value in systems.items():
+        embed.add_field(name=name, value=value or DISABLED, inline=True)
+    return embed
+
+
+async def is_stranger(author, interaction):
+    """Tells anyone but the member who ran `/help` that the panel is not theirs."""
+    if author != interaction.user:
+        await interaction.response.send_message(NOT_AUTHOR, ephemeral=True)
+    return author != interaction.user
+
+
 class Select(discord.ui.Select):
+    """The menu that shows one category's commands."""
+
     def __init__(self, list, initial_author):
-        self.initial_author = initial_author
-        self.list = list
-
-        simple_formatter = lambda cmd: "".join(
-            (
-                f"\n\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
-                if sub.type == discord.AppCommandOptionType.subcommand
-                else f"\n\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
-            )
-            for sub in cmd.options
-        )
-
-        formatter = lambda cmd: "".join(
-            (
-                f"\n\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
-                + "".join(
-                    f"\n{BLANK}{REPLY} `{sub_cmd.name}` - {sub_cmd.description}"
-                    for sub_cmd in sub.options
-                )
-                if sub.type == discord.AppCommandOptionType.subcommand
-                else f"\n\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
-            )
-            for sub in cmd.options
-        )
-
-        utility_formatter = lambda cmd: (
-            f" \n\n{cmd.mention}\n{REPLY} {cmd.description}"
-            + "".join(
-                (
-                    f"\n</{cmd.name} {sub.name}:{cmd.id}>\n{REPLY} {sub.description}"
-                    + "".join(
-                        f"\n{BLANK}{REPLY} `{sub_cmd.name}` - {sub_cmd.description}"
-                        for sub_cmd in sub.options
-                    )
-                    if sub.type == discord.AppCommandOptionType.subcommand
-                    else f"\n{BLANK}{REPLY} `{sub.name}` - {sub.description}"
-                )
-                for sub in cmd.options
-            )
-        )
-
-        categories = {
-            "ticket": {
-                "title": "Tickets",
-                "emoji": "🎫",
-                "description": f"The following slash commands are used to setup and deal with tickets. To start using tickets instantly, use {SlashCommand('ticket settings')} and the bot will guide you through the procedures of setting up your ticket system!",
-                "condition": lambda cmd: "ticket" in cmd.name,
-                "formatter": simple_formatter,
-            },
-            "coop": {
-                "title": "Co-op System",
-                "emoji": "🎮",
-                "description": f"The following commands are used to setup co-op system in your server. Use {SlashCommand('co-op setup')} to starting setting up the co-op system, and the bot will guide you through the procedures!",
-                "condition": lambda cmd: "co-op" in cmd.name,
-                "formatter": formatter,
-            },
-            "partner": {
-                "title": "Partnership Panels",
-                "emoji": "🤝",
-                "description": f"The following slash commands are for managing your server’s partnerships. When a user requests for partnership, a private thread is created, just like a ticket. Server representatives can be invited into the thread, and admins can easily add/remove partnered servers to the customizable and auto-updating partnership panels. Use {SlashCommand('partner setup')} to get started!",
-                "condition": lambda cmd: "partner" in cmd.name,
-                "formatter": simple_formatter,
-            },
-            "sticky": {
-                "title": "Sticky Messages",
-                "emoji": "🫧",
-                "description": f"The following slash commands are for setting up sticky messages in different channels. Sticky messages will be stayed at the bottom of the channel no matter what messages are sent afterwards. This function is especially useful when you need give your members a heads up on how to use this chat channel or what they need to know before going ahead and sending any messages. Use {SlashCommand('sticky enable')} to setup sticky messages in a channel.",
-                "condition": lambda cmd: "sticky" in cmd.name,
-                "formatter": formatter,
-            },
-            "welcome": {
-                "title": "Welcomer",
-                "emoji": "👋",
-                "description": f"The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use {SlashCommand('welcome setup')} to setup welcome messages.",
-                "condition": lambda cmd: "welcome" in cmd.name,
-                "formatter": formatter,
-            },
-            "birthday": {
-                "title": "Birthday Wishes",
-                "emoji": "🎂",
-                "description": f"The following slash commands are for wishing users in your server a happy birthday. Member will receive personalized birthday wishes from their favorite characters in servers that have this system enabled. Use {SlashCommand('birthday enable')} to setup birthday wishes in the server.",
-                "condition": lambda cmd: "birthday" in cmd.name,
-                "formatter": formatter,
-            },
-            "events": {
-                "title": "Chat Minigames",
-                "emoji": "🎉",
-                "description": f"The following slash commands are dedicated to random events that appear in a chat channel. Servers that have random events enabled will have exciting mini-games randomly spawned to the chat based on the chat activity and frequency you provided. Use {SlashCommand('events settings')} to setup and configure random chat events in the server.",
-                "condition": lambda cmd: (
-                    "customize" in cmd.name
-                    or "mora" in cmd.name
-                    or ("leaderboard" in cmd.name and "send" not in cmd.name)
-                    or "buy" in cmd.name
-                    or "shop" in cmd.name
-                    or "milestones" in cmd.name
-                    or "gift" in cmd.name
-                    or "summon" in cmd.name
-                    or "chest" in cmd.name
-                    or "events" in cmd.name
-                    or "preview" in cmd.name
-                ),
-                "formatter": lambda cmd: (
-                    f" \n\n{cmd.mention}\n{REPLY} {cmd.description}"
-                    if cmd.name
-                    in [
-                        "customize",
-                        "mora",
-                        "lb",
-                        "buy",
-                        "shop",
-                        "milestones",
-                        "gift",
-                        "summon",
-                        "chest",
-                        "preview",
-                    ]
-                    else formatter(cmd)
-                ),
-            },
-            "boosterrole": {
-                "title": "Booster Roles",
-                "emoji": "💎",
-                "description": f"The following slash commands are for rewarding your server boosters with customizable roles and thank-you messages. When a member boosts the server, the bot will automatically send a personalized thank-you message in a designated channel, and the booster can create a custom role. Use {SlashCommand('boosterrole setup')} to setup booster roles in your server.",
-                "condition": lambda cmd: "boosterrole" in cmd.name,
-                "formatter": formatter,
-            },
-            "vanity": {
-                "title": "Vanity/Tag Roles",
-                "emoji": "👤",
-                "description": f"We also offer features for vanity roles and tag roles. If enabled, the bot will reward your members with an exclusive role for advertising your server in their status *or* for equipping your server tag.",
-                "condition": lambda cmd: ("vanity" in cmd.name or "tag" in cmd.name),
-                "formatter": formatter,
-            },
-            "utility": {
-                "title": "Utility Commands",
-                "emoji": "🛠️",
-                "description": f"The following slash commands are used for basic functions that many bots offer. These commands are accessible to everyone in the server.",
-                "condition": lambda cmd: (
-                    "reload" not in cmd.name
-                    and "update_rewards" not in cmd.name
-                    and "send-leaderboard" not in cmd.name
-                    and "Edit Embed" not in cmd.name
-                    and "emotes" not in cmd.name
-                    and "layout" not in cmd.name
-                    and "database" not in cmd.name
-                ),
-                "formatter": utility_formatter,
-            },
-        }
-
-        content = {cat: "" for cat in categories}
-        for command in self.list:
-            for cat_name, cat_info in categories.items():
-                if cat_info["condition"](command):
-                    content[cat_name] += cat_info["formatter"](command)
-                    break
-
-        self.lyst = [
-            [
-                content[cat],
-                categories[cat]["title"],
-                categories[cat]["emoji"],
-                categories[cat]["description"],
-            ]
-            for cat in categories
-        ]
-
-        options = [
-            discord.SelectOption(label=item[1], emoji=item[2]) for item in self.lyst
-        ]
-
+        self.list, self.initial_author = list, initial_author
+        self.pages = pages(list)
         super().__init__(
             placeholder="Browse All Commands",
             max_values=1,
             min_values=1,
-            options=options,
+            options=[
+                discord.SelectOption(label=title, emoji=emoji)
+                for title, (emoji, _, _) in self.pages.items()
+            ],
             custom_id="browsecommands",
         )
 
     async def callback(self, interaction: discord.Interaction):
-        if self.initial_author != interaction.user:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are not the author of this command",
-                ephemeral=True,
-            )
+        if await is_stranger(self.initial_author, interaction):
             return
-        for item in self.lyst:
-            if self.values[0] == item[1]:
-                intro = discord.Embed(
-                    title=f"{item[2]} {item[1]}", description=item[3], color=0xFFFF00
-                )
-                embed = discord.Embed(
-                    description=item[0], color=discord.Color.blurple()
-                )
-                await interaction.response.edit_message(
-                    embeds=[intro, embed],
-                    view=HelpPanel(self.list, self.initial_author),
-                )
-                break
+        title = self.values[0]
+        emoji, intro, commands_ = self.pages[title]
+        await interaction.response.edit_message(
+            embeds=[
+                discord.Embed(
+                    title=f"{emoji} {title}", description=intro, color=CATEGORY_COLOR
+                ),
+                discord.Embed(description=commands_, color=discord.Color.blurple()),
+            ],
+            view=HelpPanel(self.list, self.initial_author),
+        )
 
 
 class HelpPanel(discord.ui.View):
+    """The buttons and category menu under `/help`, for the member who ran it."""
+
     def __init__(self, list=None, initial_author=None):
         self.list = list
         self.initial_author = initial_author
         super().__init__(timeout=300)
-        inviteButton = Button(
-            label="Invite Bot",
-            style=discord.ButtonStyle.link,
-            url="https://discord.com/api/oauth2/authorize?client_id=732422232273584198",
-            row=1,
-            emoji="<a:robot:1366940845697400935>",
-        )
-        self.add_item(inviteButton)
-        serverButton = Button(
-            label="Support Server",
-            style=discord.ButtonStyle.link,
-            url="https://discord.gg/kaycd3fxHh",
-            row=1,
-            emoji="<a:join:1366940843088543775>",
-        )
-        self.add_item(serverButton)
-        websiteButton = Button(
-            label="Website",
-            style=discord.ButtonStyle.link,
-            url="https://fischl.app/",
-            row=1,
-            emoji="<a:globe:1366940841829994557>",
-        )
-        self.add_item(websiteButton)
+        for label, url, emoji in LINKS:
+            self.add_item(
+                discord.ui.Button(
+                    label=label,
+                    style=discord.ButtonStyle.link,
+                    url=url,
+                    row=1,
+                    emoji=emoji,
+                )
+            )
         self.add_item(Select(self.list, self.initial_author))
 
     async def on_timeout(self) -> None:
         for child in self.children:
-            if isinstance(child, Button) and child.style == discord.ButtonStyle.link:
+            if getattr(child, "style", None) == discord.ButtonStyle.link:
                 continue
             child.disabled = True
             if isinstance(child, Select):
                 child.add_option(
-                    label="Disabled due to timeout",
-                    value="X",
-                    emoji="<:no:1036810470860013639>",
-                    default=True,
+                    label="Disabled due to timeout", value="X", emoji=NO, default=True
                 )
-
         if hasattr(self, "message"):
             try:
                 await self.message.edit(view=self)
             except discord.NotFound:
                 pass
         self.stop()
+
+    def fresh(self):
+        """Gives a new panel for the same member, so the timeout starts over."""
+        return HelpPanel(self.list, self.initial_author)
 
     @discord.ui.button(
         label="Overview",
@@ -288,31 +479,9 @@ class HelpPanel(discord.ui.View):
     async def overview(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if self.initial_author != interaction.user:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are not the author of this command",
-                ephemeral=True,
-            )
+        if await is_stranger(self.initial_author, interaction):
             return
-        embed = discord.Embed(
-            title="Fischl Help",
-            description=f"> <a:hoyoverse:1366950037728530472> Fischl is a powerful utility Discord bot **designed with all Hoyoverse communities in mind**. Trusted by numerous large servers, Fischl makes server management effortless with **easy-to-use systems** for *tickets, co-op matchmaking, partnerships, welcomes, birthdays, and fun minigames*. <:HuTaoWow:1253167030748840067>",
-            color=0x1DBCEB,
-        )
-        embed.add_field(
-            name="<:genshin_impact:1103720959950725190> Support Server",
-            value=f"Head over to our **[support server](https://discord.gg/kaycd3fxHh)** if you have any suggestions, questions or bug reports! :writing_hand:",
-            inline=True,
-        )
-        embed.add_field(
-            name="<:slash:1037445915348324505> Command Usage",
-            value=f"This bot uses [slash commands](https://discord.com/blog/welcome-to-the-new-era-of-discord-apps). Type `/` or **select a category** below to see the list of available bot commands.",
-            inline=True,
-        )
-
-        await interaction.response.edit_message(
-            embed=embed, view=HelpPanel(self.list, self.initial_author)
-        )
+        await interaction.response.edit_message(embed=overview(), view=self.fresh())
 
     @discord.ui.button(
         label="Statistics",
@@ -324,54 +493,10 @@ class HelpPanel(discord.ui.View):
     async def statistics(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if self.initial_author != interaction.user:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are not the author of this command",
-                ephemeral=True,
-            )
+        if await is_stranger(self.initial_author, interaction):
             return
-        embed = discord.Embed(
-            title="Fischl Discord Bot Statistics <a:server:1366940847093841961>",
-            color=0x1DBCEB,
-        )
-        mem_usage = psutil.virtual_memory()
-        embed.add_field(
-            name="<:info:1037445870469267638> Package Info",
-            value=(
-                f"```OS - {platform.system()}\n"
-                f"Python - {platform.python_version()}\n"
-                f"discord.py - {discord.__version__}\n"
-                f"Google Firebase - {firebase_admin.__version__}```"
-            ),
-            inline=False,
-        )
-        ref = db.reference("/Uptime")
-        status = ref.get()
-        for key, value in status.items():
-            uptime = value["Uptime"]
-            break
-        embed.add_field(
-            name="<:dev:1037445830749204624>  Bot Metadata",
-            value=(
-                f"> App ID: `{interaction.client.application_id}`"
-                f"\n> Last Reboot: <t:{uptime}:R>"
-                f"\n> Servers Count: `{len(interaction.client.guilds)}`"
-                f"\n> API/Bot Latency: `{int(round(interaction.client.latency * 1000, 1))}ms`"
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="📊  Bot Process Data",
-            value=(
-                f"> CPU Usage: `{psutil.cpu_percent(0.1)}%`"
-                f"\n> RAM Usage: `{psutil.virtual_memory()[3]/1000000000:.2f} GB`"
-                f"\n> Memory:  `{mem_usage.used/(1024**3):.2f}/{mem_usage.total/(1024**3):.2f} GB ({(mem_usage.percent):.2f}%)`"
-            ),
-            inline=True,
-        )
-
         await interaction.response.edit_message(
-            embed=embed, view=HelpPanel(self.list, self.initial_author)
+            embed=statistics(interaction.client), view=self.fresh()
         )
 
     @discord.ui.button(
@@ -384,209 +509,13 @@ class HelpPanel(discord.ui.View):
     async def tutorial(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if self.initial_author != interaction.user:
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> You are not the author of this command",
-                ephemeral=True,
-            )
+        if await is_stranger(self.initial_author, interaction):
             return
-        embed = discord.Embed(
-            title="Server Configuration <a:config:1366940834628505650>",
-            description=f"You could view the server settings of the bot in this page instantly. The configuration for **{interaction.guild.name}** is as follows:",
-            color=0x1DBCEB,
-        )
-
-        ################
-
-        await interaction.response.send_message(
-            "<a:loading:1026905298088243240>  Loading Server Configuration",
-            ephemeral=True,
-        )
-
-        ref = db.reference("/Tickets")
-        tickets = ref.get()
-        found = False
-        for key, value in tickets.items():
-            if value["Server ID"] == interaction.guild.id:
-                CATEGORY_ID = value["Category ID"]
-                LOGCHANNEL_ID = value["Log Channel ID"]
-                found = True
-                break
-
-        if not found:
-            embed.add_field(
-                name="Ticket System",
-                value="<:no:1036810470860013639> Disabled",
-                inline=True,
-            )
-        else:
-            embed.add_field(
-                name="Ticket System",
-                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Category:** <#{CATEGORY_ID}>\n<:reply:1036792837821435976> **Log Channel:** <#{LOGCHANNEL_ID}>",
-                inline=True,
-            )
-
-        ################
-
-        coop = await coOpStore.server(interaction.client.pool, interaction.guild.id)
-
-        if coop is None:
-            embed.add_field(
-                name="Co-op System",
-                value="<:no:1036810470860013639> Disabled",
-                inline=True,
-            )
-        else:
-            embed.add_field(
-                name="Co-op System",
-                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Co-op Channel:** <#{coop['channel_id']}>\n<:reply:1036792837821435976> **NA Helper Role:** <@&{coop['na_role_id']}>\n<:reply:1036792837821435976> **EU Helper Role:** <@&{coop['eu_role_id']}>\n<:reply:1036792837821435976> **Asia Helper Role:** <@&{coop['asia_role_id']}>\n<:reply:1036792837821435976> **SAR Helper Role:** <@&{coop['sar_role_id']}>",
-                inline=True,
-            )
-
-        ################
-
-        wishes = await birthdayStore.server(
-            interaction.client.pool, interaction.guild.id
-        )
-        if wishes is None:
-            embed.add_field(
-                name="Birthday Wishes",
-                value="<:no:1036810470860013639> Disabled",
-                inline=True,
-            )
-        else:
-            embed.add_field(
-                name="Birthday Wishes",
-                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Channel:** <#{wishes['channel_id']}>\n<:reply:1036792837821435976> **Birthday Role:** <@&{wishes['role_id']}>",
-                inline=True,
-            )
-
-        ################
-
-        stickiedchannels = await stuck_channels(
-            interaction.client.pool, interaction.guild
-        )
-        found = bool(stickiedchannels)
-
-        if not found:
-            embed.add_field(
-                name="Sticky Messages",
-                value="<:no:1036810470860013639> Disabled",
-                inline=True,
-            )
-        else:
-            x = "<:yes:1036811164891480194> Enabled\n"
-            for chn in stickiedchannels:
-                x = f"{x}<:reply:1036792837821435976> <#{chn}>\n"
-            embed.add_field(name="Sticky Messages", value=x, inline=True)
-
-        ################
-
-        # Check for enabled event channels
-        found = False
-        eventchannels = []
-        for channel in interaction.guild.text_channels:
-            ref = db.reference(f"/Chat Minigames System/{channel.id}")
-            system_data = ref.get()
-            if system_data:
-                eventchannels.append(channel.id)
-                found = True
-
-        if not found:
-            embed.add_field(
-                name="Chat Minigames",
-                value="<:no:1036810470860013639> Disabled",
-                inline=True,
-            )
-        else:
-            max_length = 1024 - 16
-            x = "<:yes:1036811164891480194> Enabled\n"
-            extra = 0
-            for chn in eventchannels:
-                channel_str = f"<:reply:1036792837821435976> <#{chn}>\n"
-                if len(x) + len(channel_str) > max_length:
-                    extra += 1
-                else:
-                    x += channel_str
-            if extra > 0:
-                x += f"... *({extra} more)*"
-            embed.add_field(name="Chat Minigames", value=x, inline=True)
-
-        ################
-
-        ref = db.reference("/Welcome")
-        welcome = ref.get()
-
-        found = False
-
-        for key, val in welcome.items():
-            if val["Server ID"] == interaction.guild.id:
-                welcomeChannel = val["Welcome Channel ID"]
-                welcomeImageEnabled = val["Welcome Image Enabled"]
-                found = True
-                break
-
-        if not found:
-            embed.add_field(
-                name="Welcome Messages",
-                value="<:no:1036810470860013639> Disabled",
-                inline=True,
-            )
-        else:
-            x = f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Welcome Channel:** <#{welcomeChannel}>\n"
-            if welcomeImageEnabled:
-                x = f"{x}<:reply:1036792837821435976> **Custom Image Background:** `Uploaded`\n"
-            else:
-                x = f"{x}<:reply:1036792837821435976> **Custom Image Background:** `Not uploaded`\n"
-            embed.add_field(name="Welcome Messages", value=x, inline=True)
-
-        ################
-
-        ref = db.reference(f"/Partner/config/{interaction.guild.id}")
-        config = ref.get()
-        if config:
-            request_channel = config.get("request_channel")
-            panel_channel = config.get("panel_channel")
-            log_channel = config.get("log_channel")
-            partner_role = config.get("partner_role")
-
-            value = f"<:yes:1036811164891480194> Enabled\n"
-            value += f"<:reply:1036792837821435976> **Request Channel:** <#{request_channel}>\n"
-            value += (
-                f"<:reply:1036792837821435976> **Panel Channel:** <#{panel_channel}>\n"
-            )
-            value += f"<:reply:1036792837821435976> **Log Channel:** <#{log_channel}>\n"
-            value += (
-                f"<:reply:1036792837821435976> **Partner Role:** <@&{partner_role}>"
-            )
-        else:
-            value = "<:no:1036810470860013639> Disabled"
-        embed.add_field(name="Partnership System", value=value, inline=True)
-
-        ################
-
-        ref = db.reference(f"Booster Role/{interaction.guild.id}")
-        config = ref.get()
-        if config and "base_role" in config:
-            base_role = config.get("base_role")
-            system_channel = config.get("system_channel")
-            public_channel = config.get("channel")
-            log_channel = config.get("log")
-
-            value = f"<:yes:1036811164891480194> Enabled\n"
-            value += f"<:reply:1036792837821435976> **Base Role:** <@&{base_role}>\n"
-            value += f"<:reply:1036792837821435976> **System Channel:** <#{system_channel}>\n"
-            value += f"<:reply:1036792837821435976> **Public Channel:** <#{public_channel}>\n"
-            value += f"<:reply:1036792837821435976> **Log Channel:** <#{log_channel}>"
-        else:
-            value = "<:no:1036810470860013639> Disabled"
-        embed.add_field(name="Booster Roles", value=value, inline=True)
-
-        await interaction.message.edit(
-            content=None, embed=embed, view=HelpPanel(self.list, self.initial_author)
-        )
+        await interaction.response.send_message(LOADING, ephemeral=True)
+        embed = await configuration(interaction.client.pool, interaction.guild)
+        await interaction.message.edit(content=None, embed=embed, view=self.fresh())
         await interaction.edit_original_response(
-            content="<:yes:1036811164891480194> Loaded Server Configuration"
+            content=f"{YES} Loaded Server Configuration"
         )
 
 
@@ -598,27 +527,8 @@ class Help(commands.Cog):
     @app_commands.guild_only()
     async def help(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
-        list = await self.bot.tree.fetch_commands()
-
-        embed = discord.Embed(
-            title="Fischl Help",
-            description=f"> <a:hoyoverse:1366950037728530472> Fischl is a powerful utility Discord bot **designed with all Hoyoverse communities in mind**. Trusted by numerous large servers, Fischl makes server management effortless with **easy-to-use systems** for *tickets, co-op matchmaking, partnerships, welcomes, birthdays, and fun minigames*. <:HuTaoWow:1253167030748840067>",
-            color=0x1DBCEB,
-        )
-        embed.add_field(
-            name="<:genshin_impact:1103720959950725190> Support Server",
-            value=f"Head over to our **[support server](https://discord.gg/kaycd3fxHh)** if you have any suggestions, questions or bug reports! :writing_hand:",
-            inline=True,
-        )
-        embed.add_field(
-            name="<:slash:1037445915348324505> Command Usage",
-            value=f"This bot uses [slash commands](https://discord.com/blog/welcome-to-the-new-era-of-discord-apps). Type `/` or **select a category** below to see the list of available bot commands.",
-            inline=True,
-        )
-
-        view = HelpPanel(list, interaction.user)
-        message = await interaction.followup.send(embed=embed, view=view)
-        view.message = message
+        view = HelpPanel(await self.bot.tree.fetch_commands(), interaction.user)
+        view.message = await interaction.followup.send(embed=overview(), view=view)
 
 
 async def setup(bot: commands.Bot) -> None:

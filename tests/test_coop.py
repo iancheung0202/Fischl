@@ -333,5 +333,5 @@ def test_help_reads_the_store():
     import inspect
 
     source = inspect.getsource(help_page)
-    assert "coOpStore.server(interaction.client.pool" in source
+    assert "coOpStore.server(pool" in source
     assert '"/Co-Op"' not in source
