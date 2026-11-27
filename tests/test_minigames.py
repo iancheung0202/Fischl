@@ -9,7 +9,6 @@ import pytest
 from commands.Events import (
     config,
     domain,
-    dropPack,
     eliteTrack,
     expeditionReminders,
     helperFunctions,
@@ -829,3 +828,393 @@ async def test_website_subscriptions_are_paid_once(game, monkeypatch, capsys):
         capsys.readouterr().out
         == f"Processed pending elite activation for user {USER} in guild {GUILD}\n"
     )
+
+
+# The season track
+
+
+@pytest.fixture
+async def track(game, monkeypatch):
+    """The track module on a three-tier season, with drop packs and quests recorded."""
+    from commands.Events import trackData
+
+    season = SimpleNamespace(
+        track_data=[
+            {
+                "tier": 1,
+                "cumulative_xp": 100,
+                "free": "Drop Pack",
+                "elite": "Prestige +1",
+            },
+            {
+                "tier": 2,
+                "cumulative_xp": 200,
+                "free": "Shop Discount +10%",
+                "elite": "Drop Pack",
+            },
+            {
+                "tier": 3,
+                "cumulative_xp": 300,
+                "free": "Nonsense",
+                "elite": "Prestige +1",
+            },
+        ]
+    )
+    monkeypatch.setattr(trackData, "get_current_season", lambda: season)
+    monkeypatch.setattr(trackData.time, "time", lambda: NOW)
+    game.packs = AsyncMock(return_value=SimpleNamespace(jump_url="https://jump"))
+    monkeypatch.setattr(trackData, "create_drop_pack", game.packs)
+    game.quest = AsyncMock()
+    monkeypatch.setattr(quests, "update_quest", game.quest)
+    game.channel.mention = "<#30>"
+    await game.pool.execute(
+        "INSERT INTO minigame_progression (gid, uid) VALUES ($1, $2)", GUILD, USER
+    )
+    game.track = trackData
+    return game
+
+
+async def elite(pool, expires=NOW + 500, claimed=()):
+    """Gives the test member an Elite Track."""
+    await pool.execute(
+        "INSERT INTO minigame_elite (user_id, guild_id, expires_at, claimed_tiers) VALUES ($1, $2, $3, $4)",
+        USER,
+        GUILD,
+        expires,
+        list(claimed),
+    )
+
+
+async def progress(pool, column):
+    """Gives one stored value of the test member's progression."""
+    return await pool.fetchval(
+        f"SELECT {column} FROM minigame_progression WHERE gid = $1 AND uid = $2",
+        GUILD,
+        USER,
+    )
+
+
+def test_every_reward_type_has_a_payer():
+    from commands.Events import trackData
+
+    assert set(config.REWARD_TYPES.values()) == set(trackData.PAYERS)
+
+
+async def test_track_is_empty_between_seasons(track, monkeypatch):
+    monkeypatch.setattr(track.track, "get_current_season", lambda: None)
+    assert track.track.get_current_track() == []
+
+
+async def test_drop_pack_reward_drops_a_pack_and_counts_the_quest(track):
+    said = await track.track.grant_reward(
+        GUILD, USER, "Drop Pack", 4, track.channel, client=track, pool=track.pool
+    )
+    assert said == (
+        "New Drop Pack",
+        "**Tier `4`:** You can claim your drop pack [here](https://jump)!",
+    )
+    track.packs.assert_awaited_once_with(
+        GUILD, USER, track.channel, False, False, 4, track
+    )
+    track.quest.assert_awaited_once_with(
+        USER, GUILD, CHANNEL, {"unlock_drop_packs": 1}, track
+    )
+
+
+async def test_bonus_elite_pack_is_named_and_skips_the_quest_without_a_client(track):
+    await elite(track.pool)
+    said = await track.track.grant_reward(
+        GUILD, USER, "Drop Pack", "Bonus", track.channel, True, None, track.pool
+    )
+    assert said == (
+        "Elite New Bonus Drop Pack",
+        "**Bonus:** You can claim your drop pack [here](https://jump)!",
+    )
+    track.quest.assert_not_awaited()
+    assert await track.pool.fetchval("SELECT claimed_tiers FROM minigame_elite") == []
+
+
+async def test_elite_tier_pays_only_once(track):
+    await elite(track.pool)
+    pay = lambda: track.track.grant_reward(  # noqa: E731
+        GUILD, USER, "Prestige +1", 7, track.channel, True, track, track.pool
+    )
+    title, _ = await pay()
+    assert title == "Elite Reward:  Prestige +1 " + config.PRESTIGE_EMOTE
+    assert await pay() == (None, None)
+    assert await progress(track.pool, "prestige") == 1
+    assert await track.pool.fetchval("SELECT claimed_tiers FROM minigame_elite") == [7]
+
+
+async def test_unknown_reward_pays_nothing_but_still_claims_the_tier(track):
+    await elite(track.pool)
+    said = await track.track.grant_reward(
+        GUILD, USER, "Nonsense", 3, track.channel, True, track, track.pool
+    )
+    assert said == (None, None)
+    assert await track.pool.fetchval("SELECT claimed_tiers FROM minigame_elite") == [3]
+
+
+async def test_shop_discount_stops_at_fifty(track):
+    await track.pool.execute("UPDATE minigame_progression SET shop_discount = 45")
+    title, description = await track.track.grant_reward(
+        GUILD, USER, "Shop Discount +10%", 2, track.channel, pool=track.pool
+    )
+    assert title == " Shop Discount +10% 🏷️"
+    assert "**50% discount**" in description
+    assert await progress(track.pool, "shop_discount") == 50
+
+
+async def test_tiers_passed_fill_both_embeds(track):
+    await elite(track.pool)
+    free, paid = await track.track.check_tier_rewards(
+        GUILD, USER, 50, 300, track.channel, client=track, pool=track.pool
+    )
+    assert free.title == "🏆 Tiers Achieved"
+    assert free.description == (
+        f"<@{USER}>, you have reached **`2`** new tiers and unlocked the following rewards!"
+    )
+    assert [field.name for field in free.fields] == [
+        "New Drop Pack",
+        " Shop Discount +10% 🏷️",
+    ]
+    assert free.fields[0].value.startswith("-# **Tier `1`:**")
+    assert paid.title == "🏆 Elite Tiers Achieved"
+    assert track.quest.await_count == 2
+    assert len(paid.fields) == 3
+    assert (free.color.value, paid.color.value) == (0xFFD700, 0xFA0ADD)
+    assert await progress(track.pool, "prestige") == 2
+    assert await track.pool.fetchval("SELECT claimed_tiers FROM minigame_elite") == [
+        1,
+        2,
+        3,
+    ]
+
+
+async def test_tier_already_reached_is_not_paid_again(track):
+    free, paid = await track.track.check_tier_rewards(
+        GUILD, USER, 100, 199, track.channel, client=track, pool=track.pool
+    )
+    assert (free.title, paid.title, free.fields, paid.fields) == (None, None, [], [])
+    track.packs.assert_not_awaited()
+
+
+async def test_expired_elite_gets_free_rewards_only(track):
+    await elite(track.pool, expires=NOW)
+    free, paid = await track.track.check_tier_rewards(
+        GUILD, USER, 0, 100, track.channel, client=track, pool=track.pool
+    )
+    assert (len(free.fields), len(paid.fields)) == (1, 0)
+    assert free.description.startswith(f"<@{USER}>, you have reached **`1`** new tier ")
+    assert await progress(track.pool, "prestige") == 0
+
+
+@pytest.mark.parametrize(
+    "old, new, packs", [(300, 2799, 0), (300, 2800, 1), (2800, 7800, 2), (0, 5300, 2)]
+)
+async def test_bonus_packs_past_the_end_of_the_track(track, old, new, packs):
+    track.packs.reset_mock()
+    await track.track.check_tier_rewards(
+        GUILD, USER, old, new, track.channel, client=None, pool=track.pool
+    )
+    bonus = [call for call in track.packs.await_args_list if call.args[4]]
+    assert len(bonus) == packs
+
+
+async def test_bonus_packs_are_doubled_for_elite(track):
+    await elite(track.pool)
+    await track.track.check_tier_rewards(
+        GUILD, USER, 300, 2800, track.channel, client=None, pool=track.pool
+    )
+    assert [call.args[3] for call in track.packs.await_args_list] == [False, True]
+
+
+async def test_elite_catch_up_pays_unclaimed_tiers_and_bonus_packs(track):
+    await elite(track.pool, claimed=[1])
+    lines = await track.track.grant_elite_rewards_up_to_tier(
+        GUILD, USER, track.channel, 5300, client=track, pool=track.pool
+    )
+    assert lines == [
+        "-# - **Tier 2:** Drop Pack",
+        "-# - **Tier 3:** Prestige +1",
+        "-# - `x2` Elite Bonus Drop Pack (dropped at <#30>)",
+    ]
+    assert await progress(track.pool, "prestige") == 1
+    assert track.packs.await_count == 3
+
+
+async def test_elite_is_active_until_it_expires(track):
+    active = track.track.is_elite_active
+    assert await active(track.pool, USER, GUILD) is False
+    await elite(track.pool, expires=NOW + 1)
+    assert await active(track.pool, USER, GUILD) is True
+    await track.pool.execute("UPDATE minigame_elite SET expires_at = $1", NOW)
+    assert await active(track.pool, USER, GUILD) is False
+    broken = MagicMock(fetchval=AsyncMock(side_effect=OSError))
+    broken.acquire.side_effect = OSError
+    assert await active(broken, USER, GUILD) is False
+
+
+async def test_every_known_reward_of_every_season_is_paid_and_announced(track):
+    texts = sorted(
+        {
+            tier[side]
+            for season in config.SEASONS
+            for tier in season.track_data
+            for side in ("free", "elite")
+            if tier[side].split("|")[0].strip() in config.REWARD_TYPES
+        }
+    )
+    assert len(texts) > 20
+    texts.sort(key=lambda text: text != "Unlocks Mora Gifting")  # only pays once
+    for text in texts:
+        title, description = await track.track.grant_reward(
+            GUILD, USER, text, 5, track.channel, client=track, pool=track.pool
+        )
+        assert title and description, text
+    assert await progress(track.pool, "gift_tax") is not None
+    assert await progress(track.pool, "mora_boost") > 0
+    assert await progress(track.pool, "minigame_summons") > 0
+    assert await progress(track.pool, "chest_upgrades") > 4
+
+
+async def cosmetics(pool, column):
+    """Gives one stored value of the test member's cosmetics."""
+    return await pool.fetchval(
+        f"SELECT {column} FROM minigame_cosmetics WHERE gid = $1 AND uid = $2",
+        GUILD,
+        USER,
+    )
+
+
+async def pay(track, text, elite=False):
+    """Pays tier 5's reward to the test member."""
+    return await track.track.grant_reward(
+        GUILD, USER, text, 5, track.channel, elite, track, track.pool
+    )
+
+
+@pytest.mark.parametrize(
+    "text, column, title",
+    [
+        (
+            "Custom GIF Background",
+            "selected_animated_background_unlocked",
+            " Custom GIF Background Unlocked 🖼️",
+        ),
+        ("Custom Card Font", "selected_font_unlocked", " Custom Card Font Unlocked 🔤"),
+        ("Custom Title", "selected_custom_title_unlocked", " Custom Title Unlocked 📍"),
+        ("Custom Accent Color", "embed_color", " Custom Accent Color Unlocked 🎨"),
+        ("Custom Embed Color", "embed_color", " Custom Accent Color Unlocked 🎨"),
+    ],
+)
+async def test_unlock_rewards_set_only_their_own_flag(track, text, column, title):
+    flags = "selected_animated_background_unlocked, selected_font_unlocked, selected_custom_title_unlocked, embed_color"
+    assert (await pay(track, text))[0] == title
+    row = await track.pool.fetchrow(f"SELECT {flags} FROM minigame_cosmetics")
+    assert [name for name, on in row.items() if on] == [column]
+
+
+async def test_background_title_and_frames_are_stored_by_name(track):
+    said = await pay(track, "Animated Background | assets/backgrounds/Night Sky.gif")
+    assert said[0] == " Animated Inventory Background Unlocked 🖼️"
+    assert "You have unlocked **Night Sky**!" in said[1]
+    said = await pay(track, "Server Title | Star | Gazer", elite=False)
+    assert said[0] == " Server Title Unlocked 📍"
+    assert "**Star**" in said[1]
+    said = await pay(track, "Static Frame | assets/frames/Gold Ring.png")
+    assert said[0] == " Static Profile Frame Unlocked 👤"
+    assert "**Gold Ring**" in said[1]
+    said = await pay(track, "Animated Frame | assets/frames/Fire.gif")
+    assert said[0] == " **Animated** Profile Frame Unlocked 👤"
+    assert await cosmetics(track.pool, "backgrounds") == ["Night Sky"]
+    assert await cosmetics(track.pool, "titles") == [[str(NOW * 1000), "Star"]]
+    assert await cosmetics(track.pool, "frames") == ["Gold Ring.png", "Fire.gif"]
+
+
+async def test_express_chests_and_prestige_wording(track):
+    await elite(track.pool)
+    assert (await pay(track, "Express Daily Chests"))[0] == " Express Daily Chests ⚡"
+    assert await progress(track.pool, "express_daily_chests") is True
+    assert "end of the free track" in (await pay(track, "Prestige +1"))[1]
+    assert "end of the elite track" in (await pay(track, "Prestige +1", True))[1]
+
+
+@pytest.mark.parametrize(
+    "text, column, start, stored, title",
+    [
+        ("Mora Gain Boost +5%", "mora_boost", 10, 15, "Gain Boost +5% "),
+        ("Mora Gain Boost +67%", "mora_boost", 10, 77, "Gain Boost +67% "),
+        ("+1 Chest Upgrade Limit", "chest_upgrades", 6, 7, "+1 Chest Upgrades "),
+        ("+69 Chest Upgrade Limit", "chest_upgrades", 6, 75, "+69 Chest Upgrades "),
+        ("+3 Minigames Summon", "minigame_summons", 4, 7, "+3 Minigame Summons 🧲"),
+        ("+30 Minigames Summon", "minigame_summons", 4, 34, "+30 Minigame Summons 🧲"),
+        ("Shop Discount +10%", "shop_discount", 20, 30, " Shop Discount +10% 🏷️"),
+        (
+            "Kingdom Discount +10%",
+            "domain_discount",
+            20,
+            30,
+            " Domain Discount +10% 🏰",
+        ),
+        (
+            "Kingdom Discount +10%",
+            "domain_discount",
+            45,
+            50,
+            " Domain Discount +10% 🏰",
+        ),
+        ("Mora Gift Tax -5%", "gift_tax", None, 25, "Gift Tax Reduced -5% "),
+        ("Mora Gift Tax -5%", "gift_tax", 0, 0, "Gift Tax Reduced -5% "),
+        ("Mora Gift Tax -5%", "gift_tax", 3, 0, "Gift Tax Reduced -5% "),
+        ("Mora Gift Tax -5%", "gift_tax", 20, 15, "Gift Tax Reduced -5% "),
+    ],
+)
+async def test_number_rewards_store_the_new_total(
+    track, text, column, start, stored, title
+):
+    await track.pool.execute(f"UPDATE minigame_progression SET {column} = $1", start)
+    said = await pay(track, text)
+    assert title in said[0]
+    assert f"{stored}" in said[1]
+    assert await progress(track.pool, column) == stored
+
+
+async def test_gifting_unlocks_once_at_thirty(track):
+    title, description = await pay(track, "Unlocks Mora Gifting")
+    assert title.endswith(" Gifting Unlocked! :gift:")
+    assert "`30%`" in description
+    assert await progress(track.pool, "gift_tax") == 30
+    await track.pool.execute("UPDATE minigame_progression SET gift_tax = 10")
+    assert await pay(track, "Unlocks Mora Gifting") == (None, None)
+    assert await progress(track.pool, "gift_tax") == 10
+
+
+async def test_bonus_packs_count_from_the_end_of_the_track(track):
+    for old, new in ((0, 300), (290, 300), (2799, 2800), (2800, 5299)):
+        track.packs.reset_mock()
+        await track.track.check_tier_rewards(
+            GUILD, USER, old, new, track.channel, pool=track.pool
+        )
+        bonus = sum(call.args[4] for call in track.packs.await_args_list)
+        assert bonus == (new == 2800), (old, new)
+
+
+async def test_catch_up_bounds_and_inline_fields(track):
+    await elite(track.pool)
+    lines = await track.track.grant_elite_rewards_up_to_tier(
+        GUILD, USER, track.channel, 200, client=track, pool=track.pool
+    )
+    assert lines == ["-# - **Tier 1:** Prestige +1", "-# - **Tier 2:** Drop Pack"]
+    assert (
+        len(
+            await track.track.grant_elite_rewards_up_to_tier(
+                GUILD, USER, track.channel, 300, client=track, pool=track.pool
+            )
+        )
+        == 1
+    )
+    free, _ = await track.track.check_tier_rewards(
+        GUILD, USER, 0, 100, track.channel, client=track, pool=track.pool
+    )
+    assert free.fields[0].inline is False
