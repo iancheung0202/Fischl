@@ -1,7 +1,25 @@
+"""Saves each slash command's id, so messages can mention commands."""
+
 import json
 
 import discord
 from discord.ext import commands
+
+GROUPED = (
+    discord.AppCommandOptionType.subcommand,
+    discord.AppCommandOptionType.subcommand_group,
+)
+
+
+def ids(listed):
+    """Gives {name: id} for every command and each of its subcommands."""
+    found = {}
+    for command in listed:
+        found[command.name] = str(command.id)
+        for option in command.options:
+            if option.type in GROUPED:
+                found[f"{command.name} {option.name}"] = str(command.id)
+    return found
 
 
 class CommandSync(commands.Cog):
@@ -11,21 +29,9 @@ class CommandSync(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         try:
-            app_cmds = await self.bot.tree.fetch_commands()
-
-            command_map = {}
-            for cmd in app_cmds:
-                command_map[cmd.name] = str(cmd.id)
-                for option in cmd.options:
-                    if option.type in (
-                        discord.AppCommandOptionType.subcommand,
-                        discord.AppCommandOptionType.subcommand_group,
-                    ):
-                        command_map[f"{cmd.name} {option.name}"] = str(cmd.id)
-
-            with open("assets/commands.json", "w") as f:
-                json.dump(command_map, f, indent=4)
-
+            found = ids(await self.bot.tree.fetch_commands())
+            with open("assets/commands.json", "w") as file:
+                json.dump(found, file, indent=4)
             print("Successfully updated & synced assets/commands.json")
         except Exception as e:
             print(f"Failed to fetch application commands: {e}")

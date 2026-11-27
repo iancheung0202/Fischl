@@ -1,3 +1,5 @@
+"""A read-only web API (port 2030) of every message in one channel, kept in memory."""
+
 import datetime
 import hashlib
 import hmac
@@ -43,11 +45,9 @@ class MessageHistoryAPICog(commands.Cog):
             channel = self.bot.get_channel(CHANNEL_ID)
             if channel is None:
                 channel = await self.bot.fetch_channel(CHANNEL_ID)
-            count = 0
             async for message in channel.history(limit=None, oldest_first=True):
                 with self.lock:
                     self.insert(message)
-                count += 1
             with self.lock:
                 self.backfill_complete = True
         except Exception as e:
@@ -223,7 +223,8 @@ class MessageHistoryAPICog(commands.Cog):
         resp.headers["Cache-Control"] = "no-cache"
         return resp
 
-    def handle_summary(self):
+    def refusal(self):
+        """Gives the answer for a caller who may not read yet, or None."""
         if not self.check_auth():
             return self.unauthorized()
         retry_after = self.rate_limit_check(self.client_ip())
@@ -231,16 +232,14 @@ class MessageHistoryAPICog(commands.Cog):
             return self.rate_limited(retry_after)
         if not self.backfill_complete:
             return self.warming()
-        return self.cached(self.summary_payload())
+
+    def handle_summary(self):
+        return self.refusal() or self.cached(self.summary_payload())
 
     def handle_messages(self):
-        if not self.check_auth():
-            return self.unauthorized()
-        retry_after = self.rate_limit_check(self.client_ip())
-        if retry_after is not None:
-            return self.rate_limited(retry_after)
-        if not self.backfill_complete:
-            return self.warming()
+        refusal = self.refusal()
+        if refusal:
+            return refusal
         try:
             page = max(1, int(request.args.get("page", 1)))
         except ValueError:
