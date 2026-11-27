@@ -55,7 +55,7 @@ class Sticky(commands.GroupCog, name="sticky"):
             channel = interaction.channel
 
         await unstick(self.bot, channel)
-        msg = await interaction.channel.send(message)
+        msg = await channel.send(message)
         await store.add(self.bot.pool, channel.id, msg.id, message)
 
         embed = discord.Embed(

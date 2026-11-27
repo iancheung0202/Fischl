@@ -202,12 +202,12 @@ async def test_enable_again_replaces_the_oldest_message(env):
     assert await env.pool.fetchval("SELECT times FROM sticky_enabled") == 1
 
 
-async def test_enable_for_another_channel_posts_where_the_command_was_used(env):
+async def test_enable_for_another_channel_posts_in_the_chosen_channel(env):
     here = channel(OTHER)
     await commands(env).enable(interaction(env, here), "rules", env.channel)
-    here.send.assert_awaited_once_with("rules")
-    env.channel.send.assert_not_awaited()
-    assert await stuck(env.pool) == [(CHANNEL, 2221, "rules")]
+    env.channel.send.assert_awaited_once_with("rules")
+    here.send.assert_not_awaited()
+    assert await stuck(env.pool) == [(CHANNEL, 1111, "rules")]
     assert env.cog.enabled == {CHANNEL}
 
 
