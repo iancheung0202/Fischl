@@ -5637,11 +5637,14 @@ class DailyChestSystem:
         embed.set_footer(
             text=f"This chest spawned after you sent {self.user_states[(guild_id, user_id)]['threshold']} effortful messages in minigame channels today"
         )
-        chest_msg = await message.channel.send(
-            content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + MORA_CHEST_TIMEOUT}:R>!",
-            embed=embed,
-            view=view,
-        )
+        try:
+            chest_msg = await message.channel.send(
+                content=f"{message.author.mention}, claim this chest <t:{int(time.time()) + MORA_CHEST_TIMEOUT}:R>!",
+                embed=embed,
+                view=view,
+            )
+        except discord.Forbidden:
+            return
         logging.warning(
             f"{message.author.name} ({message.author.id}) is currently claiming a chest in {message.guild.name} ({message.guild.id})"
         )
