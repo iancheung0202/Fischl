@@ -773,3 +773,55 @@ async def test_winners_move_with_nothing_saved(pool, firebase, tmp_path):
 
     await move.winners(pool, firebase_admin.db, str(tmp_path))
     assert await pool.fetchval("SELECT count(*) FROM weekly_winners") == 0
+
+
+async def test_reputation_moves_once(pool, firebase, tmp_path):
+    import firebase_admin.db
+
+    system = {
+        "a": {"Server ID": 1, "Max Rep": 14, "Roles": {"70": 10, "71": 25}},
+        "b": {"Server ID": 2, "Max Rep": 1000, "Roles": "None"},
+        "c": {"Server ID": 3, "Max Rep": 100000, "Roles": {"Eu helper": 1000}},
+        "d": {"Server ID": 1, "Max Rep": 5, "Roles": {"72": 1}},
+    }
+    reps = {"1": {"Users": {"50": 3, "51": 10}}, "9": {"Users": {"52": 1}}}
+    firebase("/Global Reps System").set(system)
+    firebase("/Global Reps").set(reps)
+    await move.reputation(pool, firebase_admin.db, str(tmp_path))
+    rows = await pool.fetch("SELECT * FROM reputation_servers ORDER BY 1")
+    assert [tuple(row) for row in rows] == [(1, 14), (2, 1000), (3, 100000)]
+    rows = await pool.fetch("SELECT * FROM reputation_roles ORDER BY 1, 2")
+    assert [tuple(row) for row in rows] == [(1, 70, 10), (1, 71, 25)]
+    rows = await pool.fetch("SELECT * FROM reputation_points ORDER BY 1, 2")
+    assert [tuple(row) for row in rows] == [(1, 50, 3), (1, 51, 10), (9, 52, 1)]
+    saved = json.loads((tmp_path / "reputation-export.json").read_text())
+    assert saved == {"Global Reps System": system, "Global Reps": reps}
+    assert firebase("/Global Reps System").get() == system
+    assert firebase("/Global Reps").get() == reps
+    with pytest.raises(SystemExit):
+        await move.reputation(pool, firebase_admin.db, str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "system, reps",
+    [
+        ({"a": {"Server ID": "1", "Max Rep": 5, "Roles": "None"}}, {}),
+        ({"a": {"Server ID": 1, "Max Rep": 5.5, "Roles": "None"}}, {}),
+        ({"a": {"Server ID": 1, "Max Rep": 5, "Roles": ["70"]}}, {}),
+        ({"a": {"Server ID": 1, "Max Rep": 5, "Roles": {"70": "10"}}}, {}),
+        ({}, {"1": {"Users": {"50": 3.5}}}),
+        ({}, {"1": {"Users": {"fifty": 3}}}),
+        ({}, {"one": {"Users": {"50": 3}}}),
+    ],
+)
+async def test_reputation_move_stops_on_another_form(
+    pool, firebase, tmp_path, system, reps
+):
+    import firebase_admin.db
+
+    firebase("/Global Reps System").set(system)
+    firebase("/Global Reps").set(reps)
+    with pytest.raises(SystemExit):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.reputation(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('reputation_servers')") is None

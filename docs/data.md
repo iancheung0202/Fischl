@@ -9,7 +9,6 @@ Fischl uses two databases.
 
 | System | Top-level paths |
 |---|---|
-| Reputation | `Global Reps`, `Global Reps System` |
 | Partnership | `Partner` (BrawlKit reads this too) |
 | Activity service | `Ian Activity` |
 | Status and heartbeat | `Bot Status`, `Uptime` (the website reads both straight from the browser) |
@@ -33,6 +32,7 @@ Each system keeps its tables and queries in one store file. `scripts/firebase_to
 | Topics | `commands/Utility/topicStore.py` | `topics` | `Topics` |
 | Birthday | `commands/Birthday/birthdayStore.py` | `birthdays`, `birthday_servers` | `Birthday`, `Birthday System` (its `Server Name` field was never read and is not copied) |
 | Co-op | `commands/CoOp/coOpStore.py` | `coop_servers`, `coop_panels`, `coop_uids` | `Co-Op` (its `Server Name` field was never read and is not copied), `Co-Op Sticky Panel`, `Co-Op-UID` |
+| Reputation | `commands/CoOp/reputationStore.py` | `reputation_servers`, `reputation_roles`, `reputation_points` | `Global Reps System` (a reward keyed by a name, not a role id, could never be given and is not copied), `Global Reps` |
 | Weekly leaderboard (Meropide Bulletin) | `commands/Custom/winnerStore.py` | `weekly_winners` | `Weekly Leaderboard` |
 
 ## Rules for moving data

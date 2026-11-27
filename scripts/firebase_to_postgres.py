@@ -549,6 +549,81 @@ async def winners(pool, db, folder=None):
     print(f"winners: {len(rows)} servers; every row matches Firebase")
 
 
+def whole(value):
+    """Says whether a value is a whole number, or the text of one, above zero."""
+    if type(value) is int:
+        return value > 0
+    return type(value) is str and re.fullmatch(r"[1-9]\d*", value) is not None
+
+
+def rewards(server_id, roles):
+    """Splits a server's saved rewards into rows to copy and the ones left out.
+
+    A reward keyed by anything but a role id could never be given, so it is left out."""
+    if roles in (None, "None"):
+        return [], []
+    if type(roles) is not dict:
+        raise SystemExit(f"rewards of server {server_id} in another form: {roles!r}")
+    rows, left = [], []
+    for role, cost in roles.items():
+        if type(cost) is not int:
+            raise SystemExit(f"reward cost of server {server_id} not whole: {cost!r}")
+        if whole(role):
+            rows.append((server_id, int(role), cost))
+        else:
+            left.append((server_id, role, cost))
+    return rows, left
+
+
+async def reputation(pool, db, folder=None):
+    """Reputation settings, role rewards and members' points."""
+    from commands.CoOp import reputationStore as store
+
+    await store.create(pool)
+    for table in ("reputation_servers", "reputation_roles", "reputation_points"):
+        if await pool.fetchval(f"SELECT count(*) FROM {table}"):
+            raise SystemExit(f"{table} already has rows; Postgres is the live copy")
+    folder = folder or os.environ["EXPORT_FOLDER"]
+    saved = export(folder, "reputation", db, ("Global Reps System", "Global Reps"))
+    servers, roles, left = {}, [], []
+    for record in (saved["Global Reps System"] or {}).values():
+        server_id, most = record["Server ID"], record["Max Rep"]
+        if type(server_id) is not int or type(most) is not int:
+            raise SystemExit(f"reputation server in another form: {record}")
+        if server_id in servers:
+            continue
+        servers[server_id] = most
+        rows, odd = rewards(server_id, record.get("Roles"))
+        roles += rows
+        left += odd
+    points = []
+    for server_id, record in (saved["Global Reps"] or {}).items():
+        for user_id, amount in (record.get("Users") or {}).items():
+            if not whole(server_id) or not whole(user_id) or type(amount) is not int:
+                raise SystemExit(
+                    f"reps in another form: {server_id} {user_id} {amount!r}"
+                )
+            points.append((int(server_id), int(user_id), amount))
+    await pool.executemany(
+        "INSERT INTO reputation_servers VALUES ($1, $2)", list(servers.items())
+    )
+    await pool.executemany("INSERT INTO reputation_roles VALUES ($1, $2, $3)", roles)
+    await pool.executemany("INSERT INTO reputation_points VALUES ($1, $2, $3)", points)
+    for table, rows in (
+        ("reputation_servers", list(servers.items())),
+        ("reputation_roles", roles),
+        ("reputation_points", points),
+    ):
+        found = [tuple(row) for row in await pool.fetch(f"SELECT * FROM {table}")]
+        if sorted(found) != sorted(rows):
+            raise SystemExit(f"{table} differs from Firebase")
+    print(
+        f"reputation: {len(servers)} servers, {len(roles)} role rewards, "
+        f"{len(points)} members with reps; every row matches Firebase. "
+        f"Left out, not role ids: {left}"
+    )
+
+
 SYSTEMS = {
     "tag": tag,
     "vanity": vanity,
@@ -557,6 +632,7 @@ SYSTEMS = {
     "birthday": birthday,
     "coop": coop,
     "winners": winners,
+    "reputation": reputation,
 }
 
 

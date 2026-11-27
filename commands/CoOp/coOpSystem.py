@@ -6,9 +6,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from enkapy import Enka
-from firebase_admin import db
 
 from commands.CoOp import coOpStore as store
+from commands.CoOp import reputationStore
 from utils.commands import SlashCommand
 
 # Each region's name, the setting holding its helper role, and its embed colour.
@@ -410,16 +410,9 @@ class CoOpRepEnableView(discord.ui.View):
     async def disable_rep_system(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        ref = db.reference("/Global Reps System")
-        coop = ref.get()
-        found = False
-
-        if coop:
-            for key, value in coop.items():
-                if value["Server ID"] == interaction.guild.id:
-                    db.reference("/Global Reps System").child(key).delete()
-                    found = True
-                    break
+        found = await reputationStore.disable(
+            interaction.client.pool, interaction.guild.id
+        )
 
         if found:
             embed = discord.Embed(
@@ -446,17 +439,10 @@ class CoOpRepEnableView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         coop_enabled = await store.server(interaction.client.pool, interaction.guild.id)
-        rep_ref = db.reference("/Global Reps System")
-        rep_system = rep_ref.get()
-
-        rep_enabled = False
-
-        if rep_system:
-            for key, value in rep_system.items():
-                if value["Server ID"] == interaction.guild.id:
-                    max_rep = value["Max Rep"]
-                    rep_enabled = True
-                    break
+        max_rep = await reputationStore.max_rep(
+            interaction.client.pool, interaction.guild.id
+        )
+        rep_enabled = max_rep is not None
 
         if coop_enabled and rep_enabled:
             addRewardModel = AddRewardModel(title="Add a Custom Reward")
@@ -502,17 +488,10 @@ class CoOpRepEnableView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         coop_enabled = await store.server(interaction.client.pool, interaction.guild.id)
-        rep_ref = db.reference("/Global Reps System")
-        rep_system = rep_ref.get()
-
-        rep_enabled = False
-
-        if rep_system:
-            for key, value in rep_system.items():
-                if value["Server ID"] == interaction.guild.id:
-                    rep_enabled = True
-                    max_rep = value["Max Rep"]
-                    break
+        max_rep = await reputationStore.max_rep(
+            interaction.client.pool, interaction.guild.id
+        )
+        rep_enabled = max_rep is not None
 
         if coop_enabled and rep_enabled:
             removeRewardModel = RemoveRewardModel(title="Remove a Custom Reward")
@@ -566,69 +545,29 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Reps System")
-        coop = ref.get()
-        found = False
-        server_key = None
-        server_roles = {}
-
-        try:
-            import json
-
-            for key, val in coop.items():
-                if str(val["Server ID"]) == str(interaction.guild.id):
-                    server_key = key
-                    server_roles = val.get("Roles", {})
-                    if isinstance(server_roles, str):
-                        try:
-                            server_roles = json.loads(server_roles)
-                        except json.JSONDecodeError:
-                            server_roles = {}
-                    found = True
-                    break
-
-        except Exception:
-            pass
-
-        if not found:
-            self.update = discord.Embed(
-                description="Reputation system is not enabled for this server yet. Please enable it first.",
-                color=discord.Color.red(),
-            )
-            self.on_submit_interaction = interaction
-            self.stop()
-            return
-
-        try:
-            cost = int(self.cost.value)
-        except ValueError:
-            self.update = discord.Embed(
-                description="Cost must be a valid integer.",
-                color=discord.Color.red(),
-            )
-            self.on_submit_interaction = interaction
-            self.stop()
-            return
-
-        role_id = self.role_id.value.strip()
-        if role_id in server_roles:
-            self.update = discord.Embed(
-                description="This role ID already exists as a reward in this server.",
-                color=discord.Color.red(),
-            )
-            self.on_submit_interaction = interaction
-            self.stop()
-            return
-
-        server_roles[role_id] = cost
-        ref.child(server_key).update({"Roles": server_roles})
-
-        self.update = discord.Embed(
-            description=f"Added reward for role ID: `{role_id}` with a cost of {cost} reputation points.",
-            color=discord.Color.green(),
-        )
-        self.roles = server_roles
+        pool, guild_id = interaction.client.pool, interaction.guild.id
         self.on_submit_interaction = interaction
+        role_id, cost = self.role_id.value.strip(), self.cost.value.strip()
+        if await reputationStore.max_rep(pool, guild_id) is None:
+            problem = "Reputation system is not enabled for this server yet. Please enable it first."
+        elif not cost.lstrip("+-").isdecimal():
+            problem = "Cost must be a valid integer."
+        elif not role_id.isdecimal():
+            problem = "Role ID must be a valid role ID."
+        elif not await reputationStore.add_reward(
+            pool, guild_id, int(role_id), int(cost)
+        ):
+            problem = "This role ID already exists as a reward in this server."
+        else:
+            problem = None
+        self.roles = await reputationStore.rewards(pool, guild_id) or "None"
+        if problem:
+            self.update = discord.Embed(description=problem, color=discord.Color.red())
+        else:
+            self.update = discord.Embed(
+                description=f"Added reward for role ID: `{role_id}` with a cost of {int(cost)} reputation points.",
+                color=discord.Color.green(),
+            )
         self.stop()
 
 
@@ -642,61 +581,27 @@ class RemoveRewardModel(discord.ui.Modal, title="Remove a Custom Reward"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Global Reps System")
-        coop = ref.get()
-        found = False
-        server_key = None
-
-        server_roles = {}
-        try:
-            import json
-
-            for key, val in coop.items():
-                if val["Server ID"] == interaction.guild.id:
-                    server_roles = val.get("Roles", {})
-                    if isinstance(server_roles, str):
-                        try:
-                            server_roles = json.loads(server_roles)
-                        except json.JSONDecodeError:
-                            server_roles = {}
-                    server_key = key
-                    found = True
-                    break
-        except Exception:
-            pass
-
-        if not found or not server_roles:
+        pool, guild_id = interaction.client.pool, interaction.guild.id
+        self.on_submit_interaction = interaction
+        self.roles = await reputationStore.rewards(pool, guild_id) or "None"
+        role_id = str(self.role_id).strip()
+        if self.roles == "None":
             self.update = discord.Embed(
                 description="No rewards found for this server.",
                 color=discord.Color.red(),
             )
-            self.on_submit_interaction = interaction
-            self.stop()
-            return
-
-        role_id = str(self.role_id)
-        if role_id not in server_roles:
+        elif not role_id.isdecimal() or int(role_id) not in self.roles:
             self.update = discord.Embed(
                 description="Role ID not found as a reward.",
                 color=discord.Color.red(),
             )
-            self.on_submit_interaction = interaction
-            self.stop()
-            return
-
-        del server_roles[role_id]
-
-        if not server_roles:
-            server_roles = "None"
-
-        ref.child(server_key).update({"Roles": server_roles})
-
-        self.update = discord.Embed(
-            description=f"Removed reward for role ID: `{role_id}`.",
-            color=discord.Color.green(),
-        )
-        self.roles = server_roles
-        self.on_submit_interaction = interaction
+        else:
+            await reputationStore.remove_reward(pool, guild_id, int(role_id))
+            self.roles = await reputationStore.rewards(pool, guild_id) or "None"
+            self.update = discord.Embed(
+                description=f"Removed reward for role ID: `{role_id}`.",
+                color=discord.Color.green(),
+            )
         self.stop()
 
 
@@ -722,53 +627,27 @@ class CoOpRepEnableModal(discord.ui.Modal, title="Enable/Edit Reputation System"
         else:
             max_rep = 999  # Default value
 
-        ref = db.reference("/Global Reps System")
-        coop = ref.get()
-        found = False
-        roles = "None"
-        if coop:
-            for key, value in coop.items():
-                if value["Server ID"] == interaction.guild.id:
-                    roles = value["Roles"]
-                    ref.child(key).update({"Max Rep": max_rep})
-                    found = True
-                    embed = discord.Embed(
-                        title="Reputation System Updated",
-                        description=f"The reputation system is updated with a maximum of `{max_rep}` reputation points.",
-                        color=discord.Color.yellow(),
-                    )
-                    shop_lines = []
-                    if roles is not None and not isinstance(roles, str):
-                        for idx, (role_id, cost) in enumerate(
-                            sorted(roles.items(), key=lambda x: x[1]), start=1
-                        ):
-                            line = f"{idx}. <@&{role_id}> • {cost} reps \n"
-                            shop_lines.append(line)
-                        shop = "".join(shop_lines)
-                    else:
-                        shop = "None"
-                    embed.add_field(name="Roles", value=str(shop), inline=False)
-                    self.embed = embed
-
-        if not found:
-            data = {
-                interaction.guild.id: {
-                    "Server ID": interaction.guild.id,
-                    "Max Rep": max_rep,
-                    "Roles": "None",
-                }
-            }
-            for key, value in data.items():
-                ref.push().set(value)
-
+        pool, guild_id = interaction.client.pool, interaction.guild.id
+        new = await reputationStore.enable(pool, guild_id, max_rep)
+        roles = await reputationStore.rewards(pool, guild_id)
+        shop = "".join(
+            f"{idx}. <@&{role_id}> • {cost} reps \n"
+            for idx, (role_id, cost) in enumerate(roles.items(), start=1)
+        )
+        if new:
             embed = discord.Embed(
                 title="Reputation System Enabled",
                 description=f"The reputation system is enabled. Users can only give a maximum of `{max_rep}` reputation points at once.",
                 color=discord.Color.green(),
             )
-            embed.add_field(name="Roles", value=str(roles), inline=False)
-            self.embed = embed
-
+        else:
+            embed = discord.Embed(
+                title="Reputation System Updated",
+                description=f"The reputation system is updated with a maximum of `{max_rep}` reputation points.",
+                color=discord.Color.yellow(),
+            )
+        embed.add_field(name="Roles", value=shop or "None", inline=False)
+        self.embed = embed
         self.on_submit_interaction = interaction
         self.stop()
 
@@ -970,16 +849,11 @@ class CoOp(commands.GroupCog, name="co-op"):
         self,
         interaction: discord.Interaction,
     ) -> None:
-        ref = db.reference("/Global Reps System")
-        coop = ref.get()
+        pool, guild_id = interaction.client.pool, interaction.guild.id
+        max_rep = await reputationStore.max_rep(pool, guild_id)
         enabled = False
-        try:
-            for key, value in coop.items():
-                if value["Server ID"] == interaction.guild.id:
-                    enabled = [value["Max Rep"], value["Roles"]]
-                    break
-        except Exception:
-            pass
+        if max_rep is not None:
+            enabled = [max_rep, await reputationStore.rewards(pool, guild_id) or "None"]
 
         if enabled is not False:  # If enabled
             max_rep, roles = enabled

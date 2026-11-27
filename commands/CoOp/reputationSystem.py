@@ -1,172 +1,128 @@
 import discord
 from discord.ext import commands
-from firebase_admin import db
+
+from commands.CoOp import reputationStore as store
+
+NO = "<:no:1036810470860013639>"
+YES = "<:yes:1036811164891480194>"
+
+
+def mentioned(word):
+    """Gives the user id in a mention or a bare id."""
+    return int(word.replace("<@", "").replace(">", ""))
+
+
+async def show(message, pool):
+    """Answers `-rep` with a member's reps, the author's when nobody valid is named."""
+    try:
+        member = await message.guild.fetch_member(
+            mentioned(message.content.split(" ")[1])
+        )
+    except Exception:
+        member = message.author
+    found = await store.points(pool, message.guild.id, member.id)
+    await message.channel.send(f"**{member.name}**: **{found}** rep")
+
+
+async def leaderboard(message, pool):
+    """Answers `-toprep` with the server's members holding the most reps."""
+    try:
+        count = min(max(int(message.content.split(" ")[1]), 1), 50)
+    except Exception:
+        count = 10
+    rows = await store.top(pool, message.guild.id, count)
+    if not rows:
+        return await message.channel.send("No reputation data found.")
+    lines = []
+    for place, row in enumerate(rows, 1):
+        try:
+            user = await message.guild.fetch_member(row["user_id"])
+        except discord.NotFound:
+            continue
+        lines.append(f"{place}. **{user.name}** `({user.id})` - **{row['points']}**\n")
+    embed = discord.Embed(
+        title=f"Global Reputation Leaderboard - Top {count}",
+        description="".join(lines),
+        color=0xEB7660,
+    )
+    await message.channel.send(embed=embed)
+
+
+def refusal(message, user_id, amount, most):
+    """Gives why reps cannot be given, or None when they can."""
+    if amount > most:
+        return f"{NO} You can't give more than {most} reps at once."
+    if user_id == message.author.id:
+        return f"{NO} You can't give yourself reps!"
+    if amount <= 0:
+        return f"{NO} You must give at least 1 rep."
+
+
+async def earned(member, before, after, rewards):
+    """Gives the member every role whose cost they just reached, with an embed for each."""
+    embeds = []
+    for role_id, cost in rewards.items():
+        role = member.guild.get_role(role_id)
+        if role is None or not before <= cost <= after:
+            continue
+        await member.add_roles(role)
+        embeds.append(
+            discord.Embed(
+                description=f"**{member.name}** just earned a new role: **{role.mention}**",
+                color=discord.Color.green(),
+            )
+        )
+    return embeds
+
+
+async def give(message, pool, most):
+    """Answers `-giverep @user amount`."""
+    parts = message.content.split(" ")
+    if len(parts) < 3:
+        return await message.reply("Command Usage: `-giverep @user amount`")
+    try:
+        user_id, amount = mentioned(parts[1]), int(parts[2])
+    except ValueError:
+        return await message.reply(f"{NO} Invalid format. Use `-giverep @user amount`")
+    problem = refusal(message, user_id, amount, most)
+    if problem:
+        return await message.reply(problem)
+    member = await message.guild.fetch_member(user_id)
+    after = await store.give(pool, message.guild.id, user_id, amount)
+    rewards = await store.rewards(pool, message.guild.id)
+    embeds = await earned(member, after - amount, after, rewards)
+    await message.channel.send(
+        f"{YES} Gave `{amount}` Rep to **{member.name}** (current - `{after}`)",
+        embeds=embeds,
+    )
 
 
 class ReputationSystem(commands.Cog):
+    """The `-rep`, `-toprep` and `-giverep` messages of the reputation system."""
+
     def __init__(self, bot):
         self.client = bot
 
+    async def cog_load(self):
+        await store.create(self.client.pool)
+
     @commands.Cog.listener()
     async def on_message(self, message):
-
-        if message.author == self.client.user or message.author.bot == True:
+        text = message.content.lower()
+        if message.author.bot or not message.guild or not text.startswith("-"):
             return
-
-        if message.content.lower().startswith("-rep"):
-            ref = db.reference("/Global Reps System")
-            coop = ref.get()
-            enabled = False
-            if coop:
-                for key, value in coop.items():
-                    if value["Server ID"] == message.guild.id:
-                        enabled = True
-                        break
-            if not enabled:
-                return
-            try:
-                id = int(
-                    message.content.split(" ")[1].replace("<@", "").replace(">", "")
-                )
-                username = (await message.guild.fetch_member(id)).name
-            except Exception:
-                id = message.author.id
-                username = message.author.name
-
-            ref = db.reference("/Global Reps")
-            reps = ref.get() or {}
-
-            ogrep = 0
-            for key, val in reps.items():
-                if id in val["Users"]:
-                    ogrep = val["Users"][id]
-                    break
-
-            await message.channel.send(f"**{username}**: **{ogrep}** rep")
-
-        elif message.content.lower().startswith("-toprep"):
-            ref = db.reference("/Global Reps System")
-            coop = ref.get()
-            enabled = False
-            if coop:
-                for key, value in coop.items():
-                    if value["Server ID"] == message.guild.id:
-                        enabled = True
-                        break
-            if not enabled:
-                return
-            try:
-                num = int(message.content.split(" ")[1])
-                num = min(max(num, 1), 50)  # Ensures the number is between 1 and 50
-            except Exception:
-                num = 10
-
-            ref = db.reference("/Global Reps")
-            reps = ref.get() or {}
-
-            list_data = []
-            for key, val in reps.items():
-                for user_id, points in val["Users"].items():
-                    list_data.append({"user_id": user_id, "points": points})
-
-            if not list_data:
-                await message.channel.send("No reputation data found.")
-                return
-
-            import pandas as pd
-
-            df = pd.DataFrame(list_data)
-            df_sorted = df.sort_values(by="points", ascending=False)
-            top_users = df_sorted.head(num)
-
-            desc = ""
-            for count, (_, row) in enumerate(top_users.iterrows(), 1):
-                user = await message.guild.fetch_member(row["user_id"])
-                if user:
-                    desc += f"{count}. **{user.name}** `({user.id})` - **{row['points']}**\n"
-
-            embed = discord.Embed(
-                title=f"Global Reputation Leaderboard - Top {num}",
-                description=desc,
-                color=0xEB7660,
-            )
-            await message.channel.send(embed=embed)
-
-        elif message.content.lower().startswith("-giverep"):
-            ref = db.reference("/Global Reps System")
-            coop = ref.get()
-            enabled = False
-            if coop:
-                for key, value in coop.items():
-                    if value["Server ID"] == message.guild.id:
-                        enabled = True
-                        max_rep = value["Max Rep"]
-                        roles = value["Roles"]
-                        break
-            if not enabled:
-                return
-            parts = message.content.split(" ")
-            if len(parts) < 3:
-                await message.reply("Command Usage: `-giverep @user amount`")
-                return
-
-            try:
-                id = int(parts[1].replace("<@", "").replace(">", ""))
-                rep = int(parts[2])
-            except ValueError:
-                await message.reply(
-                    "<:no:1036810470860013639> Invalid format. Use `-giverep @user amount`"
-                )
-                return
-
-            if rep > max_rep:
-                await message.reply(
-                    f"<:no:1036810470860013639> You can't give more than {max_rep} reps at once."
-                )
-                return
-            elif id == message.author.id:
-                await message.reply(
-                    "<:no:1036810470860013639> You can't give yourself reps!"
-                )
-                return
-            elif rep <= 0:
-                await message.reply(
-                    "<:no:1036810470860013639> You must give at least 1 rep."
-                )
-                return
-
-            username = (await message.guild.fetch_member(id)).name
-            guild_id = str(message.guild.id)
-
-            ref = db.reference("/Global Reps")
-            reps = ref.get() or {}
-
-            if guild_id not in reps:
-                reps[guild_id] = {"Users": {}}
-
-            ogrep = reps[guild_id]["Users"].get(id, 0)
-            newrep = ogrep + rep
-            reps[guild_id]["Users"][id] = newrep
-            ref.set(reps)
-
-            unlocked_roles = []
-            embeds = []
-            for role_id, cost in roles.items():
-                if ogrep <= cost <= newrep:
-                    unlocked_roles.append(role_id)
-            for role_id in unlocked_roles:
-                user = await message.guild.fetch_member(id)
-                await user.add_roles(message.guild.get_role(int(role_id)))
-                embeds.append(
-                    discord.Embed(
-                        description=f"**{username}** just earned a new role: **{message.guild.get_role(int(role_id)).mention}**",
-                        color=discord.Color.green(),
-                    )
-                )
-            await message.channel.send(
-                f"<:yes:1036811164891480194> Gave `{rep}` Rep to **{username}** (current - `{newrep}`)",
-                embeds=embeds,
-            )
+        if not text.startswith(("-rep", "-toprep", "-giverep")):
+            return
+        pool = self.client.pool
+        most = await store.max_rep(pool, message.guild.id)
+        if most is None:
+            return
+        if text.startswith("-rep"):
+            await show(message, pool)
+        elif text.startswith("-toprep"):
+            await leaderboard(message, pool)
+        else:
+            await give(message, pool, most)
 
 
 async def setup(bot):
