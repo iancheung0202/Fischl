@@ -1,7 +1,7 @@
 import os
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -83,6 +83,21 @@ def firebase():
     tree = {}
     with patch("firebase_admin.db.reference", lambda path="": Ref(tree, path)):
         yield lambda path="": Ref(tree, path)
+
+
+@pytest.fixture
+async def pool():
+    """A pool on an empty throwaway Postgres database (TEST_DATABASE_URL)."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    assert url.endswith("_test"), "the database name must end in _test"
+    import asyncpg
+
+    pool = await asyncpg.create_pool(url, min_size=1, max_size=2)
+    await pool.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+    yield pool
+    await pool.close()
 
 
 @pytest.fixture

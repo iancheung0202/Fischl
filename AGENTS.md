@@ -46,6 +46,8 @@ Use Python 3.10. That's what CI and production run.
 
 `tests/conftest.py` puts a stand-in for `assets/secret.py` in place, so nothing needs a token. The `firebase` fixture swaps Firebase for a tree in memory, and `no_loops` stops background loops from starting so a test can run one round by hand. Tests never touch the real database.
 
+The `pool` fixture gives a real Postgres pool on an empty database. It needs `TEST_DATABASE_URL` pointing at a throwaway database, which it wipes before every test; without it those tests are skipped. CI sets one up.
+
 ### How a deploy works
 
 - Production runs `python3 fischl.py` in a `screen` session, and `web/main.py` as a second process for the website.

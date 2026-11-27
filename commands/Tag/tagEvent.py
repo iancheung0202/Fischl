@@ -1,47 +1,26 @@
 import asyncio
-import os
 import time
 
 import discord
 from discord.ext import commands, tasks
-from firebase_admin import db
 
-try:
-    from .tagEnabledGuilds import enabledGuilds
-except:
-    enabledGuilds = []
-last_modified = (
-    os.path.getmtime("./commands/Tag/tagEnabledGuilds.py")
-    if os.path.exists("./commands/Tag/tagEnabledGuilds.py")
-    else 0
-)
-
+from commands.Tag import tagStore as store
 
 SWEEP_INTERVAL = 3600  # seconds between full member scans of one server
 RECENT_WINDOW = 60  # seconds in which the same role change is not repeated
+THANKS_COOLDOWN = 86400  # seconds before the same member is thanked again
 MEMBER_EVENTS = ("GUILD_MEMBER_ADD", "GUILD_MEMBER_UPDATE")
-
-
-def check_reload():
-    global enabledGuilds, last_modified
-    current_modified = os.path.getmtime("./commands/Tag/tagEnabledGuilds.py")
-    if current_modified > last_modified:
-        with open("./commands/Tag/tagEnabledGuilds.py", "r") as f:
-            for line in f:
-                if line.startswith("enabledGuilds ="):
-                    enabledGuilds = eval(line.split("=")[1].strip())
-                    last_modified = current_modified
-                    print("Reloaded tagEnabledGuilds.py")
-                    break
-
-
-def word(n):
-    return str(n) + (
-        "th" if 4 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    )
+MASTER_LOG_CHANNEL = 1555014249762398359
+GIVEN = ("✅ {} was given the tag role", 0x00FF00)
+REMOVED = ("❌ {} had tag role removed", 0xFF0000)
+ROLE_TOO_HIGH = (
+    "⚠️ Cannot manage tag role {} because it is higher than or equal to the bot's "
+    "top role. Make sure the bot's role is higher in your server settings."
+)
 
 
 def script(string, user, guild):
+    """Fills the variables a thank-you message may use."""
     replacements = {
         "{mention}": user.mention,
         "{server}": guild.name,
@@ -51,6 +30,25 @@ def script(string, user, guild):
     for k, v in replacements.items():
         string = string.replace(k, v)
     return string
+
+
+def thanks_embed(thanks, member, guild):
+    """Builds the embed of a thank-you message, or None if it has none."""
+    if not any(thanks[part] for part in ("title", "description", "image")):
+        return None
+    color = thanks["color"] or ""
+    embed = discord.Embed(
+        title=script(thanks["title"] or "", member, guild),
+        description=script(thanks["description"] or "", member, guild),
+        color=(
+            discord.Color(int(color[1:], 16))
+            if color.startswith("#")
+            else discord.Color.blurple()
+        ),
+    )
+    if thanks["image"]:
+        embed.set_image(url=thanks["image"])
+    return embed
 
 
 class TagRoleHandler(commands.Cog):
@@ -66,6 +64,7 @@ class TagRoleHandler(commands.Cog):
         self.tag_check.start()
 
     def cog_unload(self):
+        """Stops the minute check and hands member events back to discord.py."""
         self.tag_check.cancel()
         self.bot._connection.parsers.update(self._original_parsers)
 
@@ -89,6 +88,7 @@ class TagRoleHandler(commands.Cog):
             parsers[event] = parser
 
     def _on_member_event(self, data):
+        """Starts a sync for a member of a watched server."""
         guild_id = int(data["guild_id"])
         if guild_id not in self._active:
             return
@@ -97,6 +97,7 @@ class TagRoleHandler(commands.Cog):
         task.add_done_callback(self._tasks.discard)
 
     async def _sync_from_event(self, guild_id, data):
+        """Syncs the member a join or update event is about."""
         try:
             settings = self._active.get(guild_id)
             guild = self.bot.get_guild(guild_id)
@@ -107,271 +108,162 @@ class TagRoleHandler(commands.Cog):
             if not role or not log_channel:
                 return
             member = discord.Member(data=data, guild=guild, state=self.bot._connection)
-            log_chn = self.bot.get_channel(1555014249762398359)
-            await self._sync_member(
-                member, guild, role, log_channel, settings[2], log_chn
-            )
+            await self._sync_member(member, role, log_channel, settings[2])
         except Exception as e:
             print(f"Error syncing tag role from event in guild {guild_id}: {e}")
 
-    async def _sync_member(
-        self, member, guild, role, log_channel, tag_server_id, log_chn
-    ):
-        key = (guild.id, member.id)
+    async def _sync_member(self, member, role, log_channel, tag_server_id):
+        """Gives or removes the tag role so it matches the member's tag."""
+        key = (member.guild.id, member.id)
         if key in self._busy:
             return
         self._busy.add(key)
         try:
-            # Ensure IDs are compared as integers
-            m_tag_id = member.primary_guild.id if member.primary_guild else None
-            t_server_id = int(tag_server_id) if tag_server_id else None
-
-            has_tag = m_tag_id == t_server_id and member.primary_guild.tag is not None
-            has_role = role in member.roles
-
-            if has_tag != has_role:
-                # A scan can hold a member fetched just before an event already
-                # fixed their role; don't act and announce it a second time.
-                now = time.time()
-                if now - self._recent.get((*key, has_tag), 0) < RECENT_WINDOW:
-                    return
-                self._recent[(*key, has_tag)] = now
-
-            # Should have role but doesn't
-            if has_tag and not has_role:
+            tag = member.primary_guild
+            has_tag = (tag.id if tag else None) == tag_server_id and tag.tag is not None
+            if has_tag == (role in member.roles) or self._just_done(key, has_tag):
+                return
+            if has_tag:
                 await member.add_roles(role)
-                embed = discord.Embed(
-                    description=f"✅ {member.mention} was given the tag role",
-                    colour=0x00FF00,
-                )
-                await log_chn.send(
-                    embed=embed.add_field(
-                        name="Guild",
-                        value=f"{guild.name} ({guild.id})",
-                    )
-                )
-                try:
-                    await log_channel.send(embed=embed)
-                except:
-                    pass
-                await self.send_thank_you(member, guild)
-
-            # Shouldn't have role but does
-            elif not has_tag and has_role:
+                await self._log(member, log_channel, GIVEN)
+                await self.send_thank_you(member)
+            else:
                 await member.remove_roles(role)
-                embed = discord.Embed(
-                    description=f"❌ {member.mention} had tag role removed",
-                    colour=0xFF0000,
-                )
-                await log_chn.send(
-                    embed=embed.add_field(
-                        name="Guild",
-                        value=f"{guild.name} ({guild.id})",
-                    )
-                )
-                try:
-                    await log_channel.send(embed=embed)
-                except:
-                    pass
+                await self._log(member, log_channel, REMOVED)
         except discord.Forbidden:
-            print(f"Forbidden: Could not modify role for {member} in {guild.name}")
+            print(
+                f"Forbidden: Could not modify role for {member} in {member.guild.name}"
+            )
         except Exception as e:
             print(f"Error processing {member}: {e}")
         finally:
             self._busy.discard(key)
 
+    def _just_done(self, key, has_tag):
+        """True if this same change was made within the last minute.
+
+        A scan can hold a member fetched just before an event already fixed
+        their role; this keeps it from acting and announcing a second time."""
+        now = time.time()
+        if now - self._recent.get((*key, has_tag), 0) < RECENT_WINDOW:
+            return True
+        self._recent[(*key, has_tag)] = now
+        return False
+
+    async def _log(self, member, log_channel, change):
+        """Reports a role change to our own log and the server's."""
+        text, colour = change
+        embed = discord.Embed(description=text.format(member.mention), colour=colour)
+        guild = member.guild
+        await self.bot.get_channel(MASTER_LOG_CHANNEL).send(
+            embed=embed.add_field(name="Guild", value=f"{guild.name} ({guild.id})")
+        )
+        try:
+            await log_channel.send(embed=embed)
+        except:
+            pass
+
+    async def _target(self, guild, row):
+        """Gives the role, log channel and tag server to check, or None."""
+        if None in (row["role_id"], row["log_channel_id"], row["tag_guild_id"]):
+            return None
+        role = guild.get_role(row["role_id"])
+        log_channel = guild.get_channel(row["log_channel_id"])
+        if not role or not log_channel or not guild.me.guild_permissions.manage_roles:
+            return None
+        if role >= guild.me.top_role:
+            embed = discord.Embed(
+                description=ROLE_TOO_HIGH.format(role.mention), colour=0xFFFF00
+            )
+            try:
+                await log_channel.send(embed=embed)
+            except:
+                pass
+            return None
+        return role, log_channel, row["tag_guild_id"]
+
+    def _due(self, guild_id, settings):
+        """True when a server needs a full scan: new, changed, or an hour on."""
+        last = self._last_sweep.get(guild_id)
+        return (
+            last is None
+            or last[0] != settings
+            or time.time() - last[1] >= SWEEP_INTERVAL
+        )
+
     @tasks.loop(minutes=1)
     async def tag_check(self):
-        try:
-            check_reload()
-        except Exception as e:
-            print(f"Error reloading guilds: {e}")
+        """Refreshes which servers are watched and scans the ones that are due.
 
+        Members are synced as their updates arrive (see _on_member_event), so
+        a full scan is only a safety net."""
         try:
-            ref = db.reference("/Tag Roles")
-            all_configs = ref.get()
+            rows = await store.watched(self.bot.pool)
         except Exception as e:
             print(f"Error fetching tag roles: {e}")
             return
 
-        if not all_configs:
-            return
-
-        log_chn = self.bot.get_channel(1555014249762398359)
         active = {}
-
-        for guild_id in enabledGuilds:
+        for row in rows:
+            guild_id = row["guild_id"]
             try:
                 guild = self.bot.get_guild(guild_id)
-                if not guild:
+                target = guild and await self._target(guild, row)
+                if not target:
                     continue
-
-                config = None
-                for _, val in all_configs.items():
-                    if val.get("Server ID") == guild_id:
-                        config = val
-                        break
-                if not config:
-                    continue
-
-                # Validate config
-                if (
-                    "Role ID" not in config
-                    or "Log Channel ID" not in config
-                    or "Tag Server ID" not in config
-                ):
-                    # print(f"Incomplete config for guild {guild.name}")
-                    continue
-
-                role = guild.get_role(config["Role ID"])
-                log_channel = guild.get_channel(config["Log Channel ID"])
-                tag_server_id = config["Tag Server ID"]
-
-                if not role or not log_channel:
-                    # print(f"Missing role/channel in {guild.name}")
-                    continue
-
-                # Check bot permissions
-                if not guild.me.guild_permissions.manage_roles:
-                    # print(f"Missing manage_roles permission in {guild.name}")
-                    continue
-
-                if role >= guild.me.top_role:
-                    if log_channel:
-                        embed = discord.Embed(
-                            description=f"⚠️ Cannot manage tag role {role.mention} because it is higher than or equal to the bot's top role. Make sure the bot's role is higher in your server settings.",
-                            colour=0xFFFF00,
-                        )
-                        try:
-                            await log_channel.send(embed=embed)
-                        except:
-                            pass
-                    # print(f"Role {role.name} is higher than bot's top role in {guild.name}")
-                    continue
-
-                # Members are synced as their updates arrive (see _on_member_event).
-                # A full scan runs only when a server is first seen, its setup
-                # changes, or as an hourly safety net.
-                settings = (role.id, log_channel.id, tag_server_id)
-                active[guild_id] = settings
-                last = self._last_sweep.get(guild_id)
-                if (
-                    last is not None
-                    and last[0] == settings
-                    and time.time() - last[1] < SWEEP_INTERVAL
-                ):
+                role, log_channel, tag_server_id = target
+                active[guild_id] = settings = (role.id, log_channel.id, tag_server_id)
+                if not self._due(guild_id, settings):
                     continue
                 self._active[guild_id] = settings
                 self._last_sweep[guild_id] = (settings, time.time())
-
                 async for member in guild.fetch_members(limit=None):
-                    await self._sync_member(
-                        member, guild, role, log_channel, tag_server_id, log_chn
-                    )
+                    await self._sync_member(member, role, log_channel, tag_server_id)
             except Exception as e:
                 print(f"Error processing guild {guild_id}: {e}")
 
         self._active = active
         cutoff = time.time() - RECENT_WINDOW
         self._recent = {k: t for k, t in self._recent.items() if t > cutoff}
-        for guild_id in list(self._last_sweep):
-            if guild_id not in active:
-                del self._last_sweep[guild_id]
+        self._last_sweep = {g: s for g, s in self._last_sweep.items() if g in active}
 
     @tag_check.error
     async def tag_check_error(self, error):
+        """Reports a crash of the minute check."""
         print(f"Tag check loop crashed: {error}")
 
-    async def send_thank_you(self, member, guild):
-        """Send thank you message if configured and cooldown passed"""
-        # Check thank you config
-        ref = db.reference("/Tag Thanks")
-        thanks_config = None
-
-        # Optimize: Query by Server ID instead of fetching all
-        try:
-            snapshot = ref.order_by_child("Server ID").equal_to(guild.id).get()
-            if snapshot:
-                # snapshot is a dict {key: val}, take the first one
-                thanks_config = list(snapshot.values())[0]
-        except Exception as e:
-            print(f"Error fetching Tag Thanks config: {e}")
-
-        if not thanks_config:
+    async def send_thank_you(self, member):
+        """Sends the server's thank-you message, at most once a day per member."""
+        guild = member.guild
+        pool = self.bot.pool
+        thanks = await store.thanks(pool, guild.id)
+        if not thanks or not await self._claim(guild.id, member.id):
             return
-
-        # Check cooldown
-        ref = db.reference("/Tag Thanks Cooldown")
-        last_thanked = 0
-
-        # Query by User instead of fetching all
+        content = script(thanks["content"] or "", member, guild)
+        embed = thanks_embed(thanks, member, guild)
         try:
-            snapshot = ref.order_by_child("User").equal_to(member.id).get()
-            if snapshot:
-                for key, val in snapshot.items():
-                    if val["Guild"] == guild.id:
-                        last_thanked = val["Timestamp"]
-                        if time.time() - last_thanked < 86400:  # 24 hours
-                            return
-                        else:
-                            ref.child(key).delete()
-        except Exception as e:
-            print(f"Error checking cooldown: {e}")
-
-        # Record new thank
-        ref.push().set({"User": member.id, "Guild": guild.id, "Timestamp": time.time()})
-
-        # Get message content
-        msg_ref = db.reference("/Tag Thanks Message")
-        msg_config = None
-
-        # Query by Server ID
-        try:
-            snapshot = msg_ref.order_by_child("Server ID").equal_to(guild.id).get()
-            if snapshot:
-                msg_config = list(snapshot.values())[0]
-        except Exception as e:
-            print(f"Error fetching Tag Thanks Message: {e}")
-
-        # Prepare message
-        content = (
-            script(msg_config.get("Message Content", ""), member, guild)
-            if msg_config
-            else ""
-        )
-        embed = None
-
-        if msg_config and any(
-            msg_config.get(k) for k in ["Title", "Description", "Image Link"]
-        ):
-            color_str = msg_config.get("Color", "")
-            color = (
-                discord.Color(int(color_str[1:], 16))
-                if color_str.startswith("#")
-                else discord.Color.blurple()
-            )
-
-            embed = discord.Embed(
-                title=script(msg_config.get("Title", ""), member, guild),
-                description=script(msg_config.get("Description", ""), member, guild),
-                color=color,
-            )
-            if msg_config.get("Image Link"):
-                embed.set_image(url=msg_config["Image Link"])
-
-        # Send message
-        try:
-            if thanks_config["DM"]:
+            if thanks["dm"]:
                 await member.send(content, embed=embed)
             else:
-                channel = guild.get_channel(thanks_config["Channel ID"])
+                channel = guild.get_channel(thanks["channel_id"])
                 if channel:
                     await channel.send(content, embed=embed)
         except Exception as e:
             print(f"Failed to send thank you: {e}")
 
+    async def _claim(self, guild_id, member_id):
+        """Starts the member's cooldown; False if they are still in one."""
+        try:
+            return await store.claim_thanks(
+                self.bot.pool, guild_id, member_id, time.time(), THANKS_COOLDOWN
+            )
+        except Exception as e:
+            print(f"Error checking cooldown: {e}")
+            return True
+
     @tag_check.before_loop
     async def before_tag_check(self):
+        """Holds the first check until the bot knows its servers."""
         await self.bot.wait_until_ready()
 
 

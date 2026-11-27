@@ -3,23 +3,8 @@ import datetime
 import discord
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
-
-def word(n):
-    return str(n) + (
-        "th" if 4 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    )
-
-
-def script(string, user, guild):
-    if "{mention}" in string:
-        string = string.replace("{mention}", f"{user.mention}")
-    if "{server}" in string:
-        string = string.replace("{server}", f"{guild.name}")
-    if "{user}" in string:
-        string = string.replace("{user}", f"{user.name}")
-    return string
+from commands.Tag import tagStore as store
 
 
 class tag_embed_modal(discord.ui.Modal, title="Setup Tag Roles Thank You Message"):
@@ -59,31 +44,19 @@ class tag_embed_modal(discord.ui.Modal, title="Setup Tag Roles Thank You Message
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        ref = db.reference("/Tag Thanks Message")
-        try:
-            for key, val in ref.get().items():
-                if val["Server ID"] == interaction.guild.id:
-                    db.reference("/Tag Thanks Message").child(key).delete()
-                    break
-        except:
-            pass
-
-        data = {
-            "Server ID": interaction.guild.id,
-            "Message Content": self.msg.value,
-            "Title": self.embedtitle.value,
-            "Description": self.description.value,
-            "Color": self.color.value,
-            "Image Link": self.image.value,
-        }
-        ref.push().set(data)
-
-        ref = db.reference("/Tag Thanks")
-        welcome = ref.get()
-        for key, val in welcome.items():
-            if val["Server ID"] == interaction.guild.id:
-                thankyouChannel = "DM" if val["DM"] else f'<#{val["Channel ID"]}>'
-                break
+        """Saves the message and confirms where it will be sent."""
+        pool = interaction.client.pool
+        await store.set_message(
+            pool,
+            interaction.guild.id,
+            self.msg.value,
+            self.embedtitle.value,
+            self.description.value,
+            self.color.value,
+            self.image.value,
+        )
+        thanks = await store.thanks(pool, interaction.guild.id)
+        thankyouChannel = "DM" if thanks["dm"] else f'<#{thanks["channel_id"]}>'
 
         embed = discord.Embed(
             title="✅ Tag Role Thank You Message Enabled!",
@@ -109,28 +82,15 @@ class TagCommands(commands.GroupCog, name="tag"):
         self,
         interaction: discord.Interaction,
     ) -> None:
+        """Starts watching a server that was set up with Fischl Vanity."""
         try:
-            with open("./commands/Tag/tagEnabledGuilds.py", "r+") as file:
-                lines = file.readlines()
-                for i, line in enumerate(lines):
-                    if line.startswith("enabledGuilds ="):
-                        guilds = eval(line.split("=")[1].strip())
-                        if interaction.guild.id not in guilds:
-                            guilds.append(interaction.guild.id)
-                        lines[i] = f"enabledGuilds = {guilds}\n"
-                        break
-                file.seek(0)
-                file.writelines(lines)
-                file.truncate()
-            print(
-                f"[MIGRATION] Added server ID {interaction.guild.id} to tagEnabledGuilds.py"
-            )
+            await store.enable(self.bot.pool, interaction.guild.id)
         except Exception as e:
-            print(f"[MIGRATION ERROR] Failed to write to file: {e}")
+            print(f"[MIGRATION ERROR] Failed to enable tag roles: {e}")
 
         embed = discord.Embed(
             title="Tag roles migrated successfully!",
-            description=f"Your tag role configuration has been successfully migrated from Fischl Vanity to Fischl. You can now manage your tag roles using the commands in Fischl.\n\n*Note: If you had thank-you messages enabled, your settings have also been migrated.*\n\nYou should now kick Fischl Vanity from your server to avoid duplicate functionality.",
+            description="Your tag role configuration has been successfully migrated from Fischl Vanity to Fischl. You can now manage your tag roles using the commands in Fischl.\n\n*Note: If you had thank-you messages enabled, your settings have also been migrated.*\n\nYou should now kick Fischl Vanity from your server to avoid duplicate functionality.",
             colour=0x00FFBB,
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
@@ -150,6 +110,7 @@ class TagCommands(commands.GroupCog, name="tag"):
         role: discord.Role,
         log_channel: discord.TextChannel,
     ) -> None:
+        """Saves the tag, role and log channel, then gives the role to holders."""
         try:
             tag_server_id = sample_user.primary_guild.id
         except:
@@ -158,22 +119,9 @@ class TagCommands(commands.GroupCog, name="tag"):
             )
             return
 
-        ref = db.reference("/Tag Roles")
-        try:
-            for key, val in ref.get().items():
-                if val["Server ID"] == interaction.guild.id:
-                    db.reference("/Tag Roles").child(key).delete()
-                    break
-        except:
-            pass
-
-        data = {
-            "Server ID": interaction.guild.id,
-            "Tag Server ID": tag_server_id,
-            "Role ID": role.id,
-            "Log Channel ID": log_channel.id,
-        }
-        ref.push().set(data)
+        await store.set_roles(
+            self.bot.pool, interaction.guild.id, tag_server_id, role.id, log_channel.id
+        )
 
         embed = discord.Embed(
             title="✅ Tag Roles Enabled!",
@@ -182,21 +130,9 @@ class TagCommands(commands.GroupCog, name="tag"):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        # Add to enabled guilds
-        with open("./commands/Tag/tagEnabledGuilds.py", "r+") as file:
-            lines = file.readlines()
-            for i, line in enumerate(lines):
-                if line.startswith("enabledGuilds ="):
-                    guilds = eval(line.split("=")[1].strip())
-                    if interaction.guild.id not in guilds:
-                        guilds.append(interaction.guild.id)
-                    lines[i] = f"enabledGuilds = {guilds}\n"
-                    break
-            file.seek(0)
-            file.writelines(lines)
-            file.truncate()
+        await store.enable(self.bot.pool, interaction.guild.id)
 
-        # Initial role assignment
+        # Only members the bot already holds; the minute check scans the rest.
         for member in interaction.guild.members:
             if (
                 member.primary_guild
@@ -217,36 +153,14 @@ class TagCommands(commands.GroupCog, name="tag"):
         self,
         interaction: discord.Interaction,
     ) -> None:
+        """Forgets the server's tag role and thank-you settings."""
         await interaction.response.defer(ephemeral=True)
-        ref = db.reference("/Tag Roles")
-        found = False
-
         try:
-            # Remove from all databases
-            for path in ["/Tag Roles", "/Tag Thanks", "/Tag Thanks Message"]:
-                ref = db.reference(path)
-                for key, val in ref.get().items():
-                    if val["Server ID"] == interaction.guild.id:
-                        ref.child(key).delete()
-                        found = True
+            found = await store.disable(self.bot.pool, interaction.guild.id)
         except Exception as e:
             print(f"Error disabling tag roles: {e}")
-
+            found = False
         if found:
-            # Remove from enabled guilds
-            with open("./commands/Tag/tagEnabledGuilds.py", "r+") as file:
-                lines = file.readlines()
-                for i, line in enumerate(lines):
-                    if line.startswith("enabledGuilds ="):
-                        guilds = eval(line.split("=")[1].strip())
-                        if interaction.guild.id in guilds:
-                            guilds.remove(interaction.guild.id)
-                        lines[i] = f"enabledGuilds = {guilds}\n"
-                        break
-                file.seek(0)
-                file.writelines(lines)
-                file.truncate()
-
             embed = discord.Embed(
                 title="✅ Tag Roles Disabled",
                 description="Tag role functionality has been disabled for this server.",
@@ -274,6 +188,7 @@ class TagCommands(commands.GroupCog, name="tag"):
         dm: bool = False,
         channel: discord.TextChannel = None,
     ) -> None:
+        """Saves where the thank-you goes, then asks for the message."""
         if not dm and not channel:
             await interaction.response.send_message(
                 "❌ Please specify a channel or enable DM", ephemeral=True
@@ -285,21 +200,9 @@ class TagCommands(commands.GroupCog, name="tag"):
             )
             return
 
-        ref = db.reference("/Tag Thanks")
-        try:
-            for key, val in ref.get().items():
-                if val["Server ID"] == interaction.guild.id:
-                    ref.child(key).delete()
-                    break
-        except:
-            pass
-
-        data = {
-            "Server ID": interaction.guild.id,
-            "Channel ID": channel.id if channel else None,
-            "DM": dm,
-        }
-        ref.push().set(data)
+        await store.set_thanks(
+            self.bot.pool, interaction.guild.id, channel.id if channel else None, dm
+        )
         await interaction.response.send_modal(tag_embed_modal())
 
 

@@ -12,14 +12,16 @@ Thanks for wanting to help. I'm Ian, the creator of Fischl. The process is short
 
 ## Setting up
 
-You don't need a bot token or a database:
+You don't need a bot token or any real data:
 
 ```bash
 pip install -r requirements.txt pytest pytest-asyncio pre-commit
 pytest
 ```
 
-The tests swap the real database for one that lives in memory (`tests/conftest.py`), so you can't break anyone's data by running them.
+The tests swap Firebase for a tree that lives in memory (`tests/conftest.py`), so you can't break anyone's data by running them.
+
+Tests of systems that keep their data in Postgres need an empty throwaway database. Point `TEST_DATABASE_URL` at one whose name ends in `_test` (it is wiped before every test), for example `postgresql://postgres:test@localhost:5432/fischl_test`. Without it those tests are skipped; CI always runs them.
 
 ## What I look for in a pull request
 

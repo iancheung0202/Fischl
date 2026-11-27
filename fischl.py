@@ -51,7 +51,7 @@ class Fischl(commands.AutoShardedBot):
         for directory in ["cogs", "commands", "shared"]:
             for path, _, files in os.walk(directory):
                 for name in files:
-                    if name.endswith(".py") and "tagEnabledGuilds" not in name:
+                    if name.endswith(".py"):
                         try:
                             extension = os.path.join(path, name).replace("/", ".")[:-3]
                             await self.load_extension(extension)
