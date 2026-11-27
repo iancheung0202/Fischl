@@ -1144,7 +1144,9 @@ async def test_express_chests_and_prestige_wording(track):
     "text, column, start, stored, title",
     [
         ("Mora Gain Boost +5%", "mora_boost", 10, 15, "Gain Boost +5% "),
+        ("Mora Gain Boost +10%", "mora_boost", 10, 20, "Gain Boost +10% "),
         ("Mora Gain Boost +67%", "mora_boost", 10, 77, "Gain Boost +67% "),
+        ("+10 Minigames Summon", "minigame_summons", 2, 12, "+10 Minigame Summons 🧲"),
         ("+1 Chest Upgrade Limit", "chest_upgrades", 6, 7, "+1 Chest Upgrades "),
         ("+69 Chest Upgrade Limit", "chest_upgrades", 6, 75, "+69 Chest Upgrades "),
         ("+3 Minigames Summon", "minigame_summons", 4, 7, "+3 Minigame Summons 🧲"),
@@ -1168,6 +1170,8 @@ async def test_express_chests_and_prestige_wording(track):
         ("Mora Gift Tax -5%", "gift_tax", 0, 0, "Gift Tax Reduced -5% "),
         ("Mora Gift Tax -5%", "gift_tax", 3, 0, "Gift Tax Reduced -5% "),
         ("Mora Gift Tax -5%", "gift_tax", 20, 15, "Gift Tax Reduced -5% "),
+        ("Mora Gift Tax -10%", "gift_tax", None, 20, "Gift Tax Reduced -10% "),
+        ("Mora Gift Tax -10%", "gift_tax", 5, 0, "Gift Tax Reduced -10% "),
     ],
 )
 async def test_number_rewards_store_the_new_total(
@@ -1218,3 +1222,87 @@ async def test_catch_up_bounds_and_inline_fields(track):
         GUILD, USER, 0, 100, track.channel, client=track, pool=track.pool
     )
     assert free.fields[0].inline is False
+
+
+def test_every_reward_of_every_season_is_paid():
+    from commands.Events import seasons
+
+    jokes = {"pls", "dont", "buy"}  # the one-day April Fools track pays no elite reward
+    for season in seasons.SEASONS:
+        for tier in season.track_data:
+            for side in ("free", "elite"):
+                name = tier[side].split("|")[0].strip()
+                assert name in config.REWARD_TYPES or name in jokes
+
+
+async def test_an_elite_tier_reached_twice_at_once_is_paid_once(track):
+    await elite(track.pool)
+    pay = track.track.grant_reward
+    said = await asyncio.gather(
+        *(
+            pay(GUILD, USER, "Prestige +1", 1, track.channel, True, pool=track.pool)
+            for _ in range(8)
+        )
+    )
+    assert sum(title is not None for title, _ in said) == 1
+    assert await progress(track.pool, "prestige") == 1
+    assert await track.pool.fetchval("SELECT claimed_tiers FROM minigame_elite") == [1]
+
+
+async def test_an_elite_reward_without_a_stored_track_is_still_paid(track):
+    pay = track.track.grant_reward
+    said = await pay(
+        GUILD, USER, "Prestige +1", 1, track.channel, True, pool=track.pool
+    )
+    assert said[0] is not None
+    assert await progress(track.pool, "prestige") == 1
+
+
+@pytest.mark.parametrize(
+    "reward,column,total",
+    [
+        ("Mora Gain Boost +5%", "mora_boost", 40),
+        ("+1 Chest Upgrade Limit", "chest_upgrades", 12),
+        ("Mora Gift Tax -5%", "gift_tax", 0),
+        ("Shop Discount +10%", "shop_discount", 50),
+        ("Kingdom Discount +10%", "domain_discount", 50),
+    ],
+)
+async def test_rewards_paid_at_the_same_moment_all_count(track, reward, column, total):
+    pay = track.track.grant_reward
+    await asyncio.gather(
+        *(pay(GUILD, USER, reward, n, track.channel, pool=track.pool) for n in range(8))
+    )
+    assert await progress(track.pool, column) == total
+
+
+async def test_gifting_unlocked_twice_at_once_is_announced_once(track):
+    pay = track.track.grant_reward
+    said = await asyncio.gather(
+        *(
+            pay(GUILD, USER, "Unlocks Mora Gifting", 1, track.channel, pool=track.pool)
+            for _ in range(6)
+        )
+    )
+    assert sum(title is not None for title, _ in said) == 1
+
+
+async def test_xp_gained_at_the_same_moment_all_counts(track):
+    from commands.Events import event
+
+    client = SimpleNamespace(pool=track.pool)
+    gains = await asyncio.gather(
+        *(event.add_xp(USER, GUILD, 30, client) for _ in range(10))
+    )
+    assert await progress(track.pool, "xp") == 300
+    assert sorted(old for _, old, _ in gains) == list(range(0, 300, 30))
+    assert all(new - old == 30 for _, old, new in gains)
+    assert max(tier for tier, _, _ in gains) == 3
+
+
+async def test_xp_for_a_new_member_starts_from_zero(track):
+    from commands.Events import event
+
+    await track.pool.execute("DELETE FROM minigame_progression")
+    gain = await event.add_xp(USER, GUILD, 150, SimpleNamespace(pool=track.pool))
+    assert gain == (1, 0, 150)

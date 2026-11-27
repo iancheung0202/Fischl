@@ -9,6 +9,7 @@ import discord
 
 from commands.Events.config import (
     CURRENCY_NAME,
+    MORA_CHEST_UPGRADE_TIMES,
     MORA_EMOTE,
     PRESTIGE_EMOTE,
     REWARD_TYPES,
@@ -18,35 +19,34 @@ from commands.Events.helperFunctions import (
     add_background_to_cosmetics,
     add_frame_to_cosmetics,
     add_title_to_cosmetics,
-    get_chest_upgrades,
-    get_domain_discount,
-    get_mora_boost,
-    get_shop_discount,
-    get_user_stats,
-    update_domain_discount,
+    ensure_progression_user,
     update_express_daily_chests,
-    update_mora_boost,
-    update_shop_discount,
     upsert_cosmetics,
 )
 from commands.Events.seasons import get_current_season
 from utils.commands import SlashCommand
 
+MORA_BOOSTS = {"mora_boost": 5, "mora_boost_10": 10, "mora_boost_67": 67}
+GIFT_TAX_CUTS = {"gift_tax": 5, "gift_tax_10": 10}
 BONUS_XP = 2500  # XP between two bonus drop packs once the track is finished
-NO_STATS = {"gift_tax": None}
 CLAIMED = (
     "SELECT claimed_tiers FROM minigame_elite WHERE user_id = $1 AND guild_id = $2"
 )
-CLAIM = "UPDATE minigame_elite SET claimed_tiers = array_append(claimed_tiers, $1) WHERE user_id = $2 AND guild_id = $3"
+CLAIM = "UPDATE minigame_elite SET claimed_tiers = array_append(claimed_tiers, $1) WHERE user_id = $2 AND guild_id = $3 AND NOT ($1 = ANY(COALESCE(claimed_tiers, '{}'))) RETURNING 1"
+HAS_ELITE = "SELECT 1 FROM minigame_elite WHERE user_id = $1 AND guild_id = $2"
 EXPIRES = "SELECT expires_at FROM minigame_elite WHERE user_id = $1 AND guild_id = $2"
 PRESTIGE = "UPDATE minigame_progression SET prestige = prestige + 1, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2"
-CHESTS = "UPDATE minigame_progression SET chest_upgrades = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2"
-GIFTING = "UPDATE minigame_progression SET gift_tax = 30, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2"
-TAX = "UPDATE minigame_progression SET gift_tax = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2"
+WHO = "updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2"
+BOOST = f"UPDATE minigame_progression SET mora_boost = COALESCE(mora_boost, 0) + $3, {WHO} RETURNING mora_boost"
+CHESTS = f"UPDATE minigame_progression SET chest_upgrades = COALESCE(chest_upgrades, $4) + $3, {WHO} RETURNING chest_upgrades"
+GIFTING = f"UPDATE minigame_progression SET gift_tax = 30, {WHO} AND gift_tax IS NULL RETURNING gift_tax"
+TAX = f"UPDATE minigame_progression SET gift_tax = GREATEST(0, COALESCE(gift_tax, 30) - $3), {WHO} RETURNING gift_tax"
+SHOP_DISCOUNT = f"UPDATE minigame_progression SET shop_discount = LEAST(50, COALESCE(shop_discount, 0) + 10), {WHO} RETURNING shop_discount"
+DOMAIN_DISCOUNT = f"UPDATE minigame_progression SET domain_discount = LEAST(50, COALESCE(domain_discount, 0) + 10), {WHO} RETURNING domain_discount"
 SUMMONS = "UPDATE minigame_progression SET minigame_summons = minigame_summons + $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2 RETURNING minigame_summons"
 
 # One reward being paid: who gets it, the reward text of the track, and where it is announced.
-Grant = namedtuple("Grant", "pool guild user text tier channel elite client stats kind")
+Grant = namedtuple("Grant", "pool guild user text tier channel elite client kind")
 
 
 def get_current_track():
@@ -196,10 +196,9 @@ async def prestige(grant):
 
 
 async def mora_boost(grant):
-    """Raises the member's mora boost by 5%, or by 67% for the big reward."""
-    amount = 5 if grant.kind == "mora_boost" else 67
-    boost = await get_mora_boost(*member(grant)) + amount
-    await update_mora_boost(*member(grant), boost)
+    """Raises the member's mora boost by the reward's 5%, 10% or 67%."""
+    amount = MORA_BOOSTS[grant.kind]
+    boost = await grant.pool.fetchval(BOOST, grant.guild, grant.user, amount)
     return (
         f"{head(grant)}{CURRENCY_NAME} Gain Boost +{amount}% {MORA_EMOTE}",
         f"**Tier `{grant.tier}`:** Your {CURRENCY_NAME} gain from all sources will now be **increased by `{boost}%`**!",
@@ -209,8 +208,9 @@ async def mora_boost(grant):
 async def chest_upgrade(grant):
     """Adds 1 daily chest upgrade chance, or 69 for the big reward."""
     amount = 1 if grant.kind == "chest_upgrade" else 69
-    total = await get_chest_upgrades(*member(grant)) + amount
-    await grant.pool.execute(CHESTS, grant.guild, grant.user, total)
+    total = await grant.pool.fetchval(
+        CHESTS, grant.guild, grant.user, amount, MORA_CHEST_UPGRADE_TIMES
+    )
     return (
         f"{head(grant)}+{amount} Chest Upgrades :arrow_up_small:",
         f"**Tier `{grant.tier}`:** Your daily chest now has a total of **`{total}` upgrade chances**!",
@@ -219,9 +219,8 @@ async def chest_upgrade(grant):
 
 async def unlock_gifting(grant):
     """Lets the member gift at a 30% tax, unless they already can."""
-    if grant.stats.get("gift_tax") is not None:
+    if await grant.pool.fetchval(GIFTING, grant.guild, grant.user) is None:
         return (None, None)
-    await grant.pool.execute(GIFTING, grant.guild, grant.user)
     return (
         f"{CURRENCY_NAME} Gifting Unlocked! :gift:",
         f"**Tier `{grant.tier}`:** You can now {SlashCommand('gift')} {CURRENCY_NAME} to others with an initial tax rate of `30%`!",
@@ -229,12 +228,11 @@ async def unlock_gifting(grant):
 
 
 async def gift_tax(grant):
-    """Lowers the member's gift tax by 5%, starting from 30%."""
-    now = grant.stats.get("gift_tax")
-    tax = max(0, (30 if now is None else now) - 5)
-    await grant.pool.execute(TAX, grant.guild, grant.user, tax)
+    """Lowers the member's gift tax by the reward's 5% or 10%, starting from 30%."""
+    cut = GIFT_TAX_CUTS[grant.kind]
+    tax = await grant.pool.fetchval(TAX, grant.guild, grant.user, cut)
     return (
-        f"{head(grant)}Gift Tax Reduced -5% :chart_with_downwards_trend:",
+        f"{head(grant)}Gift Tax Reduced -{cut}% :chart_with_downwards_trend:",
         f"**Tier `{grant.tier}`:** Your gifting tax rate is now **`{tax}%`**! Use {SlashCommand('gift')} to send some love!",
     )
 
@@ -251,9 +249,7 @@ async def minigame_summon(grant):
 
 async def shop_discount(grant):
     """Raises the member's shop discount by 10%, up to 50%."""
-    now = await get_shop_discount(*member(grant))
-    discount = min(50, now + 10)
-    await update_shop_discount(*member(grant), discount)
+    discount = await grant.pool.fetchval(SHOP_DISCOUNT, grant.guild, grant.user)
     return (
         f"{head(grant)} Shop Discount +10% 🏷️",
         f"**Tier `{grant.tier}`:** Your shop purchases now get a **{discount}% discount**.",
@@ -262,9 +258,7 @@ async def shop_discount(grant):
 
 async def domain_discount(grant):
     """Raises the member's kingdom discount by 10%, up to 50%."""
-    now = await get_domain_discount(*member(grant))
-    discount = min(50, now + 10)
-    await update_domain_discount(*member(grant), discount)
+    discount = await grant.pool.fetchval(DOMAIN_DISCOUNT, grant.guild, grant.user)
     return (
         f"{head(grant)} Domain Discount +10% 🏰",
         f"**Tier `{grant.tier}`:** Your domain upgrades now get a **{discount}% discount**.",
@@ -284,12 +278,15 @@ PAYERS = {
     "express_daily_chests": express_daily_chests,
     "prestige": prestige,
     "mora_boost": mora_boost,
+    "mora_boost_10": mora_boost,
     "mora_boost_67": mora_boost,
     "chest_upgrade": chest_upgrade,
     "chest_upgrade_69": chest_upgrade,
     "unlock_gifting": unlock_gifting,
     "gift_tax": gift_tax,
+    "gift_tax_10": gift_tax,
     "minigame_summon": minigame_summon,
+    "minigame_summon_10": minigame_summon,
     "minigame_summon_30": minigame_summon,
     "shop_discount": shop_discount,
     "domain_discount": domain_discount,
@@ -297,13 +294,10 @@ PAYERS = {
 
 
 async def claim(pool, guild_id, user_id, tier):
-    """Marks an elite tier as paid; False when it already was."""
-    async with pool.acquire() as conn:
-        if tier in (await conn.fetchval(CLAIMED, user_id, guild_id) or []):
-            return False
-        if tier != "Bonus":
-            await conn.execute(CLAIM, tier, user_id, guild_id)
-    return True
+    """Marks an elite tier as paid in one statement; False when it already was."""
+    if tier == "Bonus" or await pool.fetchval(CLAIM, tier, user_id, guild_id):
+        return True
+    return not await pool.fetchval(HAS_ELITE, user_id, guild_id)
 
 
 async def grant_reward(
@@ -313,12 +307,13 @@ async def grant_reward(
     if is_elite and pool and not await claim(pool, guild_id, user_id, tier):
         return (None, None)
     kind = REWARD_TYPES.get(reward_str.split("|")[0].strip(), "other")
-    stats = await get_user_stats(pool, guild_id, user_id) if pool else NO_STATS
     if kind not in PAYERS:
         return (None, None)
+    if pool:
+        await ensure_progression_user(pool, guild_id, user_id)
     who = (pool, guild_id, user_id)
     return await PAYERS[kind](
-        Grant(*who, reward_str, tier, channel, is_elite, client, stats, kind)
+        Grant(*who, reward_str, tier, channel, is_elite, client, kind)
     )
 
 

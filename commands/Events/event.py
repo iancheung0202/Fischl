@@ -109,20 +109,18 @@ async def handle_message_deletion(message):
         pass  # already deleted/was removed
 
 
+ADD_XP = "UPDATE minigame_progression SET xp = COALESCE(xp, 0) + $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2 RETURNING xp"
+BONUS_TIER = "UPDATE minigame_progression SET bonus_tier = (xp - $3) / 1500 WHERE gid = $1 AND uid = $2"
+
+
 async def add_xp(user_id, guild_id, xp_amount, client):
-    from commands.Events.helperFunctions import (
-        ensure_progression_user,
-        get_progression_data,
-        get_user_xp,
-    )
+    """Adds XP in one statement, so two gains at once both count; gives (tier, old XP, new XP)."""
+    from commands.Events.helperFunctions import ensure_progression_user
 
     pool = client.pool
     await ensure_progression_user(pool, guild_id, user_id)
-
-    data = await get_progression_data(pool, guild_id, user_id)
-
-    old_xp = data.get("xp", 0)
-    new_xp = old_xp + xp_amount
+    new_xp = await pool.fetchval(ADD_XP, guild_id, user_id, xp_amount)
+    old_xp = new_xp - xp_amount
 
     current_tier = 0
     TRACK_DATA = get_current_track()
@@ -132,27 +130,10 @@ async def add_xp(user_id, guild_id, xp_amount, client):
         else:
             break
 
-    # Update bonus_tier if needed
     if current_tier == 31:
-        bonus_xp = new_xp - TRACK_DATA[-1]["cumulative_xp"]
-        bonus_tiers = bonus_xp // 1500
-
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE minigame_progression SET xp = $3, bonus_tier = $4, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
-                guild_id,
-                user_id,
-                new_xp,
-                bonus_tiers,
-            )
-    else:
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE minigame_progression SET xp = $3, updated_at = CURRENT_TIMESTAMP WHERE gid = $1 AND uid = $2",
-                guild_id,
-                user_id,
-                new_xp,
-            )
+        await pool.execute(
+            BONUS_TIER, guild_id, user_id, TRACK_DATA[-1]["cumulative_xp"]
+        )
 
     return (current_tier, old_xp, new_xp)
 
