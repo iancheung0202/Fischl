@@ -477,10 +477,53 @@ async def test_nothing_happens_at_other_times(wishes, pool, now):
     server.guild.fetch_member.assert_not_awaited()
 
 
-async def test_feb_29_is_never_wished_as_before(wishes, pool):
+async def test_feb_29_is_wished_in_a_leap_year(wishes, pool):
     await born(pool, "02-29 01:00")
     server = Server(wishes.bot)
+    await wishes.check(datetime.datetime(2028, 2, 28, 1, 0, tzinfo=UTC))
+    server.webhook.send.assert_not_awaited()
     await wishes.check(datetime.datetime(2028, 2, 29, 1, 0, tzinfo=UTC))
+    server.webhook.send.assert_awaited_once()
+    server = Server(wishes.bot, has_role=True)
+    await wishes.check(datetime.datetime(2028, 3, 1, 1, 30, tzinfo=UTC))
+    server.member.remove_roles.assert_awaited_once_with(server.role)
+
+
+async def test_feb_29_is_wished_on_feb_28_in_other_years(wishes, pool):
+    await born(pool, "02-29 01:00")
+    server = Server(wishes.bot)
+    await wishes.check(at(2, 27, 1))
+    await wishes.check(at(2, 28, 2))
+    await wishes.check(at(3, 1, 1))
+    server.webhook.send.assert_not_awaited()
+    await wishes.check(at(2, 28, 1))
+    server.webhook.send.assert_awaited_once()
+    server.member.add_roles.assert_awaited_once_with(server.role)
+
+
+async def test_feb_29_role_is_taken_back_on_march_1_in_other_years(wishes, pool):
+    await born(pool, "02-29 01:00")
+    server = Server(wishes.bot, has_role=True)
+    await wishes.check(at(3, 1, 1, 45))
+    server.member.remove_roles.assert_awaited_once_with(server.role)
+    server.webhook.send.assert_not_awaited()
+
+
+async def test_feb_28_is_wished_once_beside_a_feb_29(wishes, pool):
+    await born(pool, "02-28 01:00")
+    await born(pool, "02-29 01:00", user=77)
+    server = Server(wishes.bot)
+    await wishes.check(at(2, 28, 1))
+    assert [call.args[0] for call in server.guild.fetch_member.await_args_list] == [
+        MEMBER,
+        77,
+    ]
+
+
+async def test_an_unreadable_date_is_skipped(wishes, pool):
+    await born(pool, "02-30 01:00")
+    server = Server(wishes.bot)
+    await wishes.check(at(3, 1, 1))
     server.guild.fetch_member.assert_not_awaited()
 
 
@@ -552,11 +595,21 @@ async def test_role_stays_when_the_member_lost_it_or_the_hour_differs(wishes, po
     server.guild.fetch_member.assert_not_awaited()
 
 
-async def test_role_is_not_taken_back_across_a_month_end_as_before(wishes, pool):
-    await born(pool, "03-31 15:00")
+@pytest.mark.parametrize(
+    "date,now",
+    [
+        ("03-31 15:00", at(4, 1)),
+        ("12-31 15:00", at(1, 1)),
+        ("02-28 15:00", at(3, 1)),
+        ("02-28 15:00", datetime.datetime(2028, 2, 29, 15, 0, tzinfo=UTC)),
+    ],
+)
+async def test_role_is_taken_back_across_a_month_end(wishes, pool, date, now):
+    await born(pool, date)
     server = Server(wishes.bot, has_role=True)
-    await wishes.check(at(4, 1))
-    server.guild.fetch_member.assert_not_awaited()
+    await wishes.check(now)
+    server.member.remove_roles.assert_awaited_once_with(server.role)
+    server.webhook.send.assert_not_awaited()
 
 
 async def test_each_quarter_is_checked_once(wishes, monkeypatch):

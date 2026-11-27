@@ -1,3 +1,4 @@
+import calendar
 import datetime
 import random
 
@@ -16,12 +17,20 @@ RANDOM = (
 
 
 def readable(date):
-    """Says whether a saved date can be read; Feb 29 cannot, and was never wished."""
+    """Says whether a saved date can be read; it is read in a leap year, so Feb 29 can."""
     try:
-        datetime.datetime.strptime(date, DATE)
+        datetime.datetime.strptime(f"2024-{date}", f"%Y-{DATE}")
     except ValueError:
         return False
     return True
+
+
+def saved_as(moment, form):
+    """Gives the saved texts a moment stands for; Feb 28 also stands for Feb 29 outside leap years."""
+    texts = [moment.strftime(form)]
+    if (moment.month, moment.day) == (2, 28) and not calendar.isleap(moment.year):
+        texts.append(texts[0].replace("02-28", "02-29", 1))
+    return texts
 
 
 class BirthdayCog(commands.Cog):
@@ -56,15 +65,15 @@ class BirthdayCog(commands.Cog):
 
     async def check(self, now):
         """Wishes birthdays starting this minute; takes the role back a day after."""
-        starting = now.strftime(DATE)
-        yesterday = f"{now.month:02d}-{now.day - 1:02d} {now.hour:02d}:"
+        starting = saved_as(now, DATE)
+        yesterday = saved_as(now - datetime.timedelta(days=1), "%m-%d %H:")
         birthdays = await store.due(self.bot.pool, starting, yesterday)
         birthdays = [row for row in birthdays if readable(row["display_utc_date"])]
         if not birthdays:
             return
         places = await store.servers(self.bot.pool)
         for birthday in birthdays:
-            act = self.wish if birthday["display_utc_date"] == starting else self.end
+            act = self.wish if birthday["display_utc_date"] in starting else self.end
             for place in places:
                 guild = self.bot.get_guild(place["server_id"])
                 if guild is None:

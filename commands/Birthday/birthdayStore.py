@@ -79,12 +79,13 @@ async def everyone(pool):
 
 
 async def due(pool, starting, started):
-    """Gives the birthdays starting at `MM-DD HH:MM` or started in the hour `MM-DD HH:`."""
+    """Gives the birthdays starting at one of the `MM-DD HH:MM` or started in one of the hours `MM-DD HH:`."""
     return await pool.fetch(
         """SELECT * FROM birthdays
-        WHERE display_utc_date = $1 OR display_utc_date LIKE $2 ORDER BY id""",
+        WHERE display_utc_date = ANY($1::text[]) OR display_utc_date LIKE ANY($2::text[])
+        ORDER BY id""",
         starting,
-        started + "%",
+        [hour + "%" for hour in started],
     )
 
 
