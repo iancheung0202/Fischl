@@ -1,9 +1,13 @@
 import datetime
 import logging
+import logging.handlers
 import sys
 
 import pytz
 from discord.ext import commands, tasks
+
+LOG_MAX_BYTES = 20 * 1024 * 1024  # size at which console_output.log starts a new file
+LOG_BACKUPS = 3  # older files kept as console_output.log.1 to .3
 
 
 class LoggingSetupCog(commands.Cog):
@@ -24,7 +28,9 @@ class LoggingSetupCog(commands.Cog):
         formatter = logging.Formatter(
             "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
-        file_handler = logging.FileHandler("console_output.log")
+        file_handler = logging.handlers.RotatingFileHandler(
+            "console_output.log", maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUPS
+        )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
 

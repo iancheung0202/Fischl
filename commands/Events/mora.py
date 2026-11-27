@@ -4,12 +4,9 @@ import time
 
 import asyncpg
 import discord
-import matplotlib.pyplot as plt
-import pandas as pd
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, Select, View
-from matplotlib.dates import DateFormatter
 
 from commands.Events.config import (
     ANIMATED_INVENTORY_BG_PATH,
@@ -334,6 +331,10 @@ async def generate_mora_graph(
         "`✌️` Minigame Wins": f"`{entry_count - total_chests}` total wins",
         "`😎` Active Days": f"`{days_active}` different day(s)",
     }
+
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    from matplotlib.dates import DateFormatter
 
     df = pd.DataFrame(
         {"timestamp": pd.to_datetime(timestamps, unit="s"), "mora": mora_values}

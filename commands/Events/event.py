@@ -9,7 +9,6 @@ from difflib import SequenceMatcher
 
 import aiohttp
 import discord
-import pandas as pd
 from discord import app_commands
 from discord.ext import commands, tasks
 from discord.ui import Button, View
@@ -1725,6 +1724,8 @@ async def hsrEmojiRiddle(channel, client):
                 return
             csv_text = await response.text()
 
+    import pandas as pd
+
     df = pd.read_csv(io.StringIO(csv_text))
 
     characterEmojis = dict(zip(df["Character Name"], df["Emojis"]))
@@ -1822,6 +1823,8 @@ async def genshinEmojiRiddle(channel, client):
                 await ian.send(f"Event crashed: {msg.jump_url}")
                 return
             csv_text = await response.text()
+
+    import pandas as pd
 
     df = pd.read_csv(io.StringIO(csv_text))
 

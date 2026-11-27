@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 
@@ -14,6 +15,11 @@ last_modified = (
     if os.path.exists("./commands/Tag/tagEnabledGuilds.py")
     else 0
 )
+
+
+SWEEP_INTERVAL = 3600  # seconds between full member scans of one server
+RECENT_WINDOW = 60  # seconds in which the same role change is not repeated
+MEMBER_EVENTS = ("GUILD_MEMBER_ADD", "GUILD_MEMBER_UPDATE")
 
 
 def check_reload():
@@ -50,10 +56,129 @@ def script(string, user, guild):
 class TagRoleHandler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._active = {}  # guild id -> (role id, log channel id, tag server id)
+        self._last_sweep = {}  # guild id -> (settings, time of last full scan)
+        self._busy = set()  # (guild id, member id) being synced right now
+        self._recent = {}  # (guild id, member id, gave role) -> time, last minute only
+        self._tasks = set()
+        self._original_parsers = {}
+        self._hook_member_events()
         self.tag_check.start()
 
     def cog_unload(self):
         self.tag_check.cancel()
+        self.bot._connection.parsers.update(self._original_parsers)
+
+    def _hook_member_events(self):
+        """Reads member joins and updates straight from Discord.
+
+        discord.py drops these for members it does not keep in memory, and we
+        keep none. Nothing is stored here either: the member is checked and let go."""
+        parsers = self.bot._connection.parsers
+        for event in MEMBER_EVENTS:
+            original = parsers[event]
+            self._original_parsers[event] = original
+
+            def parser(data, original=original):
+                original(data)
+                try:
+                    self._on_member_event(data)
+                except Exception as e:
+                    print(f"Error reading member event for tag roles: {e}")
+
+            parsers[event] = parser
+
+    def _on_member_event(self, data):
+        guild_id = int(data["guild_id"])
+        if guild_id not in self._active:
+            return
+        task = asyncio.create_task(self._sync_from_event(guild_id, data))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _sync_from_event(self, guild_id, data):
+        try:
+            settings = self._active.get(guild_id)
+            guild = self.bot.get_guild(guild_id)
+            if not settings or not guild:
+                return
+            role = guild.get_role(settings[0])
+            log_channel = guild.get_channel(settings[1])
+            if not role or not log_channel:
+                return
+            member = discord.Member(data=data, guild=guild, state=self.bot._connection)
+            log_chn = self.bot.get_channel(1555014249762398359)
+            await self._sync_member(
+                member, guild, role, log_channel, settings[2], log_chn
+            )
+        except Exception as e:
+            print(f"Error syncing tag role from event in guild {guild_id}: {e}")
+
+    async def _sync_member(
+        self, member, guild, role, log_channel, tag_server_id, log_chn
+    ):
+        key = (guild.id, member.id)
+        if key in self._busy:
+            return
+        self._busy.add(key)
+        try:
+            # Ensure IDs are compared as integers
+            m_tag_id = member.primary_guild.id if member.primary_guild else None
+            t_server_id = int(tag_server_id) if tag_server_id else None
+
+            has_tag = m_tag_id == t_server_id and member.primary_guild.tag is not None
+            has_role = role in member.roles
+
+            if has_tag != has_role:
+                # A scan can hold a member fetched just before an event already
+                # fixed their role; don't act and announce it a second time.
+                now = time.time()
+                if now - self._recent.get((*key, has_tag), 0) < RECENT_WINDOW:
+                    return
+                self._recent[(*key, has_tag)] = now
+
+            # Should have role but doesn't
+            if has_tag and not has_role:
+                await member.add_roles(role)
+                embed = discord.Embed(
+                    description=f"✅ {member.mention} was given the tag role",
+                    colour=0x00FF00,
+                )
+                await log_chn.send(
+                    embed=embed.add_field(
+                        name="Guild",
+                        value=f"{guild.name} ({guild.id})",
+                    )
+                )
+                try:
+                    await log_channel.send(embed=embed)
+                except:
+                    pass
+                await self.send_thank_you(member, guild)
+
+            # Shouldn't have role but does
+            elif not has_tag and has_role:
+                await member.remove_roles(role)
+                embed = discord.Embed(
+                    description=f"❌ {member.mention} had tag role removed",
+                    colour=0xFF0000,
+                )
+                await log_chn.send(
+                    embed=embed.add_field(
+                        name="Guild",
+                        value=f"{guild.name} ({guild.id})",
+                    )
+                )
+                try:
+                    await log_channel.send(embed=embed)
+                except:
+                    pass
+        except discord.Forbidden:
+            print(f"Forbidden: Could not modify role for {member} in {guild.name}")
+        except Exception as e:
+            print(f"Error processing {member}: {e}")
+        finally:
+            self._busy.discard(key)
 
     @tasks.loop(minutes=1)
     async def tag_check(self):
@@ -73,6 +198,7 @@ class TagRoleHandler(commands.Cog):
             return
 
         log_chn = self.bot.get_channel(1555014249762398359)
+        active = {}
 
         for guild_id in enabledGuilds:
             try:
@@ -123,80 +249,34 @@ class TagRoleHandler(commands.Cog):
                     # print(f"Role {role.name} is higher than bot's top role in {guild.name}")
                     continue
 
-                # Check all members
-                checked_count = 0
-                tag_match_count = 0
+                # Members are synced as their updates arrive (see _on_member_event).
+                # A full scan runs only when a server is first seen, its setup
+                # changes, or as an hourly safety net.
+                settings = (role.id, log_channel.id, tag_server_id)
+                active[guild_id] = settings
+                last = self._last_sweep.get(guild_id)
+                if (
+                    last is not None
+                    and last[0] == settings
+                    and time.time() - last[1] < SWEEP_INTERVAL
+                ):
+                    continue
+                self._active[guild_id] = settings
+                self._last_sweep[guild_id] = (settings, time.time())
 
-                start_time = time.time()
-                # print(f"Checking guild {guild.name} ({guild.id}) with {guild.member_count} members for tag role synchronization")
                 async for member in guild.fetch_members(limit=None):
-                    checked_count += 1
-
-                    try:
-                        # Ensure IDs are compared as integers
-                        m_tag_id = (
-                            member.primary_guild.id if member.primary_guild else None
-                        )
-                        t_server_id = int(tag_server_id) if tag_server_id else None
-
-                        has_tag = (
-                            m_tag_id == t_server_id
-                            and member.primary_guild.tag is not None
-                        )
-                        has_role = role in member.roles
-
-                        if has_tag:
-                            tag_match_count += 1
-
-                        # Should have role but doesn't
-                        if has_tag and not has_role:
-                            await member.add_roles(role)
-                            embed = discord.Embed(
-                                description=f"✅ {member.mention} was given the tag role",
-                                colour=0x00FF00,
-                            )
-                            await log_chn.send(
-                                embed=embed.add_field(
-                                    name="Guild",
-                                    value=f"{guild.name} ({guild.id})",
-                                )
-                            )
-                            try:
-                                await log_channel.send(embed=embed)
-                            except:
-                                pass
-                            await self.send_thank_you(member, guild)
-
-                        # Shouldn't have role but does
-                        elif not has_tag and has_role:
-                            await member.remove_roles(role)
-                            embed = discord.Embed(
-                                description=f"❌ {member.mention} had tag role removed",
-                                colour=0xFF0000,
-                            )
-                            await log_chn.send(
-                                embed=embed.add_field(
-                                    name="Guild",
-                                    value=f"{guild.name} ({guild.id})",
-                                )
-                            )
-                            try:
-                                await log_channel.send(embed=embed)
-                            except:
-                                pass
-                    except discord.Forbidden:
-                        print(
-                            f"Forbidden: Could not modify role for {member} in {guild.name}"
-                        )
-                        pass
-                    except Exception as e:
-                        print(f"Error processing {member}: {e}")
-
-                # print(f"Guild {guild.name}: Checked {checked_count} members. Found {tag_match_count} with matching tag. (Time taken: {time.time() - start_time:.2f}s)")
+                    await self._sync_member(
+                        member, guild, role, log_channel, tag_server_id, log_chn
+                    )
             except Exception as e:
                 print(f"Error processing guild {guild_id}: {e}")
 
-        # print("Finished tag role check!")
+        self._active = active
+        cutoff = time.time() - RECENT_WINDOW
+        self._recent = {k: t for k, t in self._recent.items() if t > cutoff}
+        for guild_id in list(self._last_sweep):
+            if guild_id not in active:
+                del self._last_sweep[guild_id]
 
     @tag_check.error
     async def tag_check_error(self, error):

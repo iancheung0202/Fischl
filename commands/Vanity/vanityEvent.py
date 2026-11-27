@@ -289,7 +289,14 @@ class OnStatusUpdate(commands.Cog):
         role_id = entry.get("Role ID")
         link = entry.get("Link")
 
-        chn = self.client.get_channel(log_channel_id) if log_channel_id else None
+        # Look in the member's own server first; client.get_channel searches
+        # every server, and this runs on each presence update.
+        chn = (
+            after.guild.get_channel_or_thread(log_channel_id)
+            or self.client.get_channel(log_channel_id)
+            if log_channel_id
+            else None
+        )
         if chn is None and log_channel_id:
             print(
                 f"[Vanity] Log channel {log_channel_id} not in cache for guild {after.guild.id}; trying fetch"

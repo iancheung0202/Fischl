@@ -1,5 +1,4 @@
 import discord
-import pandas as pd
 from discord.ext import commands
 from firebase_admin import db
 
@@ -73,6 +72,8 @@ class ReputationSystem(commands.Cog):
             if not list_data:
                 await message.channel.send("No reputation data found.")
                 return
+
+            import pandas as pd
 
             df = pd.DataFrame(list_data)
             df_sorted = df.sort_values(by="points", ascending=False)
