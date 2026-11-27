@@ -4,11 +4,13 @@ Run from the repo root, with the bot stopped and the old enabled file already
 moved out of the repo:
     TAG_ENABLED_FILE=/path/to/tagEnabledGuilds.py python3 scripts/firebase_to_postgres.py tag
     VANITY_ENABLED_FILE=/path/to/enabledGuilds.py python3 scripts/firebase_to_postgres.py vanity
+    STICKY_ENABLED_FILE=/path/to/enabledChannels.py python3 scripts/firebase_to_postgres.py sticky
 Firebase is only read, so the old copy stays as it was. Each system saves what
 it read to `<system>-export.json` next to that file, checks every row it wrote
 and refuses to run once its tables hold data."""
 
 import asyncio
+import collections
 import json
 import os
 import sys
@@ -325,7 +327,50 @@ async def check_vanity(pool, enabled, roles, thanks, messages, live):
     )
 
 
-SYSTEMS = {"tag": tag, "vanity": vanity}
+STICKY_TABLES = ("sticky_enabled", "sticky_messages")
+STUCK = ("Channel ID", "Message ID", "Message Content")
+STUCK_ROWS = "SELECT channel_id, message_id, content FROM sticky_messages ORDER BY id"
+
+
+async def sticky(pool, db, enabled_file=None):
+    """Sticky messages: watched channels and every stuck message, in the old order."""
+    from commands.Sticky import stickyStore as store
+
+    await store.create(pool)
+    for table in STICKY_TABLES:
+        if await pool.fetchval(f"SELECT count(*) FROM {table}"):
+            raise SystemExit(f"{table} already has rows; Postgres is the live copy")
+    enabled_file = enabled_file or os.environ["STICKY_ENABLED_FILE"]
+    listed = read_list(enabled_file, "enabledChannels")
+    folder = os.path.dirname(enabled_file)
+    data = export(folder, "sticky", db, ("Sticky Messages",), enabled=listed)
+    stuck = [
+        tuple(record[field] for field in STUCK)
+        for record in data["Sticky Messages"].values()
+    ]
+    bad = [row for row in stuck if [type(value) for value in row] != [int, int, str]]
+    if bad:
+        raise SystemExit(f"sticky messages of the wrong kind: {bad}")
+
+    times = collections.Counter(listed)
+    await pool.executemany(
+        "INSERT INTO sticky_enabled (channel_id, times) VALUES ($1, $2)", times.items()
+    )
+    for row in stuck:
+        await store.add(pool, *row)
+    await same(
+        pool, "SELECT channel_id, times FROM sticky_enabled", times.items(), "channels"
+    )
+    if [tuple(row) for row in await pool.fetch(STUCK_ROWS)] != stuck:
+        raise SystemExit("sticky messages differ from Firebase")
+    print(
+        f"sticky: {len(times)} channels watched ({len(listed)} list entries), "
+        f"{len(stuck)} messages in {len({row[0] for row in stuck})} channels; "
+        "every row matches Firebase"
+    )
+
+
+SYSTEMS = {"tag": tag, "vanity": vanity, "sticky": sticky}
 
 
 async def main(names):

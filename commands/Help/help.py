@@ -8,10 +8,18 @@ from discord.ext import commands
 from discord.ui import Button, View
 from firebase_admin import db
 
+from commands.Sticky import stickyStore
 from utils.commands import SlashCommand
 
 BLANK = "<:blank:1036792889121980426>"
 REPLY = "<:reply:1036792837821435976>"
+
+
+async def stuck_channels(pool, guild):
+    """Gives the server's channel ids once per message stuck there, in channel order."""
+    stuck = await stickyStore.channels(pool)
+    places = [*guild.text_channels, *guild.threads]
+    return [place.id for place in places for _ in range(stuck.count(place.id))]
 
 
 class Select(discord.ui.Select):
@@ -471,21 +479,10 @@ class HelpPanel(discord.ui.View):
 
         ################
 
-        ref = db.reference("/Sticky Messages")
-        stickies = ref.get()
-
-        found = False
-        stickiedchannels = []
-        for channel in interaction.guild.text_channels:
-            for key, val in stickies.items():
-                if val["Channel ID"] == channel.id:
-                    stickiedchannels.append(channel.id)
-                    found = True
-        for channel in interaction.guild.threads:
-            for key, val in stickies.items():
-                if val["Channel ID"] == channel.id:
-                    stickiedchannels.append(channel.id)
-                    found = True
+        stickiedchannels = await stuck_channels(
+            interaction.client.pool, interaction.guild
+        )
+        found = bool(stickiedchannels)
 
         if not found:
             embed.add_field(

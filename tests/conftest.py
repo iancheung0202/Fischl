@@ -19,15 +19,6 @@ for name in SECRETS:
 sys.modules.setdefault("assets", types.ModuleType("assets"))
 sys.modules.setdefault("assets.secret", secret)
 
-# The bot keeps these lists in files it rewrites itself; git ignores them.
-STATE_FILES = {
-    "commands/Sticky/enabledChannels.py": "enabledChannels",
-}
-for path, name in STATE_FILES.items():
-    if not os.path.exists(path):
-        with open(path, "w") as file:
-            file.write(f"{name} = []\n\n\nasync def setup(bot):\n    pass\n")
-
 
 class Ref:
     """One path in a Firebase tree kept in memory as {path: value}."""

@@ -305,3 +305,110 @@ async def test_vanity_move_leaves_nothing_behind_when_the_check_fails(
         async with pool.acquire() as connection, connection.transaction():
             await move.vanity(connection, firebase_admin.db, old_vanity_data)
     assert await pool.fetchval("SELECT to_regclass('vanity_roles')") is None
+
+
+@pytest.fixture
+def old_sticky_data(firebase, tmp_path):
+    """Firebase and the enabled file as the bot left them; gives the file's path."""
+    firebase("/Sticky Messages").set(
+        {
+            "a": {"Channel ID": 1, "Message ID": 10, "Message Content": "one"},
+            "b": {"Channel ID": 2, "Message ID": 20, "Message Content": "two"},
+            "c": {"Channel ID": 1, "Message ID": 30, "Message Content": "three 🎉"},
+            "d": {"Channel ID": 4, "Message ID": 40, "Message Content": "not listed"},
+        }
+    )
+    path = tmp_path / "enabledChannels.py"
+    path.write_text("enabledChannels = [1, 2, 1, 3]\n\nasync def setup(bot):\n  pass")
+    return str(path)
+
+
+async def test_sticky_data_moves_once(pool, firebase, old_sticky_data, tmp_path):
+    import firebase_admin.db
+
+    await move.sticky(pool, firebase_admin.db, old_sticky_data)
+    rows = await pool.fetch("SELECT * FROM sticky_enabled ORDER BY channel_id")
+    assert [tuple(row) for row in rows] == [(1, 2), (2, 1), (3, 1)]
+    rows = await pool.fetch(move.STUCK_ROWS)
+    assert [tuple(row) for row in rows] == [
+        (1, 10, "one"),
+        (2, 20, "two"),
+        (1, 30, "three 🎉"),
+        (4, 40, "not listed"),
+    ]
+    saved = json.loads((tmp_path / "sticky-export.json").read_text())
+    assert saved["enabled"] == [1, 2, 1, 3]
+    assert saved["Sticky Messages"] == firebase("/Sticky Messages").get()
+    with pytest.raises(SystemExit):
+        await move.sticky(pool, firebase_admin.db, old_sticky_data)
+
+
+async def test_sticky_move_reads_the_file_named_in_the_environment(
+    pool, firebase, old_sticky_data, monkeypatch
+):
+    import firebase_admin.db
+
+    monkeypatch.setenv("STICKY_ENABLED_FILE", old_sticky_data)
+    await move.sticky(pool, firebase_admin.db)
+    assert await pool.fetchval("SELECT count(*) FROM sticky_messages") == 4
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"Channel ID": "1", "Message ID": 10, "Message Content": "x"},
+        {"Channel ID": 1, "Message ID": 10.0, "Message Content": "x"},
+        {"Channel ID": 1, "Message ID": True, "Message Content": "x"},
+        {"Channel ID": 1, "Message ID": 10, "Message Content": 5},
+    ],
+)
+async def test_sticky_move_stops_on_values_of_the_wrong_kind(
+    pool, firebase, old_sticky_data, record
+):
+    import firebase_admin.db
+
+    firebase("/Sticky Messages/z").set(record)
+    with pytest.raises(SystemExit):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.sticky(connection, firebase_admin.db, old_sticky_data)
+    assert await pool.fetchval("SELECT to_regclass('sticky_messages')") is None
+
+
+async def test_sticky_move_refuses_when_only_a_message_is_there(
+    pool, firebase, old_sticky_data, tmp_path
+):
+    import firebase_admin.db
+
+    from commands.Sticky import stickyStore
+
+    await stickyStore.create(pool)
+    await stickyStore.add(pool, 1, 2, "live")
+    with pytest.raises(SystemExit):
+        await move.sticky(pool, firebase_admin.db, old_sticky_data)
+    assert not (tmp_path / "sticky-export.json").exists()
+    assert await pool.fetchval("SELECT count(*) FROM sticky_enabled") == 0
+
+
+async def test_sticky_move_stops_when_the_saved_order_differs(
+    pool, firebase, old_sticky_data, monkeypatch
+):
+    import firebase_admin.db
+
+    monkeypatch.setattr(move, "STUCK_ROWS", move.STUCK_ROWS + " DESC")
+    with pytest.raises(SystemExit, match="differ"):
+        await move.sticky(pool, firebase_admin.db, old_sticky_data)
+
+
+async def test_sticky_move_leaves_nothing_behind_when_the_check_fails(
+    pool, firebase, old_sticky_data, monkeypatch
+):
+    import firebase_admin.db
+
+    async def differ(*args):
+        raise SystemExit("differ")
+
+    monkeypatch.setattr(move, "same", differ)
+    with pytest.raises(SystemExit):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.sticky(connection, firebase_admin.db, old_sticky_data)
+    assert await pool.fetchval("SELECT to_regclass('sticky_messages')") is None

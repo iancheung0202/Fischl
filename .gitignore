@@ -4,5 +4,4 @@ web/config/
 *.log
 __pycache__/
 .env
-*enabledChannels.py
 .DS_Store

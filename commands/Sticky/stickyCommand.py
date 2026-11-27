@@ -3,9 +3,30 @@ import datetime
 import discord
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
+from commands.Sticky import stickyStore as store
 from utils.commands import SlashCommand
+
+
+async def refresh(bot):
+    """Has the listener read the watched channels again; a failure is only printed."""
+    try:
+        await bot.get_cog("StickyHandler").load()
+    except Exception as e:
+        print(f"[Sticky] Failed to reload the watched channels: {e}")
+
+
+async def unstick(bot, channel):
+    """Forgets the channel's oldest stuck message and deletes it; False if none."""
+    message_id = await store.take(bot.pool, channel.id)
+    if message_id is None:
+        return False
+    try:
+        old = await channel.fetch_message(message_id)
+        await old.delete()
+    except Exception:
+        pass
+    return True
 
 
 @app_commands.guild_only()
@@ -29,34 +50,13 @@ class Sticky(commands.GroupCog, name="sticky"):
         message: str,
         channel: discord.TextChannel = None,
     ) -> None:
+        """Sticks a message to a channel, in place of its oldest one."""
         if channel is None:
             channel = interaction.channel
 
-        ref = db.reference("/Sticky Messages")
-        stickies = ref.get()
-
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                try:
-                    oldMsg = await channel.fetch_message(val["Message ID"])
-                    await oldMsg.delete()
-                except Exception:
-                    pass
-                db.reference("/Sticky Messages").child(key).delete()
-                break
-
+        await unstick(self.bot, channel)
         msg = await interaction.channel.send(message)
-
-        data = {
-            channel.id: {
-                "Channel ID": channel.id,
-                "Message ID": msg.id,
-                "Message Content": message,
-            }
-        }
-
-        for key, value in data.items():
-            ref.push().set(value)
+        await store.add(self.bot.pool, channel.id, msg.id, message)
 
         embed = discord.Embed(
             title="Sticky message enabled!",
@@ -65,22 +65,14 @@ class Sticky(commands.GroupCog, name="sticky"):
         )
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         await interaction.response.send_message(embed=embed, ephemeral=True)
-        with open("./commands/Sticky/enabledChannels.py", "r") as file:
-            lines = file.readlines()
-        for i, line in enumerate(lines):
-            if line.startswith("enabledChannels ="):
-                existing_ids = eval(line.split("=")[1].strip())
-                if channel.id not in existing_ids:
-                    existing_ids.append(channel.id)
-                lines[i] = f"enabledChannels = {existing_ids}\n"
-                break
-        with open("./commands/Sticky/enabledChannels.py", "w") as file:
-            file.writelines(lines)
+        await store.enable(self.bot.pool, channel.id)
+        await refresh(self.bot)
 
     @sticky_enable.error
     async def sticky_enable_error(
         self, interaction: discord.Interaction, error: Exception
     ):
+        """Shows the user why enabling failed."""
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
@@ -94,25 +86,11 @@ class Sticky(commands.GroupCog, name="sticky"):
     async def sticky_disable(
         self, interaction: discord.Interaction, channel: discord.TextChannel = None
     ) -> None:
+        """Removes the channel's oldest stuck message."""
         if channel is None:
             channel = interaction.channel
 
-        ref = db.reference("/Sticky Messages")
-        stickies = ref.get()
-
-        found = False
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                try:
-                    oldMsg = await channel.fetch_message(val["Message ID"])
-                    await oldMsg.delete()
-                except Exception:
-                    pass
-                db.reference("/Sticky Messages").child(key).delete()
-                found = True
-                break
-
-        if found:
+        if await unstick(self.bot, channel):
             embed = discord.Embed(
                 title="Sticky message disabled!",
                 description=f"Sad to see you go. If you change your mind at anytime, you could use {SlashCommand('sticky enable')} to enable sticky messages again.",
@@ -120,16 +98,8 @@ class Sticky(commands.GroupCog, name="sticky"):
             )
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            with open("./commands/Sticky/enabledChannels.py", "r") as file:
-                lines = file.readlines()
-            for i, line in enumerate(lines):
-                if line.startswith("enabledChannels ="):
-                    existing_ids = eval(line.split("=")[1].strip())
-                    existing_ids.remove(channel.id)
-                    lines[i] = f"enabledChannels = {existing_ids}\n"
-                    break
-            with open("./commands/Sticky/enabledChannels.py", "w") as file:
-                file.writelines(lines)
+            await store.leave(self.bot.pool, channel.id)
+            await refresh(self.bot)
         else:
             embed = discord.Embed(
                 title="Sticky message is not enabled!",
@@ -143,6 +113,7 @@ class Sticky(commands.GroupCog, name="sticky"):
     async def sticky_disable_error(
         self, interaction: discord.Interaction, error: Exception
     ):
+        """Shows the user why disabling failed."""
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
 

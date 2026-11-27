@@ -1,82 +1,77 @@
 import asyncio
-import importlib
-import os
 
+import discord
 from discord.ext import commands
-from firebase_admin import db
 
-commands_module = importlib.import_module("commands")
-from commands.Sticky.enabledChannels import enabledChannels
+from commands.Sticky import stickyStore as store
 
-last_modified = os.path.getmtime("./commands/Sticky/enabledChannels.py")
+DELAY = 10  # seconds a channel stays quiet before its message is sent again
 
 
-def check_and_reload():
-    global last_modified, enabledChannels
-    new_modified = os.path.getmtime("./commands/Sticky/enabledChannels.py")
-    if new_modified > last_modified:
-        with open("./commands/Sticky/enabledChannels.py", "r") as f:
-            lines = f.readlines()
-        for line in lines:
-            if line.startswith("enabledChannels ="):
-                new_enabled_channels = eval(line.split("=")[1].strip())
-        if new_enabled_channels != enabledChannels:
-            enabledChannels = new_enabled_channels
-            last_modified = new_modified
-            print("Sticky Messages ./commands/Sticky/enabledChannels.py reloaded!")
-
-
-class OnMessage(commands.Cog):
+class StickyHandler(commands.Cog):
     def __init__(self, bot):
+        """Starts with no watched channels and no waits; cog_load fills them in."""
         self.client = bot
-        self._debounce_tasks = {}
+        self.enabled = set()
+        self.loading = asyncio.Lock()
+        self.waiting = {}
+
+    async def cog_load(self):
+        """Makes the tables and reads the watched channels before the first message."""
+        await store.create(self.client.pool)
+        await self.load()
+
+    async def load(self):
+        """Reads the watched channels into memory."""
+        async with self.loading:
+            self.enabled = await store.enabled(self.client.pool)
 
     @commands.Cog.listener()
     async def on_message(self, message):
+        """Starts the channel's wait again on every message that is not the bot's."""
         if message.author == self.client.user:
             return
-
-        check_and_reload()
-        cid = message.channel.id
-        if cid not in enabledChannels:
+        channel = message.channel
+        if channel.id not in self.enabled:
             return
 
-        task = self._debounce_tasks.get(cid)
+        task = self.waiting.get(channel.id)
         if task and not task.done():
             task.cancel()
+        self.waiting[channel.id] = asyncio.create_task(self.restick_later(channel))
 
-        self._debounce_tasks[cid] = asyncio.create_task(
-            self._delayed_update(message.channel, delay=10)
-        )
-
-    async def _delayed_update(self, channel, delay):
+    async def restick_later(self, channel):
+        """Sends the message again once the channel has been quiet long enough."""
         try:
-            await asyncio.sleep(delay)
-            await self._do_sticky_update(channel)
+            await asyncio.sleep(DELAY)
+            await self.restick(channel)
         except asyncio.CancelledError:
             return
 
-    async def _do_sticky_update(self, channel):
-        ref = db.reference("/Sticky Messages")
-        stickies = ref.get() or {}
-        for key, val in stickies.items():
-            if val["Channel ID"] == channel.id:
-                try:
-                    old = await channel.fetch_message(val["Message ID"])
-                    await old.delete()
-                except Exception:
-                    pass
-                msg = await channel.send(val["Message Content"])
-                db.reference("/Sticky Messages").child(key).delete()
-                db.reference("/Sticky Messages").push().set(
-                    {
-                        "Channel ID": channel.id,
-                        "Message ID": msg.id,
-                        "Message Content": val["Message Content"],
-                    }
-                )
-                break
+    async def restick(self, channel):
+        """Deletes the channel's oldest stuck message and sends it again."""
+        row = await store.oldest(self.client.pool, channel.id)
+        if not row:
+            return
+        try:
+            old = await channel.fetch_message(row["message_id"])
+            await old.delete()
+        except Exception:
+            pass
+        msg = await channel.send(row["content"])
+        await asyncio.shield(self.keep(row, msg))
+
+    async def keep(self, row, msg):
+        """Saves the new message; deletes it if its sticky was taken away meanwhile."""
+        kept = await store.move(
+            self.client.pool, row["id"], msg.channel.id, msg.id, row["content"]
+        )
+        if not kept:
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
 
 
 async def setup(bot):
-    await bot.add_cog(OnMessage(bot))
+    await bot.add_cog(StickyHandler(bot))

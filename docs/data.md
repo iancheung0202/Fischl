@@ -13,7 +13,6 @@ Fischl uses two databases.
 | Co-op | `Co-Op`, `Co-Op Sticky Panel`, `Co-Op-UID` |
 | Reputation | `Global Reps`, `Global Reps System` |
 | Partnership | `Partner` (BrawlKit reads this too) |
-| Sticky | `Sticky Messages` |
 | Topics | `Topics` |
 | Activity service | `Ian Activity` |
 | Status and heartbeat | `Bot Status`, `Uptime` (the website reads both straight from the browser) |
@@ -33,6 +32,7 @@ Each system keeps its tables and queries in one store file. `scripts/firebase_to
 |---|---|---|---|
 | Tag roles | `commands/Tag/tagStore.py` | `tag_enabled`, `tag_roles`, `tag_thanks`, `tag_thanks_cooldown` | `Tag Roles`, `Tag Thanks`, `Tag Thanks Message`, `Tag Thanks Cooldown`, and the file `commands/Tag/tagEnabledGuilds.py` |
 | Vanity roles | `commands/Vanity/vanityStore.py` | `vanity_enabled`, `vanity_roles`, `vanity_thanks`, `vanity_thanks_cooldown` | `Vanity Roles`, `Vanity Thanks`, `Vanity Thanks Message`, `Vanity User`, and the file `commands/Vanity/enabledGuilds.py` |
+| Sticky messages | `commands/Sticky/stickyStore.py` | `sticky_enabled`, `sticky_messages` | `Sticky Messages`, and the file `commands/Sticky/enabledChannels.py` |
 
 ## Rules for moving data
 
