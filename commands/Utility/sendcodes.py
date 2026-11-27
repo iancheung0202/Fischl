@@ -1,39 +1,68 @@
-import datetime
-
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, View
+
+from commands.Utility import posting
+
+# Per game: its full name, its redeem page, the link for one code, the button emoji.
+GAMES = {
+    "genshin": (
+        "Genshin Impact",
+        "https://genshin.mihoyo.com/en/gift",
+        "https://genshin.hoyoverse.com/en/gift?code={}",
+        "<:PRIMOGEM:1364031230357540894>",
+    ),
+    "hsr": (
+        "Honkai: Star Rail",
+        "https://hsr.hoyoverse.com/gift?lang=en-us",
+        "https://hsr.hoyoverse.com/gift?code={}&lang=en-us",
+        "<:Jade:1222617029815832657>",
+    ),
+    "zzz": (
+        "Zenless Zone Zero",
+        "https://zenless.hoyoverse.com/redemption",
+        "https://zenless.hoyoverse.com/redemption?code={}",
+        "<:Polychrome:1316607903939035236>",
+    ),
+}
+DEFAULT_IMAGE = "https://media.discordapp.net/attachments/957252297501577276/965133143365550090/unknown.png"
+MISMATCH = ":x: Number of codes `({})` and reward descriptions `({})` do not match. Please double check."
 
 
-class CopyPasteButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(
-            label="Copy & Paste",
-            style=discord.ButtonStyle.blurple,
-            custom_id="CopyPasteButton",
+def announcement(game, codes, rewards):
+    """Builds the embed listing every code and the view with a button for each."""
+    name, page, link, emoji = GAMES[game]
+    lines = ""
+    view = discord.ui.View()
+    for code in codes:
+        reward = rewards[codes.index(code)].strip() if rewards else ""
+        code = code.strip()
+        label = f"**{reward}:** " if rewards else ""
+        lines += f"<:yes:1036811164891480194> {label}`{code}` | **[Direct Link]({link.format(code)})**\n"
+        view.add_item(
+            discord.ui.Button(
+                label=reward or code,
+                style=discord.ButtonStyle.link,
+                emoji=emoji,
+                url=link.format(code),
+            )
         )
+    embed = discord.Embed(
+        title=f"Latest {name} Redemption Codes",
+        description=f"""<:link:943068848058413106> ***[Redeem by clicking on the buttons below!]({page})***
+<:MelonBread_KeqingNote:1342924552392671254> **Note:** Codes expire quickly, so make sure to redeem them as soon as possible!
 
-    async def callback(self, interaction: discord.Interaction):
-        parts = interaction.message.embeds[0].description.split("`")
-        filtered_parts = [part for part in parts if "|" not in part and ":" not in part]
-        z = 1
-        for part in filtered_parts:
-            if z == 1:
-                await interaction.response.send_message(part, ephemeral=True)
-            else:
-                await interaction.followup.send(part, ephemeral=True)
-            z += 1
-
-
-class CopyPasteView(discord.ui.View):
-    def __init__(self, *, timeout=None):
-        super().__init__(timeout=timeout)
-        self.add_item(CopyPasteButton())
+<:code1:1108803434141982751><:code2:1108803491171934218><:code3:1108803565331431454>
+{lines}""",
+        color=discord.Color.blurple(),
+    )
+    return embed, view
 
 
 class SendCodes(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    """The command that announces a game's redemption codes."""
+
+    def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(
@@ -66,143 +95,33 @@ class SendCodes(commands.Cog):
         separate_msg: bool = False,
         image: discord.Attachment = None,
     ) -> None:
-        listOfCodes = codes.split(",")
-        if reward is not None:
-            listOfRewards = reward.split(",")
-            if len(listOfCodes) != len(listOfRewards):
-                await interaction.response.send_message(
-                    f":x: Number of codes `({len(listOfCodes)})` and reward descriptions `({len(listOfRewards)})` do not match. Please double check.",
-                    ephemeral=True,
-                )
-                return
-        codeString = ""
-        view = View()
-        if game.value == "genshin":
-            for code in listOfCodes:
-                c = code.strip()
-                if reward is not None:
-                    desc = listOfRewards[listOfCodes.index(code)].strip()
-                else:
-                    desc = ""
-                codeString += f"<:yes:1036811164891480194> {f'**{desc}:** ' if reward is not None else ''}`{c}` | **[Direct Link](https://genshin.hoyoverse.com/en/gift?code={c})**\n"
-                button = Button(
-                    label=f"{c if desc == '' else desc}",
-                    style=discord.ButtonStyle.link,
-                    emoji="<:PRIMOGEM:1364031230357540894>",
-                    url=f"https://genshin.hoyoverse.com/en/gift?code={c}",
-                )
-                view.add_item(button)
-
-            embed = discord.Embed(
-                title="Latest Genshin Impact Redemption Codes",
-                description=f"""<:link:943068848058413106> ***[Redeem by clicking on the buttons below!](https://genshin.mihoyo.com/en/gift)***
-<:MelonBread_KeqingNote:1342924552392671254> **Note:** Codes expire quickly, so make sure to redeem them as soon as possible!
-
-<:code1:1108803434141982751><:code2:1108803491171934218><:code3:1108803565331431454>
-{codeString}""",
-                color=discord.Color.blurple(),
+        """Posts the codes with a redeem button each, then plain copies if asked."""
+        codes = codes.split(",")
+        rewards = reward.split(",") if reward is not None else None
+        if rewards and len(codes) != len(rewards):
+            await interaction.response.send_message(
+                MISMATCH.format(len(codes), len(rewards)), ephemeral=True
             )
-        elif game.value == "hsr":
-            for code in listOfCodes:
-                c = code.strip()
-                if reward is not None:
-                    desc = listOfRewards[listOfCodes.index(code)].strip()
-                else:
-                    desc = ""
-                codeString += f"<:yes:1036811164891480194> {f'**{desc}:** ' if reward is not None else ''}`{c}` | **[Direct Link](https://hsr.hoyoverse.com/gift?code={c}&lang=en-us)**\n"
-                button = Button(
-                    label=f"{c if desc == '' else desc}",
-                    style=discord.ButtonStyle.link,
-                    emoji="<:Jade:1222617029815832657>",
-                    url=f"https://hsr.hoyoverse.com/gift?code={c}&lang=en-us",
-                )
-                view.add_item(button)
+            return
 
-            embed = discord.Embed(
-                title="Latest Honkai: Star Rail Redemption Codes",
-                description=f"""<:link:943068848058413106> ***[Redeem by clicking on the buttons below!](https://hsr.hoyoverse.com/gift?lang=en-us)***
-<:MelonBread_KeqingNote:1342924552392671254> **Note:** Codes expire quickly, so make sure to redeem them as soon as possible!
-
-<:code1:1108803434141982751><:code2:1108803491171934218><:code3:1108803565331431454>
-{codeString}""",
-                color=discord.Color.blurple(),
-            )
-        elif game.value == "zzz":
-            for code in listOfCodes:
-                c = code.strip()
-                if reward is not None:
-                    desc = listOfRewards[listOfCodes.index(code)].strip()
-                else:
-                    desc = ""
-                codeString += f"<:yes:1036811164891480194> {f'**{desc}:** ' if reward is not None else ''}`{c}` | **[Direct Link](https://zenless.hoyoverse.com/redemption?code={c})**\n"
-                button = Button(
-                    label=f"{c if desc == '' else desc}",
-                    style=discord.ButtonStyle.link,
-                    emoji="<:Polychrome:1316607903939035236>",
-                    url=f"https://zenless.hoyoverse.com/redemption?code={c}",
-                )
-                view.add_item(button)
-
-            embed = discord.Embed(
-                title="Latest Zenless Zone Zero Redemption Codes",
-                description=f"""<:link:943068848058413106> ***[Redeem by clicking on the buttons below!](https://zenless.hoyoverse.com/redemption)***
-<:MelonBread_KeqingNote:1342924552392671254> **Note:** Codes expire quickly, so make sure to redeem them as soon as possible!
-
-<:code1:1108803434141982751><:code2:1108803491171934218><:code3:1108803565331431454>
-{codeString}""",
-                color=discord.Color.blurple(),
-            )
-
+        embed, view = announcement(game.value, codes, rewards)
         if image is None:
-            embed.set_image(
-                url="https://media.discordapp.net/attachments/957252297501577276/965133143365550090/unknown.png"
-            )
+            embed.set_image(url=DEFAULT_IMAGE)
         else:
-            path = f"./assets/sendcodes.png"
-            await image.save(path)
-            chn = interaction.client.get_channel(1026968305208131645)
-            msg = await chn.send(file=discord.File(path))
-            url = msg.attachments[0].proxy_url
-            embed.set_image(url=url)
+            embed.set_image(url=await posting.hosted(interaction, image, "sendcodes"))
+        posting.sign(embed, interaction.guild)
 
-        try:
-            embed.set_footer(
-                text=interaction.guild.name, icon_url=interaction.guild.icon.url
-            )
-        except Exception:
-            embed.set_footer(text=interaction.guild.name)
-
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        if role is not None:
-            if not (interaction.user.guild_permissions.mention_everyone):
-                return await interaction.response.send_message(
-                    "<:no:1036810470860013639> You don't have permissions to mention `@everyone`, `@here`, or other roles!",
-                    ephemeral=True,
-                )
-            await interaction.channel.send(
-                f"<:blurplemic:1108805037230129302> {role.mention} **• Redeemable Codes**",
-                embed=embed,
-                view=view,
-            )
-        else:
-            await interaction.channel.send(
-                f"<:blurplemic:1108805037230129302> **• Redeemable Codes**",
-                embed=embed,
-                view=view,
-            )
-
+        headline = "**• Redeemable Codes**"
+        if not await posting.post(interaction, headline, role, embed, view):
+            return
         if separate_msg:
             await interaction.channel.send(
                 "-# <:BunnyNerd:1224838490743767121> For copy and pasting ⬇️"
             )
-            for code in listOfCodes:
+            for code in codes:
                 await interaction.channel.send(code.strip())
-
-        await interaction.response.send_message(
-            "<:yes:1036811164891480194> Sent!", ephemeral=True
-        )
+        await interaction.response.send_message(posting.SENT, ephemeral=True)
 
 
-async def setup(bot: commands.Bot) -> None:
+async def setup(bot):
     await bot.add_cog(SendCodes(bot))

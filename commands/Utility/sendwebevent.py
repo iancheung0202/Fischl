@@ -1,14 +1,32 @@
-import datetime
-
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, View
+
+from commands.Utility import posting
+
+
+async def embed_colour(color):
+    """Has the colour site read a hex code; blurple if none is given or it can't."""
+    if color is None:
+        return discord.Color.blurple()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            "https://www.thecolorapi.com/id", params={"hex": color.removeprefix("#")}
+        ) as answer:
+            if answer.status != 200:
+                raise NameError("name 'embedColor' is not defined")
+            found = await answer.json()
+            try:
+                return discord.Color(int(found["hex"]["clean"], 16))
+            except Exception:
+                return discord.Color.blurple()
 
 
 class WebEvent(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    """The command that announces a game's web event."""
+
+    def __init__(self, bot):
         self.bot = bot
 
     @app_commands.command(
@@ -42,84 +60,27 @@ class WebEvent(commands.Cog):
         image: discord.Attachment = None,
         color: str = None,
     ) -> None:
-        view = View()
-
-        if color is None:
-            embedColor = discord.Color.blurple()
-        else:
-            hex = color
-            if hex.startswith("#"):
-                hex = hex[1:]
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    "https://www.thecolorapi.com/id", params={"hex": hex}
-                ) as server:
-                    if server.status == 200:
-                        js = await server.json()
-                        try:
-                            embedColor = discord.Color(
-                                int(f"0x{js['hex']['clean']}", 16)
-                            )
-                        except:
-                            embedColor = discord.Color.blurple()
-
-        if title is None:
-            embed = discord.Embed(color=embedColor)
-        else:
-            embed = discord.Embed(title=title, color=embedColor)
-
-        if details is not None:
-            embed.description = details
-
-        embed.url = link
-
+        """Posts the event as an embed with a link button."""
+        embed = discord.Embed(
+            title=title, description=details, url=link, color=await embed_colour(color)
+        )
         if image is not None:
-            path = f"./assets/webevent.png"
-            await image.save(path)
-            chn = interaction.client.get_channel(1026968305208131645)
-            msg = await chn.send(file=discord.File(path))
-            url = msg.attachments[0].proxy_url
-            embed.set_image(url=url)
-
-        button = Button(
-            label=title,
-            style=discord.ButtonStyle.link,
-            emoji="<:link:943068848058413106>",
-            url=link,
+            embed.set_image(url=await posting.hosted(interaction, image, "webevent"))
+        view = discord.ui.View()
+        view.add_item(
+            discord.ui.Button(
+                label=title,
+                style=discord.ButtonStyle.link,
+                emoji="<:link:943068848058413106>",
+                url=link,
+            )
         )
-        view.add_item(button)
+        posting.sign(embed, interaction.guild)
 
-        try:
-            embed.set_footer(
-                text=interaction.guild.name, icon_url=interaction.guild.icon.url
-            )
-        except Exception:
-            embed.set_footer(text=interaction.guild.name)
-
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        if role is not None:
-            if not (interaction.user.guild_permissions.mention_everyone):
-                return await interaction.response.send_message(
-                    "<:no:1036810470860013639> You don't have permissions to mention `@everyone`, `@here`, or other roles!",
-                    ephemeral=True,
-                )
-            await interaction.channel.send(
-                f"<:blurplemic:1108805037230129302> {role.mention} **• New {game.name} Web Event**",
-                embed=embed,
-                view=view,
-            )
-        else:
-            await interaction.channel.send(
-                f"<:blurplemic:1108805037230129302> **• New {game.name} Web Event**",
-                embed=embed,
-                view=view,
-            )
-
-        await interaction.response.send_message(
-            "<:yes:1036811164891480194> Sent!", ephemeral=True
-        )
+        headline = f"**• New {game.name} Web Event**"
+        if await posting.post(interaction, headline, role, embed, view):
+            await interaction.response.send_message(posting.SENT, ephemeral=True)
 
 
-async def setup(bot: commands.Bot) -> None:
+async def setup(bot):
     await bot.add_cog(WebEvent(bot))
