@@ -5,5 +5,4 @@ web/config/
 __pycache__/
 .env
 *enabledChannels.py
-*enabledGuilds.py
 .DS_Store

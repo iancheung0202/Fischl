@@ -145,3 +145,163 @@ async def test_tag_move_stops_on_ids_that_are_not_whole_numbers(
     else:
         with pytest.raises(SystemExit):
             await move.tag(pool, firebase_admin.db, old_tag_data)
+
+
+@pytest.fixture
+def old_vanity_data(firebase, tmp_path):
+    """Firebase and the enabled file as the bot left them; gives the file's path."""
+    role = {"Role ID": 2, "Log Channel ID": 3}
+    firebase("/Vanity Roles").set(
+        {
+            "a": {"Server ID": 1, "Link": "discord.gg/a", **role},
+            "b": {"Server ID": 1, "Link": "discord.gg/later", **role},
+            "c": {"Server ID": 4, "Link": "bro", **role},
+        }
+    )
+    firebase("/Vanity Thanks").set(
+        {
+            "a": {"Server ID": 1, "Channel ID": 3, "DM": False},
+            "b": {"Server ID": 4, "DM": True},
+        }
+    )
+    message = {"Title": "", "Description": "d", "Color": "#fff", "Image Link": ""}
+    firebase("/Vanity Thanks Message").set(
+        {
+            "a": {"Server ID": 1, "Message Content": "hi", **message},
+            "b": {"Server ID": 50, "Message Content": "kept", **message},
+        }
+    )
+    now = int(NOW)
+    firebase("/Vanity User").set(
+        {
+            "a": {"Server ID": 1, "User ID": 5, "Last Thanked Timestamp": now - 100},
+            "b": {"Server ID": 1, "User ID": 5, "Last Thanked Timestamp": now - 50},
+            "c": {"Server ID": 1, "User ID": 6, "Last Thanked Timestamp": now - 86500},
+            "d": {"Server ID": 4, "User ID": 5, "Last Thanked Timestamp": now - 86000},
+        }
+    )
+    path = tmp_path / "enabledGuilds.py"
+    path.write_text("enabledGuilds = [1, 77]\n")
+    return str(path)
+
+
+async def test_vanity_data_moves_once(pool, firebase, old_vanity_data, tmp_path):
+    import firebase_admin.db
+
+    from commands.Vanity import vanityStore
+
+    await move.vanity(pool, firebase_admin.db, old_vanity_data)
+    watched = [tuple(row) for row in await vanityStore.watched(pool)]
+    assert watched == [(1, "discord.gg/a", 2, 3)]
+    assert (
+        await pool.fetchval("SELECT link FROM vanity_roles WHERE guild_id = 4") == "bro"
+    )
+    assert sorted(await vanityStore.enabled(pool)) == [1, 77]
+    assert tuple(await vanityStore.thanks(pool, 1))[1:] == (
+        3,
+        False,
+        "hi",
+        "",
+        "d",
+        "#fff",
+        "",
+    )
+    assert tuple(await vanityStore.thanks(pool, 4)) == (4, None, True) + (None,) * 5
+    assert await vanityStore.thanks(pool, 50) is None
+    kept = await pool.fetchrow(
+        "SELECT dm, content FROM vanity_thanks WHERE guild_id = 50"
+    )
+    assert tuple(kept) == (None, "kept")
+    rows = await pool.fetch(
+        "SELECT * FROM vanity_thanks_cooldown ORDER BY guild_id, user_id"
+    )
+    now = int(NOW)
+    assert [tuple(row) for row in rows] == [(1, 5, now - 100), (4, 5, now - 86000)]
+
+    saved = json.loads((tmp_path / "vanity-export.json").read_text())
+    assert saved["enabled"] == [1, 77]
+    assert len(saved["Vanity User"]) == 4
+    with pytest.raises(SystemExit):
+        await move.vanity(pool, firebase_admin.db, old_vanity_data)
+
+
+async def test_vanity_move_needs_the_enabled_file(pool, firebase, tmp_path):
+    import firebase_admin.db
+
+    with pytest.raises(FileNotFoundError):
+        await move.vanity(pool, firebase_admin.db, str(tmp_path / "missing.py"))
+
+
+async def test_vanity_move_refuses_when_any_table_has_rows(
+    pool, firebase, old_vanity_data
+):
+    import firebase_admin.db
+
+    from commands.Vanity import vanityStore
+
+    await vanityStore.create(pool)
+    await vanityStore.claim_thanks(pool, 1, 5, 100, 86400)
+    with pytest.raises(SystemExit):
+        await move.vanity(pool, firebase_admin.db, old_vanity_data)
+    assert await pool.fetchval("SELECT count(*) FROM vanity_roles") == 0
+
+
+@pytest.mark.parametrize(
+    "path, value",
+    [
+        ("/Vanity Roles/a/Role ID", 2.0),
+        ("/Vanity Roles/a/Log Channel ID", "3"),
+        ("/Vanity Roles/a/Link", 5),
+        ("/Vanity Thanks/a/Channel ID", 3.0),
+        ("/Vanity Thanks/a/DM", "False"),
+        ("/Vanity Thanks Message/a/Server ID", "1"),
+        ("/Vanity User/a/User ID", 5.0),
+        ("/Vanity User/a/Last Thanked Timestamp", float(int(NOW))),
+    ],
+)
+async def test_vanity_move_stops_on_values_of_the_wrong_kind(
+    pool, firebase, old_vanity_data, path, value
+):
+    import firebase_admin.db
+
+    firebase(path).set(value)
+    with pytest.raises(SystemExit):
+        await move.vanity(pool, firebase_admin.db, old_vanity_data)
+    assert await pool.fetchval("SELECT count(*) FROM vanity_roles") == 0
+
+
+async def test_vanity_move_reads_the_file_named_in_the_environment(
+    pool, firebase, old_vanity_data, monkeypatch
+):
+    import firebase_admin.db
+
+    monkeypatch.setenv("VANITY_ENABLED_FILE", old_vanity_data)
+    await move.vanity(pool, firebase_admin.db)
+    assert await pool.fetchval("SELECT count(*) FROM vanity_enabled") == 2
+
+
+async def test_vanity_move_reads_a_missing_dm_flag_as_channel(
+    pool, firebase, old_vanity_data
+):
+    import firebase_admin.db
+
+    firebase("/Vanity Thanks/a").set({"Server ID": 1, "Channel ID": 3})
+    await move.vanity(pool, firebase_admin.db, old_vanity_data)
+    assert (
+        await pool.fetchval("SELECT dm FROM vanity_thanks WHERE guild_id = 1") is False
+    )
+
+
+async def test_vanity_move_leaves_nothing_behind_when_the_check_fails(
+    pool, firebase, old_vanity_data, monkeypatch
+):
+    import firebase_admin.db
+
+    async def differ(*args):
+        raise SystemExit("differ")
+
+    monkeypatch.setattr(move, "check_vanity", differ)
+    with pytest.raises(SystemExit):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.vanity(connection, firebase_admin.db, old_vanity_data)
+    assert await pool.fetchval("SELECT to_regclass('vanity_roles')") is None

@@ -3,6 +3,7 @@
 Run from the repo root, with the bot stopped and the old enabled file already
 moved out of the repo:
     TAG_ENABLED_FILE=/path/to/tagEnabledGuilds.py python3 scripts/firebase_to_postgres.py tag
+    VANITY_ENABLED_FILE=/path/to/enabledGuilds.py python3 scripts/firebase_to_postgres.py vanity
 Firebase is only read, so the old copy stays as it was. Each system saves what
 it read to `<system>-export.json` next to that file, checks every row it wrote
 and refuses to run once its tables hold data."""
@@ -63,7 +64,7 @@ def export(folder, name, db, paths, **extra):
 async def tag(pool, db, enabled_file=None):
     """Tag roles: enabled servers, role settings, thank-you settings, cooldowns."""
     from commands.Tag import tagStore as store
-    from commands.Tag.tagEvent import THANKS_COOLDOWN
+    from utils.config import THANKS_COOLDOWN
 
     await store.create(pool)
     for table in TAG_TABLES:
@@ -184,7 +185,147 @@ async def check_tag(pool, enabled, roles, thanks, messages, live):
     )
 
 
-SYSTEMS = {"tag": tag}
+VANITY_PATHS = ("Vanity Roles", "Vanity Thanks", "Vanity Thanks Message", "Vanity User")
+VANITY_TABLES = (
+    "vanity_enabled",
+    "vanity_roles",
+    "vanity_thanks",
+    "vanity_thanks_cooldown",
+)
+VANITY_IDS = (
+    ("Server ID", "Role ID", "Log Channel ID"),
+    ("Server ID", "Channel ID"),
+    ("Server ID",),
+)
+
+
+async def vanity(pool, db, enabled_file=None):
+    """Vanity roles: enabled servers, role settings, thank-you settings, cooldowns."""
+    from commands.Vanity import vanityStore as store
+    from utils.config import THANKS_COOLDOWN
+
+    await store.create(pool)
+    for table in VANITY_TABLES:
+        if await pool.fetchval(f"SELECT count(*) FROM {table}"):
+            raise SystemExit(f"{table} already has rows; Postgres is the live copy")
+    enabled_file = enabled_file or os.environ["VANITY_ENABLED_FILE"]
+    enabled = set(read_list(enabled_file, "enabledGuilds"))
+    data = export(
+        os.path.dirname(enabled_file),
+        "vanity",
+        db,
+        VANITY_PATHS,
+        enabled=sorted(enabled),
+    )
+    roles, thanks, messages = (by_server(data[path]) for path in VANITY_PATHS[:3])
+    live = thanked(data[VANITY_PATHS[3]], int(time.time()), THANKS_COOLDOWN)
+    whole_vanity_ids((roles, thanks, messages), live)
+
+    for guild_id in enabled:
+        await store.enable(pool, guild_id)
+    for guild_id, record in roles.items():
+        await store.set_roles(
+            pool,
+            guild_id,
+            record.get("Link"),
+            record.get("Role ID"),
+            record.get("Log Channel ID"),
+        )
+    for guild_id, record in thanks.items():
+        await store.set_thanks(
+            pool, guild_id, record.get("Channel ID"), record.get("DM", False)
+        )
+    for guild_id, record in messages.items():
+        await store.set_message(
+            pool, guild_id, *(record.get(field, "") for field in MESSAGE)
+        )
+    await pool.executemany(
+        """INSERT INTO vanity_thanks_cooldown (guild_id, user_id, thanked_at)
+        VALUES ($1, $2, $3)""",
+        [(*key, at) for key, at in live.items()],
+    )
+    await check_vanity(pool, enabled, roles, thanks, messages, live)
+
+
+def thanked(users, now, cooldown):
+    """Gives {(server, member): time thanked} for cooldowns still running.
+
+    The bot read a member's first record for the server, so that one counts."""
+    first = {}
+    for record in (users or {}).values():
+        key = (record["Server ID"], record["User ID"])
+        first.setdefault(key, record["Last Thanked Timestamp"])
+    return {key: at for key, at in first.items() if now - at <= cooldown}
+
+
+def whole_vanity_ids(settings, live):
+    """Stops if an id or a time is not a whole number, or a DM flag not a bool."""
+    values = [
+        record.get(field)
+        for records, fields in zip(settings, VANITY_IDS)
+        for record in records.values()
+        for field in fields
+    ]
+    values += [value for key, at in live.items() for value in (*key, at)]
+    bad = [value for value in values if value is not None and type(value) is not int]
+    flags = [t.get("DM", False) for t in settings[1].values()]
+    bad += [flag for flag in flags if type(flag) is not bool]
+    links = [r.get("Link") for r in settings[0].values()]
+    bad += [link for link in links if link is not None and type(link) is not str]
+    if bad:
+        raise SystemExit(f"values of the wrong kind: {bad}")
+
+
+async def check_vanity(pool, enabled, roles, thanks, messages, live):
+    """Reads every row back and stops if one differs from Firebase."""
+    await same(
+        pool,
+        "SELECT guild_id FROM vanity_enabled",
+        [(guild_id,) for guild_id in enabled],
+        "enabled servers",
+    )
+    await same(
+        pool,
+        "SELECT guild_id, link, role_id, log_channel_id FROM vanity_roles",
+        [
+            (guild_id, r.get("Link"), r.get("Role ID"), r.get("Log Channel ID"))
+            for guild_id, r in roles.items()
+        ],
+        "role settings",
+    )
+    await same(
+        pool,
+        """SELECT guild_id, channel_id, dm, content, title, description, color, image
+        FROM vanity_thanks""",
+        [
+            (
+                guild_id,
+                thanks.get(guild_id, {}).get("Channel ID"),
+                thanks[guild_id].get("DM", False) if guild_id in thanks else None,
+                *(
+                    messages[guild_id].get(field, "") if guild_id in messages else None
+                    for field in MESSAGE
+                ),
+            )
+            for guild_id in set(thanks) | set(messages)
+        ],
+        "thank-you settings",
+    )
+    await same(
+        pool,
+        "SELECT guild_id, user_id, thanked_at FROM vanity_thanks_cooldown",
+        [(*key, at) for key, at in live.items()],
+        "cooldowns",
+    )
+    print(
+        f"vanity: {len(enabled)} enabled, {len(roles)} role settings, {len(thanks)} "
+        f"thank-you settings, {len(messages)} messages "
+        f"({len(set(messages) - set(thanks))} kept with thanks off), {len(live)} "
+        "cooldowns still running; every row matches Firebase"
+    )
+
+
+SYSTEMS = {"tag": tag, "vanity": vanity}
 
 
 async def main(names):

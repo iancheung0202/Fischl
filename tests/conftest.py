@@ -22,7 +22,6 @@ sys.modules.setdefault("assets.secret", secret)
 # The bot keeps these lists in files it rewrites itself; git ignores them.
 STATE_FILES = {
     "commands/Sticky/enabledChannels.py": "enabledChannels",
-    "commands/Vanity/enabledGuilds.py": "enabledGuilds",
 }
 for path, name in STATE_FILES.items():
     if not os.path.exists(path):

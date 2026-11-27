@@ -1,7 +1,5 @@
-import ast
 import asyncio
 import datetime
-import os
 import time
 
 import aiohttp
@@ -9,173 +7,48 @@ import discord
 from discord.ext import commands
 from firebase_admin import db
 
-from commands.Vanity.enabledGuilds import enabledGuilds
+from commands.Vanity import vanityStore as store
+from utils.config import MASTER_LOG_CHANNEL, THANKS_COOLDOWN
 
-ENABLED_GUILDS_PATH = "./commands/Vanity/enabledGuilds.py"
-
-enabled_guilds_lock = asyncio.Lock()
-
-last_modified = os.path.getmtime(ENABLED_GUILDS_PATH)
-ref = db.reference("/Vanity Roles")
-vanity = ref.get() or {}
-
-
-def get_vanity_entry(guild_id):
-    """Safely look up a guild's vanity config. Returns None (and logs) instead
-    of leaving locals unbound / crashing when the entry can't be found."""
-    if not vanity:
-        print(
-            f"[Vanity] No vanity data loaded at all (DB empty?) while looking up guild {guild_id}"
-        )
-        return None
-    for key, val in vanity.items():
-        if val.get("Server ID") == guild_id:
-            return val
-    print(
-        f"[Vanity] No vanity entry found in cache for guild {guild_id} (enabledGuilds/DB may be out of sync)"
-    )
-    return None
-
-
-async def read_enabled_guilds():
-    """Read the current list from disk. Returns None on parse failure instead
-    of raising/leaving a variable unbound."""
-    async with enabled_guilds_lock:
-        try:
-            with open(ENABLED_GUILDS_PATH, "r") as f:
-                lines = f.readlines()
-        except FileNotFoundError:
-            print(
-                f"[Vanity] {ENABLED_GUILDS_PATH} not found while reading enabled guilds"
-            )
-            return None, None
-
-        for i, line in enumerate(lines):
-            if line.startswith("enabledGuilds ="):
-                try:
-                    parsed = ast.literal_eval(line.split("=", 1)[1].strip())
-                except (ValueError, SyntaxError) as e:
-                    print(f"[Vanity] Failed to parse enabledGuilds.py line {i}: {e}")
-                    return None, None
-                return parsed, lines
-        print("[Vanity] Could not find an 'enabledGuilds =' line in enabledGuilds.py")
-        return None, None
-
-
-async def write_enabled_guilds(guild_id, remove=False):
-    """Add or remove a guild id from enabledGuilds.py safely, under the lock,
-    so concurrent events don't overwrite each other's edits."""
-    async with enabled_guilds_lock:
-        try:
-            with open(ENABLED_GUILDS_PATH, "r") as f:
-                lines = f.readlines()
-        except FileNotFoundError:
-            print(
-                f"[Vanity] {ENABLED_GUILDS_PATH} not found while writing enabled guilds"
-            )
-            return False
-
-        found_line = False
-        for i, line in enumerate(lines):
-            if line.startswith("enabledGuilds ="):
-                found_line = True
-                try:
-                    existing_ids = ast.literal_eval(line.split("=", 1)[1].strip())
-                except (ValueError, SyntaxError) as e:
-                    print(
-                        f"[Vanity] Failed to parse enabledGuilds.py while writing: {e}"
-                    )
-                    return False
-                if remove:
-                    if guild_id in existing_ids:
-                        existing_ids.remove(guild_id)
-                    else:
-                        print(
-                            f"[Vanity] Guild {guild_id} was not in enabledGuilds; nothing to remove"
-                        )
-                else:
-                    if guild_id not in existing_ids:
-                        existing_ids.append(guild_id)
-                lines[i] = f"enabledGuilds = {existing_ids}\n"
-                break
-
-        if not found_line:
-            print("[Vanity] Could not find an 'enabledGuilds =' line; write aborted")
-            return False
-
-        try:
-            with open(ENABLED_GUILDS_PATH, "w") as f:
-                f.writelines(lines)
-        except OSError as e:
-            print(f"[Vanity] Failed to write enabledGuilds.py: {e}")
-            return False
-        return True
-
-
-async def check_and_reload():
-    global last_modified, vanity, enabledGuilds
-    try:
-        new_modified = os.path.getmtime(ENABLED_GUILDS_PATH)
-    except FileNotFoundError:
-        print(f"[Vanity] {ENABLED_GUILDS_PATH} missing during mtime check")
-        return
-
-    if new_modified <= last_modified:
-        return
-
-    new_enabled_guilds, _ = await read_enabled_guilds()
-    if new_enabled_guilds is None:
-        # Parsing failed; don't touch state, just try again next time.
-        return
-
-    if new_enabled_guilds != enabledGuilds:
-        enabledGuilds = new_enabled_guilds
-        last_modified = new_modified
-        fresh = db.reference("/Vanity Roles").get()
-        vanity = fresh or {}
-        if fresh is None:
-            print("[Vanity] /Vanity Roles came back empty from Firebase on reload")
+IAN = 692254240290242601
 
 
 def word(n):
+    """Gives 1st, 2nd, 3rd, 4th and so on."""
     return str(n) + (
         "th" if 4 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     )
 
 
 def get_custom_status(member):
+    """Gives the member's custom status as text, or an empty string."""
     for act in member.activities:
         if isinstance(act, discord.CustomActivity):
-            return act
-    return None
+            return str(act)
+    return ""
 
 
-async def safe_send(channel_or_member, *args, context="", **kwargs):
-    """Send a message and log (instead of silently swallowing) any failure,
-    consistently, wherever we message a channel/DM/member."""
-    if channel_or_member is None:
+async def safe_send(target, *args, context="", **kwargs):
+    """Sends a message, and prints why if it could not be sent."""
+    if target is None:
         print(f"[Vanity] Tried to send but target was None ({context})")
-        return None
+        return
     try:
-        return await channel_or_member.send(*args, **kwargs)
+        await target.send(*args, **kwargs)
     except discord.Forbidden:
         print(f"[Vanity] Missing permission to send ({context})")
     except discord.HTTPException as e:
         print(f"[Vanity] HTTP error sending message ({context}): {e}")
     except Exception as e:
         print(f"[Vanity] Unexpected error sending message ({context}): {e}")
-    return None
 
 
-async def send_master_log(
-    bot, guild, *args, embed=None, context="", skip_channel_id=None
-):
-    master = bot.get_channel(1555014249762398359)
+async def send_master_log(bot, guild, *args, embed=None, context=""):
+    """Copies a message to the master log, naming the server it is about."""
     master_embed = embed.copy() if embed is not None else discord.Embed()
     master_embed.add_field(name="Guild", value=f"{guild.name} ({guild.id})")
-
-    return await safe_send(
-        master,
+    await safe_send(
+        bot.get_channel(MASTER_LOG_CHANNEL),
         *args,
         embed=master_embed,
         allowed_mentions=discord.AllowedMentions.none(),
@@ -183,408 +56,292 @@ async def send_master_log(
     )
 
 
-async def send_vanity_log(bot, chn, guild, *args, embed=None, context="", **kwargs):
-    """Send to the server's vanity log channel AND mirror to the master log channel."""
-    await safe_send(chn, *args, embed=embed, context=context, **kwargs)
-    await send_master_log(
-        bot,
-        guild,
-        *args,
-        embed=embed,
-        context=context,
-        skip_channel_id=getattr(chn, "id", None),
-    )
+async def send_vanity_log(bot, chn, guild, *args, embed=None, context=""):
+    """Sends to the server's log channel, then to the master log."""
+    await safe_send(chn, *args, embed=embed, context=context)
+    await send_master_log(bot, guild, *args, embed=embed, context=context)
 
 
-def script(string, user, guild):
+def script(string, user, role, link):
+    """Fills the placeholders of a thank-you text."""
     if not string:
         return string
-
-    if "{mention}" in string:
-        string = string.replace("{mention}", f"{user.mention}")
-    if "{server}" in string:
-        string = string.replace("{server}", f"{guild.name}")
-    if "{user}" in string:
-        string = string.replace("{user}", f"{user.name}")
-
-    if any(tag in string for tag in ("{count}", "{count-th}", "{role}", "{rolename}")):
-        entry = get_vanity_entry(guild.id)
-        role = guild.get_role(entry["Role ID"]) if entry else None
-        if role is None:
-            print(
-                f"[Vanity] script(): could not resolve role for guild {guild.id}; leaving role-based placeholders as-is"
-            )
-        else:
-            if "{count}" in string:
-                string = string.replace("{count}", f"{len(role.members)}")
-            if "{count-th}" in string:
-                string = string.replace("{count-th}", f"{word(len(role.members))}")
-            if "{role}" in string:
-                string = string.replace("{role}", f"{role.mention}")
-            if "{rolename}" in string:
-                string = string.replace("{rolename}", f"{role.name}")
-
-    if "{link}" in string:
-        entry = get_vanity_entry(guild.id)
-        if entry:
-            string = string.replace("{link}", f"{entry.get('Link', '')}")
-        else:
-            print(
-                f"[Vanity] script(): could not resolve link for guild {guild.id}; leaving {{link}} as-is"
-            )
-
+    count = len(role.members) if "{count" in string else 0
+    values = {
+        "{mention}": user.mention,
+        "{server}": user.guild.name,
+        "{user}": user.name,
+        "{count}": count,
+        "{count-th}": word(count),
+        "{role}": role.mention,
+        "{rolename}": role.name,
+        "{link}": link or "",
+    }
+    for placeholder, value in values.items():
+        string = string.replace(placeholder, f"{value}")
     return string
+
+
+def save_ian_activity(member):
+    """Keeps Ian's current activities in Firebase for the status API."""
+
+    def convert_ints_to_str(obj):
+        if isinstance(obj, dict):
+            return {k: convert_ints_to_str(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_ints_to_str(i) for i in obj]
+        elif isinstance(obj, int):
+            return str(obj)
+        else:
+            return obj
+
+    try:
+        activities = [
+            convert_ints_to_str(activity.to_dict()) for activity in member.activities
+        ]
+        db.reference("/Ian Activity").set(activities)
+    except Exception as e:
+        print(f"[Vanity] Debug activity logging failed: {e}")
+
+
+async def embed_color(hex_code, guild_id):
+    """Gives the colour for a hex code, or blurple if it cannot be looked up."""
+    if not hex_code:
+        return discord.Color.blurple()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://www.thecolorapi.com/id",
+                params={"hex": hex_code},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as server:
+                if server.status == 200:
+                    js = await server.json()
+                    return discord.Color(int(f"0x{js['hex']['clean']}", 16))
+    except Exception as e:
+        print(
+            f"[Vanity] Color API lookup failed for guild {guild_id}, hex={hex_code!r}: {e}"
+        )
+    return discord.Color.blurple()
 
 
 class OnStatusUpdate(commands.Cog):
     def __init__(self, bot):
         self.client = bot
         self.chunked_guilds = set()
+        self.watched = {}
+        self.loading = asyncio.Lock()
+
+    async def cog_load(self):
+        """Makes the tables and reads the settings before the first presence."""
+        await store.create(self.client.pool)
+        await self.load()
+
+    async def load(self):
+        """Reads the role settings of the enabled servers into memory."""
+        async with self.loading:
+            rows = await store.watched(self.client.pool)
+            self.watched = {row["guild_id"]: row for row in rows}
 
     @commands.Cog.listener()
     async def on_ready(self):
-        overlapping = [gid for gid in enabledGuilds if self.client.get_guild(gid)]
-
-        for guild_id in overlapping:
-            if guild_id not in self.chunked_guilds:
-                guild = self.client.get_guild(guild_id)
-                if guild:
-                    await guild.chunk()
-                    self.chunked_guilds.add(guild_id)
+        """Loads the members of the enabled servers; presences need them."""
+        for guild_id in await store.enabled(self.client.pool):
+            guild = self.client.get_guild(guild_id)
+            if guild and guild_id not in self.chunked_guilds:
+                await guild.chunk()
+                self.chunked_guilds.add(guild_id)
 
     @commands.Cog.listener()
     async def on_presence_update(self, before, after):
-        await check_and_reload()
+        """Gives or takes the vanity role as the link enters or leaves a status."""
+        if after.id == IAN:
+            save_ian_activity(after)
 
-        if after.id == 692254240290242601:
-            try:
-                debug_ref = db.reference("/Ian Activity")
-
-                def convert_ints_to_str(obj):
-                    if isinstance(obj, dict):
-                        return {k: convert_ints_to_str(v) for k, v in obj.items()}
-                    elif isinstance(obj, list):
-                        return [convert_ints_to_str(i) for i in obj]
-                    elif isinstance(obj, int):
-                        return str(obj)
-                    else:
-                        return obj
-
-                activities = [
-                    convert_ints_to_str(activity.to_dict())
-                    for activity in after.activities
-                ]
-                debug_ref.set(activities)
-            except Exception as e:
-                print(f"[Vanity] Debug activity logging failed: {e}")
-
-        if after.guild is None or after.guild.id not in enabledGuilds:
+        settings = self.watched.get(after.guild.id) if after.guild else None
+        if settings is None:
             return
-
-        entry = get_vanity_entry(after.guild.id)
-        if entry is None:
-            return
-
-        log_channel_id = entry.get("Log Channel ID")
-        role_id = entry.get("Role ID")
-        link = entry.get("Link")
-
-        # Look in the member's own server first; client.get_channel searches
-        # every server, and this runs on each presence update.
-        chn = (
-            after.guild.get_channel_or_thread(log_channel_id)
-            or self.client.get_channel(log_channel_id)
-            if log_channel_id
-            else None
-        )
-        if chn is None and log_channel_id:
-            print(
-                f"[Vanity] Log channel {log_channel_id} not in cache for guild {after.guild.id}; trying fetch"
-            )
-            try:
-                chn = await self.client.fetch_channel(log_channel_id)
-            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
-                print(
-                    f"[Vanity] Log channel {log_channel_id} unavailable for guild {after.guild.id}: {e}"
-                )
-                chn = None
-
-        role = after.guild.get_role(role_id) if role_id else None
+        guild = after.guild
+        chn = await self.log_channel(guild, settings["log_channel_id"])
+        role = guild.get_role(settings["role_id"]) if settings["role_id"] else None
         if role is None:
-            for key, val in vanity.items():
-                if val.get("Server ID") == after.guild.id:
-                    try:
-                        db.reference("/Vanity Roles").child(key).delete()
-                    except Exception as e:
-                        print(
-                            f"[Vanity] Failed to delete stale /Vanity Roles entry for guild {after.guild.id}: {e}"
-                        )
-                    break
-
-            ok = await write_enabled_guilds(after.guild.id, remove=True)
-            if not ok:
-                print(
-                    f"[Vanity] Failed to remove guild {after.guild.id} from enabledGuilds.py after role deletion"
-                )
-
-            embed = discord.Embed(
-                title="Vanity roles disabled!",
-                description="You can always re-enable the feature by using `/vanity enable`.",
-                colour=0xFF0000,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await send_vanity_log(
-                self.client,
-                chn,
-                after.guild,
-                "# Custom vanity role has been deleted by someone else.",
-                embed=embed,
-                context=f"role-deleted notice, guild {after.guild.id}",
-            )
-            print(
-                f"[Vanity] Role {role_id} missing in guild {after.guild.id}; vanity roles disabled for this guild"
-            )
+            await self.role_deleted(guild, chn, settings["role_id"])
             return
 
+        link = settings["link"]
         if not link:
-            print(f"[Vanity] Guild {after.guild.id} has no Link configured; skipping")
+            print(f"[Vanity] Guild {guild.id} has no Link configured; skipping")
             return
         try:
             link = link.split(".")[1]
-        except (IndexError, AttributeError):
+        except IndexError:
             print(
-                f"[Vanity] Guild {after.guild.id} has a malformed Link value ({link!r}); skipping"
+                f"[Vanity] Guild {guild.id} has a malformed Link value ({link!r}); skipping"
             )
             return
 
-        after_status = get_custom_status(after)
-        before_status = get_custom_status(before)
-        after_str = str(after_status) if after_status else ""
-        before_str = str(before_status) if before_status else ""
+        has_link = link in get_custom_status(after)
+        had_link = link in get_custom_status(before)
+        was_offline = str(before.status) == "offline"
+        if not has_link and role in after.roles and (had_link or was_offline):
+            went_offline = had_link and str(after.status) == "offline"
+            await self.link_removed(after, role, chn, went_offline, had_link)
+        elif has_link and role not in after.roles:
+            await self.link_added(after, role, chn, had_link, was_offline, settings)
 
-        if (link not in after_str) and (link in before_str) and (role in after.roles):
-            if str(after.status) == "offline":
-                embed = discord.Embed(
-                    description=f":yellow_circle: {after.mention} went offline."
-                )
-            else:
-                try:
-                    await after.remove_roles(role)
-                except (discord.Forbidden, discord.HTTPException) as e:
-                    print(
-                        f"[Vanity] Failed to remove role from {after} in guild {after.guild.id}: {e}"
-                    )
-                embed = discord.Embed(
-                    description=f":red_circle: {after.mention} has **removed** vanity link from their status."
-                )
-                embed.set_footer(text="Role removed")
-            await send_vanity_log(
-                self.client,
-                chn,
-                after.guild,
-                embed=embed,
-                context=f"status-removed notice, guild {after.guild.id}",
+    async def log_channel(self, guild, channel_id):
+        """Finds the server's log channel, asking Discord if it is not cached."""
+        if not channel_id:
+            return None
+        chn = guild.get_channel_or_thread(channel_id) or self.client.get_channel(
+            channel_id
+        )
+        if chn is None:
+            print(
+                f"[Vanity] Log channel {channel_id} not in cache for guild {guild.id}; trying fetch"
             )
-
-        # Added vanity, go offline, removed vanity, go back online
-        elif (
-            (link not in after_str)
-            and (str(before.status) == "offline")
-            and (role in after.roles)
-        ):
             try:
-                await after.remove_roles(role)
-            except (discord.Forbidden, discord.HTTPException) as e:
+                chn = await self.client.fetch_channel(channel_id)
+            except discord.HTTPException as e:
                 print(
-                    f"[Vanity] Failed to remove role from {after} in guild {after.guild.id}: {e}"
+                    f"[Vanity] Log channel {channel_id} unavailable for guild {guild.id}: {e}"
+                )
+        return chn
+
+    async def role_deleted(self, guild, chn, role_id):
+        """Turns vanity roles off for a server whose role no longer exists."""
+        self.watched.pop(guild.id, None)
+        try:
+            await store.drop_roles(self.client.pool, guild.id)
+            await self.load()
+        except Exception as e:
+            print(
+                f"[Vanity] Failed to remove guild {guild.id} after role deletion: {e}"
+            )
+        embed = discord.Embed(
+            title="Vanity roles disabled!",
+            description="You can always re-enable the feature by using `/vanity enable`.",
+            colour=0xFF0000,
+        )
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        await send_vanity_log(
+            self.client,
+            chn,
+            guild,
+            "# Custom vanity role has been deleted by someone else.",
+            embed=embed,
+            context=f"role-deleted notice, guild {guild.id}",
+        )
+        print(
+            f"[Vanity] Role {role_id} missing in guild {guild.id}; vanity roles disabled for this guild"
+        )
+
+    async def link_removed(self, member, role, chn, went_offline, had_link):
+        """Takes the role back and logs it; going offline keeps the role."""
+        if went_offline:
+            embed = discord.Embed(
+                description=f":yellow_circle: {member.mention} went offline."
+            )
+        else:
+            try:
+                await member.remove_roles(role)
+            except discord.HTTPException as e:
+                print(
+                    f"[Vanity] Failed to remove role from {member} in guild {member.guild.id}: {e}"
                 )
             embed = discord.Embed(
-                description=f":red_circle: {after.mention} has **removed** vanity link from their status."
+                description=f":red_circle: {member.mention} has **removed** vanity link from their status."
             )
             embed.set_footer(text="Role removed")
-            await send_vanity_log(
-                self.client,
-                chn,
-                after.guild,
-                embed=embed,
-                context=f"status-removed (offline path) notice, guild {after.guild.id}",
+        path = "" if had_link else " (offline path)"
+        await send_vanity_log(
+            self.client,
+            chn,
+            member.guild,
+            embed=embed,
+            context=f"status-removed{path} notice, guild {member.guild.id}",
+        )
+
+    async def link_added(self, member, role, chn, had_link, was_offline, settings):
+        """Gives the role, logs it and thanks the member if the link is new."""
+        guild = member.guild
+        try:
+            await member.add_roles(role)
+        except discord.HTTPException as e:
+            print(f"[Vanity] Failed to add role to {member} in guild {guild.id}: {e}")
+            return
+        if had_link:
+            return
+
+        if was_offline:
+            embed = discord.Embed(
+                description=f":white_circle: {member.mention} went back online."
             )
-
-        elif (link in after_str) and (role not in after.roles):
-            try:
-                await after.add_roles(role)
-            except (discord.Forbidden, discord.HTTPException) as e:
-                print(
-                    f"[Vanity] Failed to add role to {after} in guild {after.guild.id}: {e}"
-                )
-                return
-
-            if link in before_str:
-                return  # already had it, nothing new to announce/thank
-
-            if str(before.status) == "offline":
-                embed = discord.Embed(
-                    description=f":white_circle: {after.mention} went back online."
-                )
-            else:
-                embed = discord.Embed(
-                    description=f":green_circle: {after.mention} has **added** vanity link to their status."
-                )
-                embed.set_footer(text="Role added")
-            await send_vanity_log(
-                self.client,
-                chn,
-                after.guild,
-                embed=embed,
-                context=f"status-added notice, guild {after.guild.id}",
+        else:
+            embed = discord.Embed(
+                description=f":green_circle: {member.mention} has **added** vanity link to their status."
             )
+            embed.set_footer(text="Role added")
+        await send_vanity_log(
+            self.client,
+            chn,
+            guild,
+            embed=embed,
+            context=f"status-added notice, guild {guild.id}",
+        )
+        await self.send_thank_you(member, role, settings["link"])
 
-            # --- Thank-you message ---
-            thanks_ref = db.reference("/Vanity Thanks")
-            thankyouChannel = None
-            try:
-                snapshot = (
-                    thanks_ref.order_by_child("Server ID")
-                    .equal_to(after.guild.id)
-                    .get()
-                )
-                if snapshot:
-                    val = list(snapshot.values())[0]
-                    if not val.get("DM"):
-                        thankyouChannel = after.guild.get_channel(val.get("Channel ID"))
-                        if thankyouChannel is None:
-                            print(
-                                f"[Vanity] Configured thank-you channel {val.get('Channel ID')} not found in guild {after.guild.id}"
-                            )
-                    else:
-                        thankyouChannel = "DM"
-            except Exception as e:
-                print(
-                    f"[Vanity] Error fetching Vanity Thanks for guild {after.guild.id}: {e}"
-                )
+    async def send_thank_you(self, member, role, link):
+        """Sends the server's thank-you message, at most once a day per member."""
+        guild = member.guild
+        try:
+            thanks = await store.thanks(self.client.pool, guild.id)
+        except Exception as e:
+            print(f"[Vanity] Error fetching Vanity Thanks for guild {guild.id}: {e}")
+            return
+        if thanks is None:
+            return
+        target = member if thanks["dm"] else guild.get_channel(thanks["channel_id"])
+        if target is None:
+            print(
+                f"[Vanity] Configured thank-you channel {thanks['channel_id']} not found in guild {guild.id}"
+            )
+            return
 
-            if thankyouChannel is None:
-                return
+        if not await self._claim(guild.id, member.id):
+            return
 
-            msg_ref = db.reference("/Vanity Thanks Message")
-            embed = None
-            msgContent = ""
-            try:
-                snapshot = (
-                    msg_ref.order_by_child("Server ID").equal_to(after.guild.id).get()
-                )
-                if snapshot:
-                    val = list(snapshot.values())[0]
-                    msgContent = val.get("Message Content", "") or ""
-                    if (
-                        val.get("Title")
-                        or val.get("Description")
-                        or val.get("Image Link")
-                    ):
-                        hex_code = (val.get("Color") or "").lstrip("#")
-                        color = discord.Color.blurple()
-                        if hex_code:
-                            try:
-                                async with aiohttp.ClientSession() as session:
-                                    async with session.get(
-                                        "https://www.thecolorapi.com/id",
-                                        params={"hex": hex_code},
-                                        timeout=aiohttp.ClientTimeout(total=5),
-                                    ) as server:
-                                        if server.status == 200:
-                                            js = await server.json()
-                                            color = discord.Color(
-                                                int(f"0x{js['hex']['clean']}", 16)
-                                            )
-                            except (
-                                aiohttp.ClientError,
-                                asyncio.TimeoutError,
-                                KeyError,
-                                ValueError,
-                            ) as e:
-                                print(
-                                    f"[Vanity] Color API lookup failed for guild {after.guild.id}, hex={hex_code!r}: {e}"
-                                )
-                                color = discord.Color.blurple()
+        embed = None
+        if thanks["title"] or thanks["description"] or thanks["image"]:
+            embed = discord.Embed(
+                title=script(thanks["title"] or "", member, role, link),
+                description=script(thanks["description"] or "", member, role, link),
+                color=await embed_color((thanks["color"] or "").lstrip("#"), guild.id),
+            )
+            if thanks["image"]:
+                embed.set_image(url=thanks["image"])
+        content = script(thanks["content"] or "", member, role, link)
+        place = "DM" if thanks["dm"] else "channel"
+        await safe_send(
+            target, content, embed=embed, context=f"thank-you {place}, guild {guild.id}"
+        )
+        await send_master_log(
+            self.client,
+            guild,
+            content,
+            embed=embed,
+            context=f"thank-you log, guild {guild.id}",
+        )
 
-                        embed = discord.Embed(
-                            title=script(val.get("Title", ""), after, after.guild),
-                            description=script(
-                                val.get("Description", ""), after, after.guild
-                            ),
-                            color=color,
-                        )
-                        if val.get("Image Link"):
-                            embed.set_image(url=val["Image Link"])
-            except Exception as e:
-                print(
-                    f"[Vanity] Error fetching Vanity Thanks Message for guild {after.guild.id}: {e}"
-                )
-
-            user_ref = db.reference("/Vanity User")
-            lastThanked = 0
-            try:
-                snapshot = user_ref.order_by_child("User ID").equal_to(after.id).get()
-                if snapshot:
-                    for key, val in snapshot.items():
-                        if val.get("Server ID") == after.guild.id:
-                            lastThanked = val.get("Last Thanked Timestamp", 0)
-                            now_ts = int(
-                                time.mktime(datetime.datetime.now().timetuple())
-                            )
-                            if (now_ts - lastThanked) > 86400:
-                                try:
-                                    db.reference("/Vanity User").child(key).delete()
-                                except Exception as e:
-                                    print(
-                                        f"[Vanity] Failed to delete stale Vanity User entry: {e}"
-                                    )
-                            break
-            except Exception as e:
-                print(
-                    f"[Vanity] Error fetching Vanity User for guild {after.guild.id}: {e}"
-                )
-
-            now_ts = int(time.mktime(datetime.datetime.now().timetuple()))
-            if (now_ts - lastThanked) > 86400:
-                data = {
-                    "Data": {
-                        "User ID": after.id,
-                        "Server ID": after.guild.id,
-                        "Last Thanked Timestamp": now_ts,
-                    }
-                }
-                try:
-                    for key, value in data.items():
-                        user_ref.push().set(value)
-                except Exception as e:
-                    print(
-                        f"[Vanity] Failed to record Last Thanked Timestamp for guild {after.guild.id}: {e}"
-                    )
-
-                rendered_msg = script(msgContent, after, after.guild)
-                if thankyouChannel == "DM":
-                    await safe_send(
-                        after,
-                        rendered_msg,
-                        embed=embed,
-                        context=f"thank-you DM, guild {after.guild.id}",
-                    )
-                else:
-                    await safe_send(
-                        thankyouChannel,
-                        rendered_msg,
-                        embed=embed,
-                        context=f"thank-you channel, guild {after.guild.id}",
-                    )
-
-                await send_master_log(
-                    self.client,
-                    after.guild,
-                    rendered_msg,
-                    embed=embed,
-                    context=f"thank-you log, guild {after.guild.id}",
-                )
+    async def _claim(self, guild_id, member_id):
+        """Starts the member's cooldown; False if they are still in one."""
+        try:
+            return await store.claim_thanks(
+                self.client.pool, guild_id, member_id, int(time.time()), THANKS_COOLDOWN
+            )
+        except Exception as e:
+            print(f"[Vanity] Error fetching Vanity User for guild {guild_id}: {e}")
+            return True
 
 
 async def setup(bot):

@@ -5,12 +5,11 @@ import discord
 from discord.ext import commands, tasks
 
 from commands.Tag import tagStore as store
+from utils.config import MASTER_LOG_CHANNEL, THANKS_COOLDOWN
 
 SWEEP_INTERVAL = 3600  # seconds between full member scans of one server
 RECENT_WINDOW = 60  # seconds in which the same role change is not repeated
-THANKS_COOLDOWN = 86400  # seconds before the same member is thanked again
 MEMBER_EVENTS = ("GUILD_MEMBER_ADD", "GUILD_MEMBER_UPDATE")
-MASTER_LOG_CHANNEL = 1555014249762398359
 GIVEN = ("✅ {} was given the tag role", 0x00FF00)
 REMOVED = ("❌ {} had tag role removed", 0xFF0000)
 ROLE_TOO_HIGH = (
