@@ -211,6 +211,7 @@ class MilestoneSort(BaseSortSelect):
             getattr(self.view, "currency_filter", "all"),
         )
         view.message = await interaction.response.edit_message(embed=embed, view=view)
+        self.view.stop()
 
 
 class MilestoneCurrencyFilterSelect(discord.ui.Select):
@@ -253,6 +254,7 @@ class MilestoneCurrencyFilterSelect(discord.ui.Select):
             interaction, self.initial_author, currency_filter=chosen
         )
         view.message = await interaction.response.edit_message(embed=embed, view=view)
+        self.view.stop()
 
 
 class MilestoneItemSelect(discord.ui.Select):

@@ -36,3 +36,24 @@ async def test_timeout_with_no_message_or_a_deleted_one():
     await timed_out(MagicMock(spec=discord.InteractionCallbackResponse, resource=None))
     gone = discord.NotFound(MagicMock(status=404), "gone")
     await timed_out(MagicMock(edit=AsyncMock(side_effect=gone)))
+
+
+async def test_sorting_or_filtering_retires_the_view_it_replaces(monkeypatch):
+    from commands.Events import milestones, shop
+
+    for module, menus in (
+        (shop, (shop.SortSelection, shop.CurrencyFilterSelect)),
+        (
+            milestones,
+            (milestones.MilestoneSort, milestones.MilestoneCurrencyFilterSelect),
+        ),
+    ):
+        fresh = MagicMock()
+        monkeypatch.setattr(module, "listing", AsyncMock(return_value=("embed", fresh)))
+        for menu in menus:
+            found = MagicMock(initial_author=None, values=["All"])
+            interaction = MagicMock()
+            interaction.response.edit_message = AsyncMock(return_value="sent")
+            await menu.callback(found, interaction)
+            found.view.stop.assert_called_once_with()
+            assert fresh.message == "sent"

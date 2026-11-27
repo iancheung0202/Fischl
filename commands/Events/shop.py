@@ -255,6 +255,7 @@ class SortSelection(BaseSortSelect):
             getattr(self.view, "currency_filter", "all"),
         )
         view.message = await interaction.response.edit_message(embed=embed, view=view)
+        self.view.stop()
 
 
 class CurrencyFilterSelect(discord.ui.Select):
@@ -306,6 +307,7 @@ class CurrencyFilterSelect(discord.ui.Select):
             interaction, self.initial_author, currency_filter=new_filter
         )
         view.message = await interaction.response.edit_message(embed=embed, view=view)
+        self.view.stop()
 
 
 class ShopItemSelect(discord.ui.Select):
