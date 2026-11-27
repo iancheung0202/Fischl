@@ -244,7 +244,10 @@
               handling.<br>
               No usage or storage of data outside of the aforementioned cases will happen. All the data is stored
               securely on <a href="https://firebase.google.com/">Google Cloud Firebase</a> and in a PostgreSQL database on our own server.
-              Other than that, no data is sold or shared with any other 3rd-party sites or services.</p>
+              No data is sold. Data is shared with 3rd-party services only in these cases: the messages of a
+              ticket are sent to <a href="https://groq.com/">Groq</a> when an AI summary of that ticket is made,
+              payments on the website are handled by <a href="https://www.paypal.com/">PayPal</a>, and a command
+              that fails is reported to our own notification channel on <a href="https://ntfy.sh/">ntfy</a>.</p>
             <h3 id="stored-information">Stored Information<a class="headerlink" href="#stored-information"
                 title="Permanent link">¶</a></h3>
             <p>The bot may store the following information automatically in our database, or log the action along with
@@ -265,11 +268,17 @@
                 enabled</li>
               <li>The respective Channel ID, Server ID, Webhook ID and Role ID of a Server that has Birthday Wishes enabled</li>
               <li>The birthday, timezone and favorite character of users who have used <code>/birthday set</code></li>
-              <li>The User ID, corresponding Mora (bot currency), and Customized Profile Background Image (if uploaded) of a Member who plays the Random Chat Events</li>
+              <li>The User ID, Mora (bot currency), XP, inventory, quests, profile customizations, chest streak with the last counted message, and Customized Profile Background Image (if uploaded) of a Member who plays the Random Chat Events</li>
               <li>The Channel ID, Frequency, and Event Choices of a Channel that has Random Chat Events enabled</li>
               <li>The Server ID, Role ID, Log Channel ID, User Thanks Message, and Vanity Link of a Server that has Vanity Roles function enabled</li>
               <li>The Server ID, Role ID, Log Channel ID, User Thanks Message, and Server Tag of a Server that has Tag Roles function enabled</li>
-              <li>The User ID and the time of the last thank-you message of a Member thanked by the Vanity Roles or Tag Roles function, for 24 hours of use</li>
+              <li>The User ID and the time of the last thank-you message of a Member thanked by the Vanity Roles or Tag Roles function, kept so that a Member is thanked at most once every 24 hours</li>
+              <li>The Server ID, Channel IDs, Role IDs and panel Message IDs of a Server that has the Co-op function enabled, and the User ID and game UID of a Member who saved one</li>
+              <li>The Server ID, Maximum Reputation, reward Role IDs, and the User ID and reputation points of Members in a Server that has the Reputation function enabled</li>
+              <li>The Server ID, Channel IDs, Role IDs, partner Server names, invite links and descriptions of a Server that has the Partnership function enabled</li>
+              <li>The blacklisted User IDs, snippets, instructions, closing messages and panels of a Server that has Ticket function enabled, and the transcript of a closed Ticket</li>
+              <li>The Role ID of a custom Booster Role, saved embed templates, and suggested conversation topics with the User ID of the Member who suggested them</li>
+              <li>The User ID, Server ID, Server Name and PayPal order ID of an Elite subscription bought on the website, and the expeditions started there</li>
             </ul>
             <p>No other information outside of the above-mentioned one will be stored.</p>
             <h3 id="updating-data">Updating Data<a class="headerlink" href="#updating-data" title="Permanent link">¶</a>
@@ -289,9 +298,9 @@
                 title="Permanent link">¶</a></h3>
             <h4 id="automatic-removal">Automatic removal<a class="headerlink" href="#automatic-removal"
                 title="Permanent link">¶</a></h4>
-            <p>Stored Data can be removed automatically through means of disabling functions of the Bot in a Server.
-              However, other data, such as information collected when a slash command is used, cannot be removed simply
-              be Removing the Bot from a Server.</p>
+            <p>The settings of a function are removed automatically when that function is disabled in a Server.
+              However, other data, such as birthdays, Mora, reputation points and information collected when a slash
+              command is used, is not removed by disabling a function or by Removing the Bot from a Server.</p>
             <h4 id="manual-removal">Manual removal<a class="headerlink" href="#manual-removal"
                 title="Permanent link">¶</a></h4>
             <p>Manual removal of the data can be requested through email at <a
