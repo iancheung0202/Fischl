@@ -673,3 +673,19 @@ async def test_a_purchase_is_written_to_the_console(shop, capsys):
         f"bob ({USER}) have paid 100 guild_mora and now own Hero in G ({GUILD}) → http://jump",
         f"Logged purchase link to minigame_inventory for user {USER} in guild {GUILD}",
     ]
+
+
+async def test_two_items_in_one_second_are_both_kept(pool):
+    from commands.Events import helperFunctions
+
+    await helperFunctions.ensure_minigame_inventory_table(pool)
+    for title in ("first", "second", "third"):
+        await helperFunctions.add_inventory_item(pool, 1, 2, title, "", 0, 100)
+    rows = await pool.fetch(
+        "SELECT title, timestamp FROM minigame_inventory ORDER BY timestamp"
+    )
+    assert [tuple(row) for row in rows] == [
+        ("first", 100),
+        ("second", 101),
+        ("third", 102),
+    ]
