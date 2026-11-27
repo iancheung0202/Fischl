@@ -810,6 +810,8 @@ async def test_reputation_moves_once(pool, firebase, tmp_path):
         ({"a": {"Server ID": 1, "Max Rep": 5, "Roles": ["70"]}}, {}),
         ({"a": {"Server ID": 1, "Max Rep": 5, "Roles": {"70": "10"}}}, {}),
         ({}, {"1": {"Users": {"50": 3.5}}}),
+        ({"a": {"Server ID": 1, "Max Rep": 5, "Roles": {"70": True}}}, {}),
+        ({}, {"1": {"Users": {"50": 3.0}}}),
         ({}, {"1": {"Users": {"fifty": 3}}}),
         ({}, {"one": {"Users": {"50": 3}}}),
     ],
@@ -825,3 +827,29 @@ async def test_reputation_move_stops_on_another_form(
         async with pool.acquire() as connection, connection.transaction():
             await move.reputation(connection, firebase_admin.db, str(tmp_path))
     assert await pool.fetchval("SELECT to_regclass('reputation_servers')") is None
+
+
+def test_reward_with_no_role_id_is_left_out():
+    rows, left = move.rewards(1, {"0": 5, "70": 6, "07": 7, "x": 8})
+    assert (rows, left) == ([(1, 70, 6)], [(1, "0", 5), (1, "07", 7), (1, "x", 8)])
+
+
+async def test_reputation_move_reads_back_what_it_wrote(
+    pool, firebase, tmp_path, monkeypatch
+):
+    import firebase_admin.db
+
+    from commands.CoOp import reputationStore
+
+    firebase("/Global Reps").set({"1": {"Users": {"50": 3}}})
+    await reputationStore.create(pool)
+    await pool.execute(
+        """CREATE FUNCTION one_more() RETURNS trigger AS
+        $$ BEGIN NEW.points := NEW.points + 1; RETURN NEW; END $$ LANGUAGE plpgsql"""
+    )
+    await pool.execute(
+        """CREATE TRIGGER one_more BEFORE INSERT ON reputation_points
+        FOR EACH ROW EXECUTE FUNCTION one_more()"""
+    )
+    with pytest.raises(SystemExit, match="differs from Firebase"):
+        await move.reputation(pool, firebase_admin.db, str(tmp_path))

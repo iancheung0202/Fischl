@@ -340,3 +340,36 @@ async def test_reward_of_a_deleted_role_is_skipped():
 )
 def test_cost_typed_in_the_form(text, number):
     assert coOpSystem.whole(text) == number
+
+
+async def test_toprep_shows_between_one_and_fifty(cog, pool):
+    await store.enable(pool, GUILD, 999)
+    for user_id in range(1, 53):
+        await store.give(pool, GUILD, user_id, user_id)
+    for asked, shown in (("99", 50), ("0", 1), ("-3", 1)):
+        found = message(f"-toprep {asked}")
+        await cog.on_message(found)
+        embed = found.channel.send.await_args.kwargs["embed"]
+        assert embed.title == f"Global Reputation Leaderboard - Top {shown}"
+        assert embed.description.count("\n") == shown
+        assert embed.color.value == 0xEB7660
+
+
+async def test_bots_and_direct_messages_get_no_answer(cog, pool):
+    await store.enable(pool, GUILD, 999)
+    found = message("-rep")
+    found.author.bot = True
+    await cog.on_message(found)
+    found.channel.send.assert_not_awaited()
+    found = message("-rep")
+    found.guild = None
+    await cog.on_message(found)
+    found.channel.send.assert_not_awaited()
+
+
+async def test_reps_for_someone_not_in_the_server_are_not_saved(cog, pool):
+    await store.enable(pool, GUILD, 999)
+    found = message(f"-giverep {MEMBER} 2", gone={MEMBER})
+    with pytest.raises(discord.NotFound):
+        await cog.on_message(found)
+    assert await store.points(pool, GUILD, MEMBER) == 0
