@@ -9,7 +9,6 @@ Fischl uses two databases.
 
 | System | Top-level paths |
 |---|---|
-| Co-op | `Co-Op`, `Co-Op Sticky Panel`, `Co-Op-UID` |
 | Reputation | `Global Reps`, `Global Reps System` |
 | Partnership | `Partner` (BrawlKit reads this too) |
 | Activity service | `Ian Activity` |
@@ -33,6 +32,7 @@ Each system keeps its tables and queries in one store file. `scripts/firebase_to
 | Sticky messages | `commands/Sticky/stickyStore.py` | `sticky_enabled`, `sticky_messages` | `Sticky Messages`, and the file `commands/Sticky/enabledChannels.py` |
 | Topics | `commands/Utility/topicStore.py` | `topics` | `Topics` |
 | Birthday | `commands/Birthday/birthdayStore.py` | `birthdays`, `birthday_servers` | `Birthday`, `Birthday System` (its `Server Name` field was never read and is not copied) |
+| Co-op | `commands/CoOp/coOpStore.py` | `coop_servers`, `coop_panels`, `coop_uids` | `Co-Op` (its `Server Name` field was never read and is not copied), `Co-Op Sticky Panel`, `Co-Op-UID` |
 
 ## Rules for moving data
 

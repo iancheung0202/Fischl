@@ -8,7 +8,18 @@ from discord.ext import commands
 from enkapy import Enka
 from firebase_admin import db
 
+from commands.CoOp import coOpStore as store
 from utils.commands import SlashCommand
+
+# Each region's name, the setting holding its helper role, and its embed colour.
+REGIONS = (
+    ("NA", "na_role_id", 0x6161F9),
+    ("EU", "eu_role_id", 0x50C450),
+    ("Asia", "asia_role_id", 0xF96262),
+    ("SAR", "sar_role_id", 0xF7D31A),
+)
+# Liyue Harbor's Carry Committee may claim a request in any region.
+CARRY = {1073116154798809098: 1145946099270549535}
 
 
 async def closeCoOpRequest(interaction):
@@ -81,47 +92,24 @@ class CoOpHelpModal(discord.ui.Modal):
         self.add_item(self.request)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Save the UID to Firebase
-        user_id = str(interaction.user.id)
+        pool = interaction.client.pool
         uid_value = self.uid.value.strip()
         if uid_value:
-            ref = db.reference("/Co-Op-UID")
-            ref.child(user_id).update({"UID": uid_value})
+            await store.save_uid(pool, interaction.user.id, uid_value)
 
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                CO_OP_CHANNEL_ID = value["Co-op Channel ID"]
-                NA_HELPER_ROLE_ID = value["NA Helper Role ID"]
-                EU_HELPER_ROLE_ID = value["EU Helper Role ID"]
-                ASIA_HELPER_ROLE_ID = value["Asia Helper Role ID"]
-                SAR_HELPER_ROLE_ID = value["SAR Helper Role ID"]
-                break
-
-        coop_channel = interaction.client.get_channel(CO_OP_CHANNEL_ID)
+        settings = await store.server(pool, interaction.guild.id)
+        coop_channel = interaction.client.get_channel(settings["channel_id"])
         if coop_channel is None:
             await interaction.response.send_message(
                 "<:no:1036810470860013639> Co-op channel not found. Please ask the server admin to set up the co-op system again.",
                 ephemeral=True,
             )
             return
-        if "NA" in self.title:
-            helperRole = interaction.guild.get_role(NA_HELPER_ROLE_ID)
-            embedTitle = "NA Region Co-op Request"
-            embedColor = 0x6161F9
-        elif "EU" in self.title:
-            helperRole = interaction.guild.get_role(EU_HELPER_ROLE_ID)
-            embedTitle = "EU Region Co-op Request"
-            embedColor = 0x50C450
-        elif "Asia" in self.title:
-            helperRole = interaction.guild.get_role(ASIA_HELPER_ROLE_ID)
-            embedTitle = "Asia Region Co-op Request"
-            embedColor = 0xF96262
-        elif "SAR" in self.title:
-            helperRole = interaction.guild.get_role(SAR_HELPER_ROLE_ID)
-            embedTitle = "SAR Region Co-op Request"
-            embedColor = 0xF7D31A
+        region, role, embedColor = next(
+            found for found in REGIONS if found[0] in self.title
+        )
+        helperRole = interaction.guild.get_role(settings[role])
+        embedTitle = f"{region} Region Co-op Request"
 
         embed = discord.Embed(
             description=f"### {embedTitle}\n-# - Coordinate with each other in the **thread** below\n-# - Click on **`Claim`** if you are intending to help. \n-# - If you are the requester and **no longer need help**, press **`Close`**.",
@@ -160,35 +148,21 @@ class CoOpHelpModal(discord.ui.Modal):
             name=f"{interaction.user.name} - {embedTitle}", auto_archive_duration=1440
         )
 
-        ref = db.reference("/Co-Op Sticky Panel")
-        stickies = ref.get()
         try:
-            for key, val in stickies.items():
-                if val["Channel ID"] == interaction.channel.id:
-                    try:
-                        oldMsg = await interaction.channel.fetch_message(
-                            val["Message ID"]
-                        )
-                        await oldMsg.delete()
-                    except Exception:
-                        pass
-                    db.reference("/Co-Op Sticky Panel").child(key).delete()
-                    newMsg = await interaction.channel.send(
-                        oldMsg.content,
-                        embed=oldMsg.embeds[0],
-                        view=CoOpButtonViewSystem(),
-                    )
-
-                    data = {
-                        interaction.channel.id: {
-                            "Channel ID": interaction.channel.id,
-                            "Message ID": newMsg.id,
-                        }
-                    }
-
-                    for key, value in data.items():
-                        ref.push().set(value)
-                    break
+            old = await store.take_panel(pool, interaction.channel.id)
+            if old is not None:
+                oldMsg = None
+                try:
+                    oldMsg = await interaction.channel.fetch_message(old)
+                    await oldMsg.delete()
+                except Exception:
+                    pass
+                newMsg = await interaction.channel.send(
+                    oldMsg.content,
+                    embed=oldMsg.embeds[0],
+                    view=CoOpButtonViewSystem(),
+                )
+                await store.stick_panel(pool, interaction.channel.id, newMsg.id)
         except Exception as e:
             print(e)
 
@@ -267,44 +241,16 @@ class CoOpView(discord.ui.View):
             )
             return
 
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                NA_HELPER_ROLE_ID = value["NA Helper Role ID"]
-                EU_HELPER_ROLE_ID = value["EU Helper Role ID"]
-                ASIA_HELPER_ROLE_ID = value["Asia Helper Role ID"]
-                SAR_HELPER_ROLE_ID = value["SAR Helper Role ID"]
-                break
-
-        correct = False
-        if "NA" in interaction.message.embeds[0].description:
-            for role in interaction.user.roles:
-                if role.id == NA_HELPER_ROLE_ID:
-                    correct = True
-                    break
-        elif "EU" in interaction.message.embeds[0].description:
-            for role in interaction.user.roles:
-                if role.id == EU_HELPER_ROLE_ID:
-                    correct = True
-                    break
-        elif "Asia" in interaction.message.embeds[0].description:
-            for role in interaction.user.roles:
-                if role.id == ASIA_HELPER_ROLE_ID:
-                    correct = True
-                    break
-        elif "SAR" in interaction.message.embeds[0].description:
-            for role in interaction.user.roles:
-                if role.id == SAR_HELPER_ROLE_ID:
-                    correct = True
-                    break
-
-        # LIYUE HARBOR: CARRY COMMITTEE
-        if interaction.guild.id == 1073116154798809098:
-            for role in interaction.user.roles:
-                if role.id == 1145946099270549535:
-                    correct = True
-                    break
+        settings = await store.server(interaction.client.pool, interaction.guild.id)
+        description = interaction.message.embeds[0].description
+        wanted = next(
+            (role for region, role, _ in REGIONS if region in description), None
+        )
+        allowed = {
+            settings[wanted] if wanted else None,
+            CARRY.get(interaction.guild.id),
+        }
+        correct = any(role.id in allowed for role in interaction.user.roles)
 
         if not (correct):
             await interaction.response.send_message(
@@ -372,10 +318,8 @@ class CoOpButtonViewSystem(discord.ui.View):
         super().__init__(timeout=None)
 
     async def fetch_uid_and_wl(self, interaction):
-        user_id = str(interaction.user.id)
-        ref = db.reference("/Co-Op-UID")
         try:
-            uid = int(ref.child(user_id).get()["UID"])
+            uid = int(await store.uid(interaction.client.pool, interaction.user.id))
         except Exception:
             uid = None
 
@@ -391,18 +335,9 @@ class CoOpButtonViewSystem(discord.ui.View):
                 wl = None
         return uid, wl
 
-    @discord.ui.button(
-        label="NA", style=discord.ButtonStyle.blurple, custom_id="nasystem"
-    )
-    async def na(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        found = False
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                found = True
-                break
-        if not found:
+    async def ask(self, interaction, button):
+        """Opens the request form for the button's region."""
+        if await store.server(interaction.client.pool, interaction.guild.id) is None:
             embed = discord.Embed(
                 title="Co-op system not enabled!",
                 description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
@@ -418,90 +353,30 @@ class CoOpButtonViewSystem(discord.ui.View):
             wl_default=str(wl) if wl is not None else None,
         )
         await interaction.response.send_modal(modal)
+
+    @discord.ui.button(
+        label="NA", style=discord.ButtonStyle.blurple, custom_id="nasystem"
+    )
+    async def na(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.ask(interaction, button)
 
     @discord.ui.button(
         label="EU", style=discord.ButtonStyle.blurple, custom_id="eusystem"
     )
     async def eu(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        found = False
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                found = True
-                break
-        if not found:
-            embed = discord.Embed(
-                title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
-                colour=0xFF0000,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        uid, wl = await self.fetch_uid_and_wl(interaction)
-        modal = CoOpHelpModal(
-            title=f"Request Co-op Help - {button.label}",
-            uid_default=uid,
-            wl_default=str(wl) if wl is not None else None,
-        )
-        await interaction.response.send_modal(modal)
+        await self.ask(interaction, button)
 
     @discord.ui.button(
         label="Asia", style=discord.ButtonStyle.blurple, custom_id="asiasystem"
     )
     async def asia(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        found = False
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                found = True
-                break
-        if not found:
-            embed = discord.Embed(
-                title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
-                colour=0xFF0000,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        uid, wl = await self.fetch_uid_and_wl(interaction)
-        modal = CoOpHelpModal(
-            title=f"Request Co-op Help - {button.label}",
-            uid_default=uid,
-            wl_default=str(wl) if wl is not None else None,
-        )
-        await interaction.response.send_modal(modal)
+        await self.ask(interaction, button)
 
     @discord.ui.button(
         label="SAR", style=discord.ButtonStyle.blurple, custom_id="sarsystem"
     )
     async def sar(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        found = False
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                found = True
-                break
-        if not found:
-            embed = discord.Embed(
-                title="Co-op system not enabled!",
-                description=f"This server doesn't have the co-op system enabled yet. Please ask the server admin to use {SlashCommand('co-op setup')} to setup the system!",
-                colour=0xFF0000,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        uid, wl = await self.fetch_uid_and_wl(interaction)
-        modal = CoOpHelpModal(
-            title=f"Request Co-op Help - {button.label}",
-            uid_default=uid,
-            wl_default=str(wl) if wl is not None else None,
-        )
-        await interaction.response.send_modal(modal)
+        await self.ask(interaction, button)
 
 
 class CoOpRepEnableView(discord.ui.View):
@@ -570,19 +445,11 @@ class CoOpRepEnableView(discord.ui.View):
     async def addrepreward(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        coop_ref = db.reference("/Co-Op")
-        coop = coop_ref.get()
+        coop_enabled = await store.server(interaction.client.pool, interaction.guild.id)
         rep_ref = db.reference("/Global Reps System")
         rep_system = rep_ref.get()
 
-        coop_enabled = False
         rep_enabled = False
-
-        if coop:
-            for key, value in coop.items():
-                if value["Server ID"] == interaction.guild.id:
-                    coop_enabled = True
-                    break
 
         if rep_system:
             for key, value in rep_system.items():
@@ -634,19 +501,11 @@ class CoOpRepEnableView(discord.ui.View):
     async def removerepreward(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        coop_ref = db.reference("/Co-Op")
-        coop = coop_ref.get()
+        coop_enabled = await store.server(interaction.client.pool, interaction.guild.id)
         rep_ref = db.reference("/Global Reps System")
         rep_system = rep_ref.get()
 
-        coop_enabled = False
         rep_enabled = False
-
-        if coop:
-            for key, value in coop.items():
-                if value["Server ID"] == interaction.guild.id:
-                    coop_enabled = True
-                    break
 
         if rep_system:
             for key, value in rep_system.items():
@@ -920,18 +779,15 @@ class CoOp(commands.GroupCog, name="co-op"):
         self.bot = bot
         super().__init__()
 
+    async def cog_load(self):
+        await store.create(self.bot.pool)
+
     @app_commands.command(
         name="disable", description="Disable co-op system in this server"
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def coop_disable(self, interaction: discord.Interaction) -> None:
-        coop = db.reference("/Co-Op").get()
-        found = False
-        for key, val in coop.items():
-            if val["Server ID"] == interaction.guild.id:
-                db.reference("/Co-Op").child(key).delete()
-                found = True
-                break
+        found = await store.disable(interaction.client.pool, interaction.guild.id)
         if found:
             embed = discord.Embed(
                 title="Co-op system successfully disabled",
@@ -1020,32 +876,14 @@ class CoOp(commands.GroupCog, name="co-op"):
             content=msgContent, embed=embed, view=CoOpButtonViewSystem()
         )
         if is_sticky_panel:
-            ref = db.reference("/Co-Op Sticky Panel")
-            stickies = ref.get()
+            pool = interaction.client.pool
             try:
-                for key, val in stickies.items():
-                    if val["Channel ID"] == interaction.channel.id:
-                        try:
-                            oldMsg = await interaction.channel.fetch_message(
-                                val["Message ID"]
-                            )
-                            await oldMsg.delete()
-                        except Exception:
-                            pass
-                        db.reference("/Co-Op Sticky Panel").child(key).delete()
-                        break
+                old = await store.take_panel(pool, interaction.channel.id)
+                if old is not None:
+                    await (await interaction.channel.fetch_message(old)).delete()
             except Exception:
                 pass
-
-            data = {
-                interaction.channel.id: {
-                    "Channel ID": interaction.channel.id,
-                    "Message ID": newMsg.id,
-                }
-            }
-
-            for key, value in data.items():
-                ref.push().set(value)
+            await store.stick_panel(pool, interaction.channel.id, newMsg.id)
 
         embed = discord.Embed(
             title="",
@@ -1082,33 +920,27 @@ class CoOp(commands.GroupCog, name="co-op"):
         asia_helper_role: discord.Role,
         sar_helper_role: discord.Role,
     ) -> None:
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                embed = discord.Embed(
-                    title="Co-Op System already enabled!",
-                    description=f'Your co-op channel is already set as <#{value["Co-op Channel ID"]}> `({value["Co-op Channel ID"]})`\n\nPlease use {SlashCommand("co-op panel")} to create your own customized co-op panel.\n\nIf you wish to disable the co-op system, please use {SlashCommand("co-op disable")}.',
-                    colour=0xFF0000,
-                )
-                embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
+        pool = interaction.client.pool
+        settings = await store.server(pool, interaction.guild.id)
+        if settings is not None:
+            embed = discord.Embed(
+                title="Co-Op System already enabled!",
+                description=f'Your co-op channel is already set as <#{settings["channel_id"]}> `({settings["channel_id"]})`\n\nPlease use {SlashCommand("co-op panel")} to create your own customized co-op panel.\n\nIf you wish to disable the co-op system, please use {SlashCommand("co-op disable")}.',
+                colour=0xFF0000,
+            )
+            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
 
-        data = {
-            interaction.guild.name: {
-                "Server Name": interaction.guild.name,
-                "Server ID": interaction.guild.id,
-                "Co-op Channel ID": co_op_channel.id,
-                "NA Helper Role ID": na_helper_role.id,
-                "EU Helper Role ID": eu_helper_role.id,
-                "Asia Helper Role ID": asia_helper_role.id,
-                "SAR Helper Role ID": sar_helper_role.id,
-            }
-        }
-
-        for key, value in data.items():
-            ref.push().set(value)
+        await store.enable(
+            pool,
+            interaction.guild.id,
+            co_op_channel.id,
+            na_helper_role.id,
+            eu_helper_role.id,
+            asia_helper_role.id,
+            sar_helper_role.id,
+        )
 
         embed = discord.Embed(
             title="Co-op System Enabled Successfully!",

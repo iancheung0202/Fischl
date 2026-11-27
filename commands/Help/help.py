@@ -9,6 +9,7 @@ from discord.ui import Button, View
 from firebase_admin import db
 
 from commands.Birthday import birthdayStore
+from commands.CoOp import coOpStore
 from commands.Sticky import stickyStore
 from utils.commands import SlashCommand
 
@@ -427,20 +428,9 @@ class HelpPanel(discord.ui.View):
 
         ################
 
-        ref = db.reference("/Co-Op")
-        coop = ref.get()
-        found = False
-        for key, value in coop.items():
-            if value["Server ID"] == interaction.guild.id:
-                CO_OP_CHANNEL_ID = value["Co-op Channel ID"]
-                NA_HELPER_ROLE_ID = value["NA Helper Role ID"]
-                EU_HELPER_ROLE_ID = value["EU Helper Role ID"]
-                ASIA_HELPER_ROLE_ID = value["Asia Helper Role ID"]
-                SAR_HELPER_ROLE_ID = value["SAR Helper Role ID"]
-                found = True
-                break
+        coop = await coOpStore.server(interaction.client.pool, interaction.guild.id)
 
-        if not found:
+        if coop is None:
             embed.add_field(
                 name="Co-op System",
                 value="<:no:1036810470860013639> Disabled",
@@ -449,7 +439,7 @@ class HelpPanel(discord.ui.View):
         else:
             embed.add_field(
                 name="Co-op System",
-                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Co-op Channel:** <#{CO_OP_CHANNEL_ID}>\n<:reply:1036792837821435976> **NA Helper Role:** <@&{NA_HELPER_ROLE_ID}>\n<:reply:1036792837821435976> **EU Helper Role:** <@&{EU_HELPER_ROLE_ID}>\n<:reply:1036792837821435976> **Asia Helper Role:** <@&{ASIA_HELPER_ROLE_ID}>\n<:reply:1036792837821435976> **SAR Helper Role:** <@&{SAR_HELPER_ROLE_ID}>",
+                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Co-op Channel:** <#{coop['channel_id']}>\n<:reply:1036792837821435976> **NA Helper Role:** <@&{coop['na_role_id']}>\n<:reply:1036792837821435976> **EU Helper Role:** <@&{coop['eu_role_id']}>\n<:reply:1036792837821435976> **Asia Helper Role:** <@&{coop['asia_role_id']}>\n<:reply:1036792837821435976> **SAR Helper Role:** <@&{coop['sar_role_id']}>",
                 inline=True,
             )
 

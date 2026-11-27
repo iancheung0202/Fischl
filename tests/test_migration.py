@@ -597,3 +597,124 @@ async def test_birthdays_move_stops_when_the_saved_order_differs(
         async with pool.acquire() as connection, connection.transaction():
             await move.birthday(connection, firebase_admin.db, str(tmp_path))
     assert await pool.fetchval("SELECT to_regclass('birthdays')") is None
+
+
+def coop_server(server, **changes):
+    return {
+        "Server Name": "Teyvat",
+        "Server ID": server,
+        "Co-op Channel ID": 2,
+        "NA Helper Role ID": 3,
+        "EU Helper Role ID": 4,
+        "Asia Helper Role ID": 5,
+        "SAR Helper Role ID": 6,
+        **changes,
+    }
+
+
+@pytest.fixture
+def old_coop(firebase):
+    firebase("/Co-Op").set({"b": coop_server(692254240290242601), "a": coop_server(8)})
+    firebase("/Co-Op Sticky Panel").set(
+        {"x": {"Channel ID": 692254240290242603, "Message ID": 12}}
+    )
+    firebase("/Co-Op-UID").set(
+        {"692254240290242605": {"UID": "800000001"}, "7": {"UID": "my uid"}}
+    )
+
+
+COOP_PATHS = ("Co-Op", "Co-Op Sticky Panel", "Co-Op-UID")
+
+
+async def test_coop_moves_once(pool, firebase, old_coop, tmp_path, monkeypatch):
+    import firebase_admin.db
+
+    before = {path: firebase(f"/{path}").get() for path in COOP_PATHS}
+    monkeypatch.setenv("EXPORT_FOLDER", str(tmp_path))
+    await move.coop(pool, firebase_admin.db)
+    assert [tuple(row) for row in await pool.fetch(move.COOP_ROWS)] == [
+        (692254240290242601, 2, 3, 4, 5, 6),
+        (8, 2, 3, 4, 5, 6),
+    ]
+    assert [tuple(row) for row in await pool.fetch("SELECT * FROM coop_panels")] == [
+        (692254240290242603, 12)
+    ]
+    uids = await pool.fetch("SELECT * FROM coop_uids ORDER BY user_id")
+    assert [tuple(row) for row in uids] == [
+        (7, "my uid"),
+        (692254240290242605, "800000001"),
+    ]
+    assert json.loads((tmp_path / "coop-export.json").read_text()) == before
+    assert {path: firebase(f"/{path}").get() for path in COOP_PATHS} == before
+    (tmp_path / "coop-export.json").unlink()
+    with pytest.raises(SystemExit):
+        await move.coop(pool, firebase_admin.db, str(tmp_path))
+    assert not (tmp_path / "coop-export.json").exists()
+
+
+@pytest.mark.parametrize(
+    "table, values",
+    [
+        ("coop_servers", "DEFAULT, 1, 2, 3, 4, 5, 6"),
+        ("coop_panels", "1, 2"),
+        ("coop_uids", "1, '2'"),
+    ],
+)
+async def test_coop_move_refuses_when_any_table_has_rows(
+    pool, firebase, old_coop, tmp_path, table, values
+):
+    import firebase_admin.db
+
+    from commands.CoOp import coOpStore
+
+    await coOpStore.create(pool)
+    await pool.execute(f"INSERT INTO {table} VALUES ({values})")
+    with pytest.raises(SystemExit):
+        await move.coop(pool, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT count(*) FROM coop_uids") == (
+        table == "coop_uids"
+    )
+    assert not (tmp_path / "coop-export.json").exists()
+
+
+@pytest.mark.parametrize(
+    "path, key, record",
+    [
+        ("Co-Op", "z", coop_server(9.0)),
+        ("Co-Op", "z", coop_server("9")),
+        ("Co-Op", "z", coop_server(True)),
+        ("Co-Op", "z", coop_server(8)),
+        ("Co-Op", "z", coop_server(9, **{"EU Helper Role ID": 6.922542402902426e17})),
+        ("Co-Op Sticky Panel", "z", {"Channel ID": 1, "Message ID": "2"}),
+        (
+            "Co-Op Sticky Panel",
+            "z",
+            {"Channel ID": 692254240290242603, "Message ID": 1},
+        ),
+        ("Co-Op-UID", "8", {"UID": 800000001}),
+        ("Co-Op-UID", "07", {"UID": "1"}),
+        ("Co-Op-UID", "abc", {"UID": "1"}),
+    ],
+)
+async def test_coop_move_stops_on_bad_records(
+    pool, firebase, old_coop, tmp_path, path, key, record
+):
+    import firebase_admin.db
+
+    firebase(f"/{path}").child(key).set(record)
+    with pytest.raises(SystemExit):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.coop(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('coop_servers')") is None
+
+
+async def test_coop_move_stops_on_a_missing_field(pool, firebase, old_coop, tmp_path):
+    import firebase_admin.db
+
+    record = coop_server(9)
+    del record["SAR Helper Role ID"]
+    firebase("/Co-Op").child("z").set(record)
+    with pytest.raises(KeyError):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.coop(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('coop_servers')") is None

@@ -5,7 +5,8 @@ import re
 import discord
 from discord.ext import commands
 from enkapy import Enka
-from firebase_admin import db
+
+from commands.CoOp import coOpStore as store
 
 CO_OP_CHANNEL_ID = 1230900481023541258
 
@@ -80,12 +81,11 @@ class CoOpHelpModal(discord.ui.Modal):
         self.add_item(self.request)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Save the UID to Firebase
-        user_id = str(interaction.user.id)
         uid_value = self.uid.value.strip()
         if uid_value:
-            ref = db.reference("/Co-Op-UID")
-            ref.child(user_id).update({"UID": uid_value})
+            await store.save_uid(
+                interaction.client.pool, interaction.user.id, uid_value
+            )
 
         coop_channel = interaction.client.get_channel(CO_OP_CHANNEL_ID)
         if "NA" in self.title:
@@ -323,10 +323,8 @@ class CoOpButtonView(discord.ui.View):
         super().__init__(timeout=None)
 
     async def fetch_uid_and_wl(self, interaction):
-        user_id = str(interaction.user.id)
-        ref = db.reference("/Co-Op-UID")
         try:
-            uid = int(ref.child(user_id).get()["UID"])
+            uid = int(await store.uid(interaction.client.pool, interaction.user.id))
         except Exception:
             uid = None
 

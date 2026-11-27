@@ -7,6 +7,7 @@ moved out of the repo:
     STICKY_ENABLED_FILE=/path/to/enabledChannels.py python3 scripts/firebase_to_postgres.py sticky
     EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py topics
     EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py birthday
+    EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py coop
 Firebase is only read, so the old copy stays as it was. Each system saves what
 it read to `<system>-export.json` next to that file (or in EXPORT_FOLDER), checks every row it wrote
 and refuses to run once its tables hold data."""
@@ -466,12 +467,72 @@ async def birthday(pool, db, folder=None):
     )
 
 
+COOP = (
+    "Server ID",
+    "Co-op Channel ID",
+    "NA Helper Role ID",
+    "EU Helper Role ID",
+    "Asia Helper Role ID",
+    "SAR Helper Role ID",
+)
+COOP_ROWS = """SELECT server_id, channel_id, na_role_id, eu_role_id, asia_role_id,
+    sar_role_id FROM coop_servers ORDER BY id"""
+
+
+async def coop(pool, db, folder=None):
+    """Co-op servers in the old order, their sticky panels, and members' game UIDs.
+
+    A UID is copied as it was typed. Reputation stays in Firebase."""
+    from commands.CoOp import coOpStore as store
+
+    await store.create(pool)
+    for table in ("coop_servers", "coop_panels", "coop_uids"):
+        if await pool.fetchval(f"SELECT count(*) FROM {table}"):
+            raise SystemExit(f"{table} already has rows; Postgres is the live copy")
+    folder = folder or os.environ["EXPORT_FOLDER"]
+    data = export(folder, "coop", db, ("Co-Op", "Co-Op Sticky Panel", "Co-Op-UID"))
+    servers = [
+        tuple(record[field] for field in COOP) for record in data["Co-Op"].values()
+    ]
+    panels = [
+        (record["Channel ID"], record["Message ID"])
+        for record in data["Co-Op Sticky Panel"].values()
+    ]
+    odd = [key for key in data["Co-Op-UID"] if not re.fullmatch(r"[1-9]\d*", key)]
+    if odd:
+        raise SystemExit(f"co-op uids of members with an id in another form: {odd}")
+    uids = [(int(key), record["UID"]) for key, record in data["Co-Op-UID"].items()]
+    kinds(servers, [int] * 6, "co-op servers")
+    kinds(panels, [int, int], "co-op panels")
+    kinds(uids, [int, str], "co-op uids")
+
+    await pool.executemany(
+        """INSERT INTO coop_servers
+        (server_id, channel_id, na_role_id, eu_role_id, asia_role_id, sar_role_id)
+        VALUES ($1, $2, $3, $4, $5, $6)""",
+        servers,
+    )
+    await pool.executemany("INSERT INTO coop_panels VALUES ($1, $2)", panels)
+    await pool.executemany("INSERT INTO coop_uids VALUES ($1, $2)", uids)
+    if [tuple(row) for row in await pool.fetch(COOP_ROWS)] != servers:
+        raise SystemExit("co-op servers differ from Firebase")
+    await same(
+        pool, "SELECT channel_id, message_id FROM coop_panels", panels, "co-op panels"
+    )
+    await same(pool, "SELECT user_id, uid FROM coop_uids", uids, "co-op uids")
+    print(
+        f"coop: {len(servers)} servers, {len(panels)} panels, {len(uids)} uids; "
+        "every row matches Firebase"
+    )
+
+
 SYSTEMS = {
     "tag": tag,
     "vanity": vanity,
     "sticky": sticky,
     "topics": topics,
     "birthday": birthday,
+    "coop": coop,
 }
 
 
