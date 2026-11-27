@@ -1,0 +1,31 @@
+Copyright (c) 2026 Ian Cheung. All rights reserved.
+
+This repository is public so that its code can be read. It is not open source.
+
+You may:
+
+- view and read the code;
+- fork the repository on GitHub for the sole purpose of proposing a change
+  back to this repository through a pull request.
+
+Without prior written permission from the copyright holder, you may not:
+
+- run, host or deploy this software, in whole or in part;
+- copy, modify or distribute it, or use it in another project;
+- sell it or offer it as a service.
+
+Contributions. By submitting a pull request or any other contribution, you
+agree that the copyright holder may use, modify, distribute and relicense
+your contribution as part of this project without restriction or payment.
+
+Third-party material. Images and other material under assets/ that come from
+Genshin Impact and other HoYoverse games belong to HoYoverse (COGNOSPHERE PTE.
+LTD.) and are not covered by this notice. This project is unofficial and is
+not endorsed by HoYoverse. The fonts and the libraries this project uses
+remain under their own licenses.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+For permission, contact ian@iancheung.dev.

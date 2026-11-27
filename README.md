@@ -43,10 +43,4 @@ If you encounter issues or have questions, join our [support server](https://dis
 
 ## License
 
-Fischl is **proprietary software**.
-
-* You may use Fischl only through **inviting the official Discord bot**.
-* **Self-hosting, cloning, or redistributing the bot is strictly prohibited**.
-* You are welcome to **contribute via GitHub pull requests**, but these contributions **cannot be used to create a separate instance of Fischl**.
-
-All rights reserved.
+All rights reserved. The code is public so people can read it and send pull requests, but please don't run, copy or reuse it without asking me first. You use Fischl by inviting the official Discord bot. The details are in [LICENSE](LICENSE). The Genshin Impact art under `assets/` belongs to HoYoverse, and this project is unofficial and not endorsed by HoYoverse.
