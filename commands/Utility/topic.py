@@ -1,13 +1,13 @@
-import datetime
-import random
-
 import discord
 import discord.ui
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
+from commands.Utility import topicStore as store
 from shared.Tickets.tickets import generate
+
+OWNER = 692254240290242601  # the only one who may accept or reject a topic
+REVIEW_CHANNEL = 1026867655468126249  # where suggestions wait for the owner
 
 
 class TopicAcceptRejectView(discord.ui.View):
@@ -18,7 +18,8 @@ class TopicAcceptRejectView(discord.ui.View):
         label="Accept", style=discord.ButtonStyle.green, custom_id="accept_topic"
     )
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != 692254240290242601:
+        """Opens the suggestion for the owner to edit before it is saved."""
+        if interaction.user.id != OWNER:
             await interaction.response.send_message(
                 "Only the owner can do this.", ephemeral=True
             )
@@ -35,7 +36,8 @@ class TopicAcceptRejectView(discord.ui.View):
         label="Reject", style=discord.ButtonStyle.red, custom_id="reject_topic"
     )
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != 692254240290242601:
+        """Marks the suggestion as rejected."""
+        if interaction.user.id != OWNER:
             await interaction.response.send_message(
                 "Only the owner can do this.", ephemeral=True
             )
@@ -64,17 +66,15 @@ class TopicModal(discord.ui.Modal, title="Edit Topic"):
         self.add_item(self.topic_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        """Saves the edited topic unless that exact text is already saved."""
         edited_topic = self.topic_input.value
-        ref = db.reference("/Topics")
-        topics = ref.get()
-        for key, value in topics.items():
-            if value["Topic Query"] == edited_topic:
-                await interaction.response.send_message(
-                    "This topic already exists!", ephemeral=True
-                )
-                return
-        data = {"Topic Query": edited_topic, "Topic Suggester ID": self.suggester_id}
-        ref.push().set(data)
+        pool = interaction.client.pool
+        if await store.has(pool, edited_topic):
+            await interaction.response.send_message(
+                "This topic already exists!", ephemeral=True
+            )
+            return
+        await store.add(pool, edited_topic, self.suggester_id)
         embed = discord.Embed(
             title="Topic Suggestion Accepted",
             description=f"Added: {edited_topic}",
@@ -88,16 +88,18 @@ class Topic(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
+    async def cog_load(self):
+        """Makes the table before the first command."""
+        await store.create(self.bot.pool)
+
     @app_commands.command(
         name="topic", description="Get a random Genshin topic to chat on"
     )
     @app_commands.guild_only()
     async def topic_get(self, interaction: discord.Interaction) -> None:
+        """Posts one random topic."""
         await interaction.response.defer()
-        ref = db.reference("/Topics")
-        topics = ref.get()
-        key, val = random.choice(list(topics.items()))
-        embed = discord.Embed(title=val["Topic Query"], color=0x00B0FF)
+        embed = discord.Embed(title=await store.pick(self.bot.pool), color=0x00B0FF)
         embed.set_footer(
             text='🆕 Use "/add-topic" to suggest freshly-baked topics to our developer!'
         )
@@ -110,11 +112,9 @@ class Topic(commands.Cog):
         topic="ONE topic at a time",
     )
     async def topic_add(self, interaction: discord.Interaction, topic: str) -> None:
-        channel = self.bot.get_channel(1026867655468126249)
-        ref = db.reference("/Topics")
-        topics = ref.get()
-        all_topics = [v["Topic Query"] for v in topics.values()]
-        all_topics_str = "\n".join(all_topics)
+        """Sends a suggestion, with the saved topics most like it, to the owner."""
+        channel = self.bot.get_channel(REVIEW_CHANNEL)
+        all_topics_str = "\n".join(await store.queries(self.bot.pool))
         prompt = f"""Your task is to compare the new topic with the list of existing topics.
     Identify any topics (maximum 5) that are duplicates or very similar to the new topic (except the new topic itself).
 
@@ -134,30 +134,12 @@ class Topic(commands.Cog):
             description=f"Suggested by: {interaction.user.mention}\nTopic: {topic}\n\nSimilar topics:\n{similar}",
             color=0xFFFF00,
         )
-        ping = "<@692254240290242601>"
+        ping = f"<@{OWNER}>"
         view = TopicAcceptRejectView()
         await channel.send(ping, embed=embed, view=view)
         await interaction.response.send_message(
             f":white_check_mark: Your topic suggestion has been sent for review!\n\n> {topic}"
         )
-
-    # @app_commands.command(
-    #   name = "get-topics",
-    #   description = "Gets all topics from our bot's database"
-    # )
-    # async def topic_add(
-    #   self,
-    #   interaction: discord.Interaction,
-    # ) -> None:
-    #   ref = db.reference("/Topics")
-    #   topics = ref.get()
-    #   string = ""
-    #   for key, value in topics.items():
-    #     string += value["Topic Query"] + "\n"
-    #   f = open(f"./assets/allTopics.txt", "w")
-    #   f.write(string)
-    #   f.close()
-    #   await interaction.response.send_message( file=discord.File(f"./assets/allTopics.txt"))
 
 
 async def setup(bot: commands.Bot) -> None:

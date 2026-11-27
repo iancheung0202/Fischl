@@ -5,8 +5,9 @@ moved out of the repo:
     TAG_ENABLED_FILE=/path/to/tagEnabledGuilds.py python3 scripts/firebase_to_postgres.py tag
     VANITY_ENABLED_FILE=/path/to/enabledGuilds.py python3 scripts/firebase_to_postgres.py vanity
     STICKY_ENABLED_FILE=/path/to/enabledChannels.py python3 scripts/firebase_to_postgres.py sticky
+    EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py topics
 Firebase is only read, so the old copy stays as it was. Each system saves what
-it read to `<system>-export.json` next to that file, checks every row it wrote
+it read to `<system>-export.json` next to that file (or in EXPORT_FOLDER), checks every row it wrote
 and refuses to run once its tables hold data."""
 
 import asyncio
@@ -370,7 +371,32 @@ async def sticky(pool, db, enabled_file=None):
     )
 
 
-SYSTEMS = {"tag": tag, "vanity": vanity, "sticky": sticky}
+TOPIC = ("Topic Query", "Topic Suggester ID")
+TOPIC_ROWS = "SELECT query, suggester_id FROM topics ORDER BY id"
+
+
+async def topics(pool, db, folder=None):
+    """Chat topics: every topic and who suggested it, in the old order."""
+    from commands.Utility import topicStore as store
+
+    await store.create(pool)
+    if await pool.fetchval("SELECT count(*) FROM topics"):
+        raise SystemExit("topics already has rows; Postgres is the live copy")
+    data = export(folder or os.environ["EXPORT_FOLDER"], "topics", db, ("Topics",))
+    saved = [
+        tuple(record[field] for field in TOPIC) for record in data["Topics"].values()
+    ]
+    bad = [row for row in saved if [type(value) for value in row] != [str, int]]
+    if bad:
+        raise SystemExit(f"topics of the wrong kind: {bad}")
+    for row in saved:
+        await store.add(pool, *row)
+    if [tuple(row) for row in await pool.fetch(TOPIC_ROWS)] != saved:
+        raise SystemExit("topics differ from Firebase")
+    print(f"topics: {len(saved)} topics; every row matches Firebase")
+
+
+SYSTEMS = {"tag": tag, "vanity": vanity, "sticky": sticky, "topics": topics}
 
 
 async def main(names):

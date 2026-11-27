@@ -412,3 +412,62 @@ async def test_sticky_move_leaves_nothing_behind_when_the_check_fails(
         async with pool.acquire() as connection, connection.transaction():
             await move.sticky(connection, firebase_admin.db, old_sticky_data)
     assert await pool.fetchval("SELECT to_regclass('sticky_messages')") is None
+
+
+@pytest.fixture
+def old_topics(firebase):
+    firebase("/Topics").set(
+        {
+            "b": {"Topic Query": "second key, first saved?", "Topic Suggester ID": 5},
+            "a": {"Topic Query": "it's 🎉", "Topic Suggester ID": 692254240290242601},
+        }
+    )
+
+
+async def test_topics_move_once(pool, firebase, old_topics, tmp_path, monkeypatch):
+    import firebase_admin.db
+
+    monkeypatch.setenv("EXPORT_FOLDER", str(tmp_path))
+    await move.topics(pool, firebase_admin.db)
+    assert [tuple(row) for row in await pool.fetch(move.TOPIC_ROWS)] == [
+        ("second key, first saved?", 5),
+        ("it's 🎉", 692254240290242601),
+    ]
+    saved = json.loads((tmp_path / "topics-export.json").read_text())
+    assert saved == {"Topics": firebase("/Topics").get()}
+    (tmp_path / "topics-export.json").unlink()
+    with pytest.raises(SystemExit):
+        await move.topics(pool, firebase_admin.db, str(tmp_path))
+    assert not (tmp_path / "topics-export.json").exists()
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"Topic Query": 5, "Topic Suggester ID": 5},
+        {"Topic Query": "x", "Topic Suggester ID": "5"},
+        {"Topic Query": "x", "Topic Suggester ID": 5.0},
+        {"Topic Query": "x", "Topic Suggester ID": True},
+        {"Topic Query": "x"},
+    ],
+)
+async def test_topics_move_stops_on_values_of_the_wrong_kind(
+    pool, firebase, old_topics, tmp_path, record
+):
+    import firebase_admin.db
+
+    firebase("/Topics/z").set(record)
+    with pytest.raises((SystemExit, KeyError)):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.topics(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('topics')") is None
+
+
+async def test_topics_move_stops_when_the_saved_order_differs(
+    pool, firebase, old_topics, tmp_path, monkeypatch
+):
+    import firebase_admin.db
+
+    monkeypatch.setattr(move, "TOPIC_ROWS", move.TOPIC_ROWS + " DESC")
+    with pytest.raises(SystemExit, match="differ"):
+        await move.topics(pool, firebase_admin.db, str(tmp_path))
