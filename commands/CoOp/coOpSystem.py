@@ -560,7 +560,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
             problem = "Reputation system is not enabled for this server yet. Please enable it first."
         elif whole(cost) is None:
             problem = "Cost must be a valid integer."
-        elif not role_id.isdecimal() or len(role_id) > 19:
+        elif not role_id.isdecimal() or int(role_id) >= 2**63:
             problem = "Role ID must be a valid role ID."
         elif not await reputationStore.add_reward(
             pool, guild_id, int(role_id), whole(cost)

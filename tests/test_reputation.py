@@ -249,6 +249,8 @@ async def test_settings_forms(pool):
     modal = await add(pool, "Eu helper", "5")
     assert modal.update.description == "Role ID must be a valid role ID."
     assert modal.roles == "None"
+    modal = await add(pool, str(2**63), "5")
+    assert modal.update.description == "Role ID must be a valid role ID."
     modal = await add(pool, " 70 ", "5")
     assert modal.update.description == (
         "Added reward for role ID: `70` with a cost of 5 reputation points."
@@ -275,12 +277,14 @@ async def test_bad_limit_changes_nothing(pool):
     await store.create(pool)
     found = interaction(pool)
     modal = coOpSystem.CoOpRepEnableModal()
-    field(modal, "maxrep", "lots")
-    await modal.on_submit(found)
-    found.response.send_message.assert_awaited_once_with(
-        "Invalid input for maximum reputation. Please enter a valid integer.",
-        ephemeral=True,
-    )
+    for typed in ("lots", str(2**63)):
+        found.response.send_message.reset_mock()
+        field(modal, "maxrep", typed)
+        await modal.on_submit(found)
+        found.response.send_message.assert_awaited_once_with(
+            "Invalid input for maximum reputation. Please enter a valid integer.",
+            ephemeral=True,
+        )
     assert await store.max_rep(pool, GUILD) is None
 
 
