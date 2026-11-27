@@ -743,23 +743,5 @@ class LevelUpTrigger(commands.Cog):
                 )
 
 
-class RemoveLevelZeroRole(commands.Cog):
-    def __init__(self, bot):
-        self.client = bot
-
-    @commands.Cog.listener()
-    async def on_member_update(self, before, after):
-        if (
-            after.guild.id == 717029019270381578
-            and discord.utils.get(after.guild.roles, name="Level 1 - Slime")
-            in after.roles
-            and discord.utils.get(after.guild.roles, name="Level 1 - Slime")
-            not in before.roles
-        ):
-            levelRole = discord.utils.get(after.guild.roles, name="Level 0 - Newbie")
-            await after.remove_roles(levelRole)
-
-
 async def setup(bot):
     await bot.add_cog(LevelUpTrigger(bot))
-    await bot.add_cog(RemoveLevelZeroRole(bot))

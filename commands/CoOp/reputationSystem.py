@@ -14,9 +14,6 @@ class ReputationSystem(commands.Cog):
         if message.author == self.client.user or message.author.bot == True:
             return
 
-        if message.guild.id == 717029019270381578:
-            return
-
         if message.content.lower().startswith("-rep"):
             ref = db.reference("/Global Reps System")
             coop = ref.get()
