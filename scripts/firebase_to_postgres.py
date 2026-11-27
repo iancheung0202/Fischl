@@ -6,6 +6,7 @@ moved out of the repo:
     VANITY_ENABLED_FILE=/path/to/enabledGuilds.py python3 scripts/firebase_to_postgres.py vanity
     STICKY_ENABLED_FILE=/path/to/enabledChannels.py python3 scripts/firebase_to_postgres.py sticky
     EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py topics
+    EXPORT_FOLDER=/path/to/folder python3 scripts/firebase_to_postgres.py birthday
 Firebase is only read, so the old copy stays as it was. Each system saves what
 it read to `<system>-export.json` next to that file (or in EXPORT_FOLDER), checks every row it wrote
 and refuses to run once its tables hold data."""
@@ -14,6 +15,7 @@ import asyncio
 import collections
 import json
 import os
+import re
 import sys
 import time
 
@@ -396,7 +398,81 @@ async def topics(pool, db, folder=None):
     print(f"topics: {len(saved)} topics; every row matches Firebase")
 
 
-SYSTEMS = {"tag": tag, "vanity": vanity, "sticky": sticky, "topics": topics}
+BORN = ("User ID", "Month", "Day", "Timezone", "Display UTC Date", "Fav Character")
+BORN_ROWS = """SELECT user_id, month, day, timezone, display_utc_date, fav_character
+    FROM birthdays ORDER BY id"""
+WISHING = ("Server ID", "Channel ID", "Webhook ID", "Role ID")
+WISHING_ROWS = """SELECT server_id, channel_id, webhook_id, role_id, create_thread
+    FROM birthday_servers ORDER BY id"""
+
+
+def kinds(rows, kinds, what):
+    """Stops if a row holds a value of another kind, or its first id comes twice."""
+    bad = [row for row in rows if [type(value) for value in row] != kinds]
+    if bad:
+        raise SystemExit(f"{what} of the wrong kind: {bad}")
+    if len({row[0] for row in rows}) != len(rows):
+        raise SystemExit(f"{what} with the same id more than once")
+
+
+async def birthday(pool, db, folder=None):
+    """Birthdays and the servers that wish them, in the old order.
+
+    A server saved before threads existed has no thread flag, which the bot read
+    as off. Dates must be written `MM-DD HH:MM`, the form the bot now looks up."""
+    from commands.Birthday import birthdayStore as store
+
+    await store.create(pool)
+    for table in ("birthdays", "birthday_servers"):
+        if await pool.fetchval(f"SELECT count(*) FROM {table}"):
+            raise SystemExit(f"{table} already has rows; Postgres is the live copy")
+    folder = folder or os.environ["EXPORT_FOLDER"]
+    data = export(folder, "birthday", db, ("Birthday", "Birthday System"))
+    born = [
+        tuple(record[field] for field in BORN) for record in data["Birthday"].values()
+    ]
+    wishing = [
+        (
+            *(record[field] for field in WISHING),
+            record.get("Create Birthday Thread", False),
+        )
+        for record in data["Birthday System"].values()
+    ]
+    kinds(born, [int, int, int, str, str, str], "birthdays")
+    kinds(wishing, [int, int, int, int, bool], "birthday servers")
+    odd = [row for row in born if not re.fullmatch(r"\d\d-\d\d \d\d:\d\d", row[4])]
+    if odd:
+        raise SystemExit(f"birthdays with a date in another form: {odd}")
+
+    await pool.executemany(
+        """INSERT INTO birthdays
+        (user_id, month, day, timezone, display_utc_date, fav_character)
+        VALUES ($1, $2, $3, $4, $5, $6)""",
+        born,
+    )
+    await pool.executemany(
+        """INSERT INTO birthday_servers
+        (server_id, channel_id, webhook_id, role_id, create_thread)
+        VALUES ($1, $2, $3, $4, $5)""",
+        wishing,
+    )
+    if [tuple(row) for row in await pool.fetch(BORN_ROWS)] != born:
+        raise SystemExit("birthdays differ from Firebase")
+    if [tuple(row) for row in await pool.fetch(WISHING_ROWS)] != wishing:
+        raise SystemExit("birthday servers differ from Firebase")
+    print(
+        f"birthday: {len(born)} birthdays, {len(wishing)} servers "
+        f"({sum(row[4] for row in wishing)} with threads); every row matches Firebase"
+    )
+
+
+SYSTEMS = {
+    "tag": tag,
+    "vanity": vanity,
+    "sticky": sticky,
+    "topics": topics,
+    "birthday": birthday,
+}
 
 
 async def main(names):

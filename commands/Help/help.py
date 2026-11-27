@@ -8,6 +8,7 @@ from discord.ext import commands
 from discord.ui import Button, View
 from firebase_admin import db
 
+from commands.Birthday import birthdayStore
 from commands.Sticky import stickyStore
 from utils.commands import SlashCommand
 
@@ -454,17 +455,10 @@ class HelpPanel(discord.ui.View):
 
         ################
 
-        ref = db.reference("/Birthday System")
-        bs = ref.get()
-        found = False
-        for key, value in bs.items():
-            if value["Server ID"] == interaction.guild.id:
-                CHANNEL_ID = value["Channel ID"]
-                ROLE_ID = value["Role ID"]
-                found = True
-                break
-
-        if not found:
+        wishes = await birthdayStore.server(
+            interaction.client.pool, interaction.guild.id
+        )
+        if wishes is None:
             embed.add_field(
                 name="Birthday Wishes",
                 value="<:no:1036810470860013639> Disabled",
@@ -473,7 +467,7 @@ class HelpPanel(discord.ui.View):
         else:
             embed.add_field(
                 name="Birthday Wishes",
-                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Channel:** <#{CHANNEL_ID}>\n<:reply:1036792837821435976> **Birthday Role:** <@&{ROLE_ID}>",
+                value=f"<:yes:1036811164891480194> Enabled\n<:reply:1036792837821435976> **Channel:** <#{wishes['channel_id']}>\n<:reply:1036792837821435976> **Birthday Role:** <@&{wishes['role_id']}>",
                 inline=True,
             )
 

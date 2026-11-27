@@ -9,7 +9,6 @@ Fischl uses two databases.
 
 | System | Top-level paths |
 |---|---|
-| Birthday | `Birthday`, `Birthday System` |
 | Co-op | `Co-Op`, `Co-Op Sticky Panel`, `Co-Op-UID` |
 | Reputation | `Global Reps`, `Global Reps System` |
 | Partnership | `Partner` (BrawlKit reads this too) |
@@ -33,6 +32,7 @@ Each system keeps its tables and queries in one store file. `scripts/firebase_to
 | Vanity roles | `commands/Vanity/vanityStore.py` | `vanity_enabled`, `vanity_roles`, `vanity_thanks`, `vanity_thanks_cooldown` | `Vanity Roles`, `Vanity Thanks`, `Vanity Thanks Message`, `Vanity User`, and the file `commands/Vanity/enabledGuilds.py` |
 | Sticky messages | `commands/Sticky/stickyStore.py` | `sticky_enabled`, `sticky_messages` | `Sticky Messages`, and the file `commands/Sticky/enabledChannels.py` |
 | Topics | `commands/Utility/topicStore.py` | `topics` | `Topics` |
+| Birthday | `commands/Birthday/birthdayStore.py` | `birthdays`, `birthday_servers` | `Birthday`, `Birthday System` (its `Server Name` field was never read and is not copied) |
 
 ## Rules for moving data
 

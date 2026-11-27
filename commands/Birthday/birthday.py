@@ -1,12 +1,12 @@
 import datetime
-import re
+import io
 
 import discord
 import pytz
 from discord import app_commands
 from discord.ext import commands
-from firebase_admin import db
 
+from commands.Birthday import birthdayStore as store
 from commands.Birthday.birthdayTexts import (
     characters,
     characters_dict,
@@ -19,59 +19,31 @@ from commands.Birthday.birthdayTexts import (
 )
 from utils.commands import SlashCommand
 
-
-async def timezone_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-):
-    if current == "":
-        return [
-            app_commands.Choice(name=timezones[x], value=timezones[x])
-            for x in range(25)
-        ]
-    else:
-        list = []
-        for tz in timezones:
-            if current.lower() in tz.lower():
-                list.append(tz)
-        list = list[:25]
-        return [app_commands.Choice(name=x, value=x) for x in list]
+NO = "<:no:1036810470860013639>"
 
 
-async def day_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-):
-    if current == "":
-        return [
-            app_commands.Choice(name=str(days[x]), value=str(days[x]))
-            for x in range(25)
-        ]
-    else:
-        list = []
-        for day in days:
-            if current.lower() in str(day).lower():
-                list.append(day)
-        list = list[:25]
-        return [app_commands.Choice(name=str(x), value=str(x)) for x in list]
+def utc_start(month, day, timezone):
+    """Gives when a birthday starts in UTC, written `MM-DD HH:MM`."""
+    start = pytz.timezone(timezone).localize(datetime.datetime(2024, month, day))
+    return start.astimezone(pytz.utc).strftime("%m-%d %H:%M")
 
 
-async def character_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-):
-    if current == "":
-        return [
-            app_commands.Choice(name=characters[x], value=characters[x])
-            for x in range(25)
-        ]
-    else:
-        list = []
-        for char in characters:
-            if current.lower() in char.lower():
-                list.append(char)
-        list = list[:25]
-        return [app_commands.Choice(name=x, value=x) for x in list]
+def menu(options):
+    """Makes an autocomplete offering up to 25 of the options that hold what was typed."""
+
+    async def autocomplete(interaction: discord.Interaction, current: str):
+        found = [str(x) for x in options if current.lower() in str(x).lower()]
+        return [app_commands.Choice(name=x, value=x) for x in found[:25]]
+
+    return autocomplete
+
+
+async def refuse(interaction, problem):
+    """Tells only the member what was wrong with what they entered."""
+    await interaction.response.send_message(
+        embed=discord.Embed(description=f"{NO} {problem}", color=0xFF0000),
+        ephemeral=True,
+    )
 
 
 @app_commands.guild_only()
@@ -79,6 +51,10 @@ class Birthday(commands.GroupCog, name="birthday"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         super().__init__()
+
+    async def cog_load(self):
+        """Makes the tables before the first command."""
+        await store.create(self.bot.pool)
 
     @app_commands.command(
         name="sync", description="Sync data from Birthday Bot (Admin only)"
@@ -88,79 +64,41 @@ class Birthday(commands.GroupCog, name="birthday"):
     async def birthday_sync(
         self, interaction: discord.Interaction, file: discord.Attachment
     ) -> None:
+        """Adds the birthdays in the file that were not in the last file synced."""
         await interaction.response.defer()
 
-        oldFile = open("./assets/BirthdayBotData.txt", "r")
-        oldfileContent = oldFile.read()
-        oldbirthdays = oldfileContent.split("●")
-        oldbirthdays.pop(0)
-        ids = []
-        for obday in oldbirthdays:
-            id = int(obday.split("-")[1].split(" ")[1])
-            ids.append(id)
-
+        with open("./assets/BirthdayBotData.txt", "r") as old:
+            known = [
+                int(entry.split("-")[1].split(" ")[1])
+                for entry in old.read().split("●")[1:]
+            ]
         await file.save("./assets/BirthdayBotData.txt")
-        f = open("./assets/BirthdayBotData.txt", "r")
-        fileContent = f.read()
+        with open("./assets/BirthdayBotData.txt", "r") as new:
+            entries = new.read().split("●")[1:]
 
-        birthdays = fileContent.split("●")
-        birthdays.pop(0)
         count = 0
-        for bday in birthdays:
-            x = bday.split("-")
-            month = x[0].strip()
-            month = month_map.get(month, "Invalid abbr")
-            if month == "Invalid abbr":
+        for entry in entries:
+            parts = entry.split("-")
+            month = month_map.get(parts[0].strip())
+            if month is None:
                 continue
-            day = int(x[1].split(":")[0].strip())
-            id = int(x[1].split(" ")[1])
-            if id in ids:
+            day = int(parts[1].split(":")[0].strip())
+            user_id = int(parts[1].split(" ")[1])
+            if user_id in known:
                 continue
-            if "Time zone:" in bday:
-                timezone = bday.split("Time zone: ")[1].strip()
+            timezone = "Atlantic/Azores"
+            if "Time zone:" in entry:
+                timezone = entry.split("Time zone: ")[1].strip()
                 if timezone == "GMT":
                     timezone = "Atlantic/Azores"
-            else:
-                timezone = "Atlantic/Azores"
-
-            birth_date = datetime.datetime(2024, month, day, 0, 0, 0)
-            birth_timezone = pytz.timezone(timezone)
-            localized_birth_date = birth_timezone.localize(birth_date)
-            utc_birth_date = localized_birth_date.astimezone(pytz.utc)
-            display_utc_date = utc_birth_date.strftime("%m-%d %H:%M")
-
-            existed = False
-            ref = db.reference("/Birthday")
-            bday = ref.get()
-            for key, value in bday.items():
-                if value["User ID"] == id:
-                    existed = True
-                    break
-
-            if existed:
+            start = utc_start(month, day, timezone)
+            if await store.find(self.bot.pool, user_id):
                 continue
-
-            data = {
-                interaction.guild.name: {
-                    "User ID": id,
-                    "Month": month,
-                    "Day": day,
-                    "Timezone": timezone,
-                    "Display UTC Date": display_utc_date,
-                    "Fav Character": "None",
-                }
-            }
-
-            for key, value in data.items():
-                ref.push().set(value)
+            await store.save(
+                self.bot.pool, user_id, month, day, timezone, start, "None"
+            )
             count += 1
         await interaction.followup.send(f"Added **{count}** birthday records.")
-
-    @birthday_sync.error
-    async def birthday_sync_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="set", description="Set your birth date and timezone")
     @app_commands.choices(
@@ -180,9 +118,9 @@ class Birthday(commands.GroupCog, name="birthday"):
         ]
     )
     @app_commands.autocomplete(
-        day=day_autocomplete,
-        timezone=timezone_autocomplete,
-        character=character_autocomplete,
+        day=menu(days),
+        timezone=menu(timezones),
+        character=menu(characters),
     )
     @app_commands.describe(
         month="The month of your birth date",
@@ -198,86 +136,39 @@ class Birthday(commands.GroupCog, name="birthday"):
         timezone: str,
         character: str,
     ) -> None:
+        """Saves the member's birthday after checking each thing they entered."""
         monthName = month.name
         month = int(month.value)
 
         if timezone not in timezones:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="<:no:1036810470860013639> **Invalid timezone.** Please search and select from the menu or refer to https://arilyn.cc/.",
-                    color=0xFF0000,
-                ),
-                ephemeral=True,
+            return await refuse(
+                interaction,
+                "**Invalid timezone.** Please search and select from the menu or refer to https://arilyn.cc/.",
             )
-            return
-        if monthName not in months:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="<:no:1036810470860013639> **Invalid month.** Please search and select from the menu.",
-                    color=0xFF0000,
-                ),
-                ephemeral=True,
-            )
-            return
         if int(day) not in days:
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="<:no:1036810470860013639> **Invalid day.** Please search and select from the menu.",
-                    color=0xFF0000,
-                ),
-                ephemeral=True,
+            return await refuse(
+                interaction, "**Invalid day.** Please search and select from the menu."
             )
-            return
         if character not in characters and character != "None":
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="<:no:1036810470860013639> **Invalid character.** Please search and select from the menu.",
-                    color=0xFF0000,
-                ),
-                ephemeral=True,
+            return await refuse(
+                interaction,
+                "**Invalid character.** Please search and select from the menu.",
             )
-            return
-
         day = int(day)
-        if (
-            (month == 2 and day > 29)
-            or (month in [4, 6, 9, 11] and day > 30)
-            or (month in [1, 3, 5, 7, 8, 10, 12] and day > 31)
-        ):
-            await interaction.response.send_message(
-                embed=discord.Embed(
-                    description="<:no:1036810470860013639> The date you specified is not a valid calendar date.",
-                    color=0xFF0000,
-                ),
-                ephemeral=True,
+        if day > (29 if month == 2 else 30 if month in [4, 6, 9, 11] else 31):
+            return await refuse(
+                interaction, "The date you specified is not a valid calendar date."
             )
-            return
-        birth_date = datetime.datetime(2024, month, day, 0, 0, 0)
-        birth_timezone = pytz.timezone(timezone)
-        localized_birth_date = birth_timezone.localize(birth_date)
-        utc_birth_date = localized_birth_date.astimezone(pytz.utc)
-        display_utc_date = utc_birth_date.strftime("%m-%d %H:%M")
-
-        ref = db.reference("/Birthday")
-        bday = ref.get()
-        for key, value in bday.items():
-            if value["User ID"] == interaction.user.id:
-                db.reference("/Birthday").child(key).delete()
-                break
-
-        data = {
-            interaction.guild.name: {
-                "User ID": interaction.user.id,
-                "Month": month,
-                "Day": day,
-                "Timezone": timezone,
-                "Display UTC Date": display_utc_date,
-                "Fav Character": character,
-            }
-        }
-
-        for key, value in data.items():
-            ref.push().set(value)
+        display_utc_date = utc_start(month, day, timezone)
+        await store.save(
+            self.bot.pool,
+            interaction.user.id,
+            month,
+            day,
+            timezone,
+            display_utc_date,
+            character,
+        )
 
         embed = discord.Embed(
             title="✅ Birthday Saved",
@@ -293,12 +184,6 @@ class Birthday(commands.GroupCog, name="birthday"):
         )
         await interaction.response.send_message(embed=embed)
 
-    @birthday_set.error
-    async def birthday_set_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
     @app_commands.command(name="get", description="Get the birthday of a member")
     @app_commands.describe(
         user="The member you wish to get the birthday of",
@@ -306,34 +191,19 @@ class Birthday(commands.GroupCog, name="birthday"):
     async def birthday_get(
         self, interaction: discord.Interaction, user: discord.Member = None
     ) -> None:
+        """Shows a member's birthday, or says that none is saved."""
         if user is None:
             user = interaction.user
 
-        ref = db.reference("/Birthday")
-        bday = ref.get()
-        month = day = timezone = display_utc_date = None
-        for key, value in bday.items():
-            if value["User ID"] == user.id:
-                month = value["Month"]
-                day = value["Day"]
-                timezone = value["Timezone"]
-                display_utc_date = value["Display UTC Date"]
-                character = value["Fav Character"]
-                break
-
-        if month is None or day is None or timezone is None or display_utc_date is None:
+        saved = await store.find(self.bot.pool, user.id)
+        if saved is None:
             if user == interaction.user:
-                embed = discord.Embed(
-                    description=f"<:no:1036810470860013639> We don't have your birthday in our database. Use {SlashCommand('birthday set')} to set your birthday!",
-                    color=0xFF0000,
-                )
+                problem = f"We don't have your birthday in our database. Use {SlashCommand('birthday set')} to set your birthday!"
             else:
-                embed = discord.Embed(
-                    description=f"<:no:1036810470860013639> We don't have {user.mention}'s birthday in our database.",
-                    color=0xFF0000,
-                )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+                problem = f"We don't have {user.mention}'s birthday in our database."
+            return await refuse(interaction, problem)
+        month, day, timezone = saved["month"], saved["day"], saved["timezone"]
+        display_utc_date, character = saved["display_utc_date"], saved["fav_character"]
 
         if user == interaction.user:
             embed = discord.Embed(
@@ -352,12 +222,6 @@ class Birthday(commands.GroupCog, name="birthday"):
 
         await interaction.response.send_message(embed=embed)
 
-    @birthday_get.error
-    async def birthday_get_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
     @app_commands.command(
         name="remove", description="Remove your birthday from the database"
     )
@@ -365,14 +229,8 @@ class Birthday(commands.GroupCog, name="birthday"):
         self,
         interaction: discord.Interaction,
     ) -> None:
-        found = False
-        ref = db.reference("/Birthday")
-        bday = ref.get()
-        for key, value in bday.items():
-            if value["User ID"] == interaction.user.id:
-                db.reference("/Birthday").child(key).delete()
-                found = True
-                break
+        """Forgets the member's birthday."""
+        found = await store.remove(self.bot.pool, interaction.user.id)
 
         if not found:
             embed = discord.Embed(
@@ -389,12 +247,6 @@ class Birthday(commands.GroupCog, name="birthday"):
 
         await interaction.response.send_message(embed=embed)
 
-    @birthday_remove.error
-    async def birthday_remove_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
     @app_commands.command(
         name="export",
         description="Exports all birthdays of your server members (Admin only)",
@@ -404,46 +256,29 @@ class Birthday(commands.GroupCog, name="birthday"):
         self,
         interaction: discord.Interaction,
     ) -> None:
+        """Sends a file of every saved birthday whose member is in this server."""
         await interaction.response.defer(thinking=True)
-        list = []
-        ref = db.reference("/Birthday")
-        bday = ref.get()
-        for x in bday.items():
-            list.append(x)
-        data_items = list
-        data_items_with_dates = []
-        for key, value in data_items:
+        dated = []
+        for saved in await store.everyone(self.bot.pool):
             try:
                 date = datetime.datetime.strptime(
-                    value["Display UTC Date"], "%m-%d %H:%M"
+                    saved["display_utc_date"], "%m-%d %H:%M"
                 )
-                data_items_with_dates.append((key, value, date))
             except ValueError:
-                print(f"Invalid date found: {value['Display UTC Date']} for key {key}")
-
-        sorted_data_items = sorted(data_items_with_dates, key=lambda x: x[2])
-        sorted_data_items_final = [
-            (key, value) for key, value, date in sorted_data_items
-        ]
+                print(f"Invalid date found: {saved['display_utc_date']}")
+                continue
+            dated.append((date, saved))
 
         content = f"Birthdays in {interaction.guild.name}\n\n"
-        for key, value in sorted_data_items_final:
+        for _, saved in sorted(dated, key=lambda pair: pair[0]):
             try:
-                content = f"{content}● {months_short[value['Month']-1]}-{value['Day']} ({value['Timezone']}): {value['User ID']} {(await interaction.guild.fetch_member(value['User ID'])).name} | {value['Display UTC Date']} | {value['Fav Character']}\n"
+                member = await interaction.guild.fetch_member(saved["user_id"])
             except Exception:
-                pass
+                continue
+            content += f"● {months_short[saved['month']-1]}-{saved['day']} ({saved['timezone']}): {saved['user_id']} {member.name} | {saved['display_utc_date']} | {saved['fav_character']}\n"
 
-        filename = "./assets/birthday_export.txt"
-        with open(filename, "w") as file:
-            file.write(content)
-
-        await interaction.followup.send(file=discord.File(filename))
-
-    @birthday_export.error
-    async def birthday_export_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+        file = discord.File(io.BytesIO(content.encode()), "birthday_export.txt")
+        await interaction.followup.send(file=file)
 
     @app_commands.command(
         name="enable", description="Enable birthday wishes in a channel"
@@ -466,41 +301,25 @@ class Birthday(commands.GroupCog, name="birthday"):
         role: discord.Role,
         create_birthday_thread: bool = False,
     ) -> None:
-
+        """Turns wishes on for the server, with a new webhook in the channel."""
         if role == interaction.guild.default_role:
             return await interaction.response.send_message(
                 "<:no:1036810470860013639> You have specified an unknown role!",
                 ephemeral=True,
             )
 
-        ref = db.reference("/Birthday System")
-        bs = ref.get()
-
-        try:
-            for key, val in bs.items():
-                if val["Server ID"] == interaction.guild.id:
-                    db.reference("/Birthday System").child(key).delete()
-                    break
-        except Exception:
-            pass
-
+        await store.disable(self.bot.pool, interaction.guild.id)
         webhook = await channel.create_webhook(
             name="Birthday Wishes", reason=f"Created by user ID: {interaction.user.id}"
         )
-
-        data = {
-            channel.id: {
-                "Channel ID": channel.id,
-                "Webhook ID": webhook.id,
-                "Server ID": interaction.guild.id,
-                "Server Name": interaction.guild.name,
-                "Role ID": role.id,
-                "Create Birthday Thread": create_birthday_thread,
-            }
-        }
-
-        for key, value in data.items():
-            ref.push().set(value)
+        await store.enable(
+            self.bot.pool,
+            interaction.guild.id,
+            channel.id,
+            webhook.id,
+            role.id,
+            create_birthday_thread,
+        )
 
         embed = discord.Embed(
             title="Birthday wishes enabled!",
@@ -510,12 +329,6 @@ class Birthday(commands.GroupCog, name="birthday"):
         embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         await interaction.response.send_message(embed=embed)
 
-    @birthday_enable.error
-    async def birthday_enable_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
     @app_commands.command(
         name="disable", description="Disable birthday wishes in the server"
     )
@@ -524,16 +337,8 @@ class Birthday(commands.GroupCog, name="birthday"):
         self,
         interaction: discord.Interaction,
     ) -> None:
-
-        ref = db.reference("/Birthday System")
-        bs = ref.get()
-
-        found = False
-        for key, val in bs.items():
-            if val["Server ID"] == interaction.guild.id:
-                db.reference("/Birthday System").child(key).delete()
-                found = True
-                break
+        """Turns wishes off for the server."""
+        found = await store.disable(self.bot.pool, interaction.guild.id)
 
         if found:
             embed = discord.Embed(
@@ -552,10 +357,14 @@ class Birthday(commands.GroupCog, name="birthday"):
             embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @birthday_sync.error
+    @birthday_set.error
+    @birthday_get.error
+    @birthday_remove.error
+    @birthday_export.error
+    @birthday_enable.error
     @birthday_disable.error
-    async def birthday_disable_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
+    async def birthday_error(self, interaction: discord.Interaction, error: Exception):
         await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
 

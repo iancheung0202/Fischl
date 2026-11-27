@@ -471,3 +471,129 @@ async def test_topics_move_stops_when_the_saved_order_differs(
     monkeypatch.setattr(move, "TOPIC_ROWS", move.TOPIC_ROWS + " DESC")
     with pytest.raises(SystemExit, match="differ"):
         await move.topics(pool, firebase_admin.db, str(tmp_path))
+
+
+def born(user, date="03-04 15:00", **changes):
+    return {
+        "User ID": user,
+        "Month": 3,
+        "Day": 5,
+        "Timezone": "Asia/Tokyo",
+        "Display UTC Date": date,
+        "Fav Character": "None",
+        **changes,
+    }
+
+
+def wishing(server, **changes):
+    return {
+        "Server ID": server,
+        "Channel ID": 2,
+        "Webhook ID": 3,
+        "Role ID": 4,
+        "Server Name": "Teyvat",
+        **changes,
+    }
+
+
+@pytest.fixture
+def old_birthdays(firebase):
+    firebase("/Birthday").set(
+        {"b": born(692254240290242601, "02-29 01:00"), "a": born(5)}
+    )
+    firebase("/Birthday System").set(
+        {
+            "b": wishing(9, **{"Create Birthday Thread": True}),
+            "a": wishing(8),
+            "c": wishing(7, **{"Create Birthday Thread": False}),
+        }
+    )
+
+
+async def test_birthdays_move_once(
+    pool, firebase, old_birthdays, tmp_path, monkeypatch
+):
+    import firebase_admin.db
+
+    monkeypatch.setenv("EXPORT_FOLDER", str(tmp_path))
+    await move.birthday(pool, firebase_admin.db)
+    assert [tuple(row) for row in await pool.fetch(move.BORN_ROWS)] == [
+        (692254240290242601, 3, 5, "Asia/Tokyo", "02-29 01:00", "None"),
+        (5, 3, 5, "Asia/Tokyo", "03-04 15:00", "None"),
+    ]
+    assert [tuple(row) for row in await pool.fetch(move.WISHING_ROWS)] == [
+        (9, 2, 3, 4, True),
+        (8, 2, 3, 4, False),
+        (7, 2, 3, 4, False),
+    ]
+    saved = json.loads((tmp_path / "birthday-export.json").read_text())
+    assert saved == {
+        "Birthday": firebase("/Birthday").get(),
+        "Birthday System": firebase("/Birthday System").get(),
+    }
+    (tmp_path / "birthday-export.json").unlink()
+    with pytest.raises(SystemExit):
+        await move.birthday(pool, firebase_admin.db, str(tmp_path))
+    assert not (tmp_path / "birthday-export.json").exists()
+
+
+async def test_birthdays_move_refuses_when_only_a_server_is_there(
+    pool, firebase, old_birthdays, tmp_path
+):
+    import firebase_admin.db
+
+    from commands.Birthday import birthdayStore
+
+    await birthdayStore.create(pool)
+    await birthdayStore.enable(pool, 1, 2, 3, 4, False)
+    with pytest.raises(SystemExit):
+        await move.birthday(pool, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT count(*) FROM birthdays") == 0
+    assert not (tmp_path / "birthday-export.json").exists()
+
+
+@pytest.mark.parametrize(
+    "path, record",
+    [
+        ("Birthday", born("5")),
+        ("Birthday", born(5.0)),
+        ("Birthday", born(True)),
+        ("Birthday", born(6, Month="3")),
+        ("Birthday", born(6, Timezone=None)),
+        ("Birthday", born(6, "3-4 15:00")),
+        ("Birthday", born(6, "03-04 15:00 ")),
+        ("Birthday", born(5)),
+        ("Birthday", {"User ID": 6}),
+        ("Birthday System", wishing("7")),
+        ("Birthday System", wishing(6, **{"Role ID": 4.0})),
+        ("Birthday System", wishing(6, **{"Create Birthday Thread": "yes"})),
+        ("Birthday System", wishing(6, **{"Create Birthday Thread": 1})),
+        ("Birthday System", wishing(8)),
+        ("Birthday System", {"Server ID": 6}),
+    ],
+)
+async def test_birthdays_move_stops_on_values_of_the_wrong_kind(
+    pool, firebase, old_birthdays, tmp_path, path, record
+):
+    import firebase_admin.db
+
+    firebase(f"/{path}/z").set(record)
+    with pytest.raises((SystemExit, KeyError)):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.birthday(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('birthdays')") is None
+
+
+@pytest.mark.parametrize("rows", ["BORN_ROWS", "WISHING_ROWS"])
+async def test_birthdays_move_stops_when_the_saved_order_differs(
+    pool, firebase, old_birthdays, tmp_path, monkeypatch, rows
+):
+    import firebase_admin.db
+
+    monkeypatch.setattr(
+        move, rows, getattr(move, rows).replace("ORDER BY id", "ORDER BY id DESC")
+    )
+    with pytest.raises(SystemExit):
+        async with pool.acquire() as connection, connection.transaction():
+            await move.birthday(connection, firebase_admin.db, str(tmp_path))
+    assert await pool.fetchval("SELECT to_regclass('birthdays')") is None
