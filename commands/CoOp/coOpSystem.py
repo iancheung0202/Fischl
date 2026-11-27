@@ -528,6 +528,14 @@ class CoOpRepEnableView(discord.ui.View):
             )
 
 
+def whole(text):
+    """Gives the whole number a member typed, or None when it is not one."""
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
 class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
     role_id = discord.ui.TextInput(
         label="Role ID",
@@ -550,12 +558,12 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
         role_id, cost = self.role_id.value.strip(), self.cost.value.strip()
         if await reputationStore.max_rep(pool, guild_id) is None:
             problem = "Reputation system is not enabled for this server yet. Please enable it first."
-        elif not cost.lstrip("+-").isdecimal():
+        elif whole(cost) is None:
             problem = "Cost must be a valid integer."
-        elif not role_id.isdecimal():
+        elif not role_id.isdecimal() or len(role_id) > 19:
             problem = "Role ID must be a valid role ID."
         elif not await reputationStore.add_reward(
-            pool, guild_id, int(role_id), int(cost)
+            pool, guild_id, int(role_id), whole(cost)
         ):
             problem = "This role ID already exists as a reward in this server."
         else:
@@ -565,7 +573,7 @@ class AddRewardModel(discord.ui.Modal, title="Add a Custom Reward"):
             self.update = discord.Embed(description=problem, color=discord.Color.red())
         else:
             self.update = discord.Embed(
-                description=f"Added reward for role ID: `{role_id}` with a cost of {int(cost)} reputation points.",
+                description=f"Added reward for role ID: `{role_id}` with a cost of {whole(cost)} reputation points.",
                 color=discord.Color.green(),
             )
         self.stop()
@@ -618,6 +626,8 @@ class CoOpRepEnableModal(discord.ui.Modal, title="Enable/Edit Reputation System"
         if str(self.maxrep):
             try:
                 max_rep = int(str(self.maxrep))
+                if abs(max_rep) >= 2**63:
+                    raise ValueError
             except ValueError:
                 await interaction.response.send_message(
                     "Invalid input for maximum reputation. Please enter a valid integer.",

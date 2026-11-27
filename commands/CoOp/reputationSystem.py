@@ -59,11 +59,11 @@ def refusal(message, user_id, amount, most):
 
 
 async def earned(member, before, after, rewards):
-    """Gives the member every role whose cost they just reached, with an embed for each."""
+    """Gives the member every role whose cost this gift took them to, with an embed for each."""
     embeds = []
     for role_id, cost in rewards.items():
         role = member.guild.get_role(role_id)
-        if role is None or not before <= cost <= after:
+        if role is None or not before < cost <= after:
             continue
         await member.add_roles(role)
         embeds.append(

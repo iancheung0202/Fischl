@@ -316,3 +316,27 @@ def test_nothing_reads_firebase():
         source = inspect.getsource(module)
         assert "Global Reps" not in source
         assert "firebase" not in source
+
+
+async def test_role_is_given_only_by_the_gift_that_reaches_its_cost():
+    found = member(MEMBER)
+    for before, after, given in ((0, 9, 0), (5, 10, 1), (10, 11, 0), (0, 30, 1)):
+        found.add_roles.reset_mock()
+        embeds = await reputationSystem.earned(found, before, after, {ROLE: 10})
+        assert (len(embeds), found.add_roles.await_count) == (given, given)
+        assert all(embed.color == discord.Color.green() for embed in embeds)
+
+
+async def test_reward_of_a_deleted_role_is_skipped():
+    found = member(MEMBER)
+    found.guild.get_role = lambda role_id: None
+    assert await reputationSystem.earned(found, 0, 10, {ROLE: 10}) == []
+    found.add_roles.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "text, number",
+    [("5", 5), ("+5", 5), ("-5", -5), ("1_000", 1000), ("+-5", None), ("x", None)],
+)
+def test_cost_typed_in_the_form(text, number):
+    assert coOpSystem.whole(text) == number
