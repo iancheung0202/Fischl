@@ -1,7 +1,6 @@
 import asyncio
 import datetime
 import re
-import time
 from typing import List, Optional
 
 import aiohttp
@@ -13,208 +12,177 @@ from firebase_admin import db
 
 from utils.commands import SlashCommand
 
-
-def _config_ref(guild_id: int):
-    return db.reference(f"Partner/config/{guild_id}")
-
-
-def _partners_ref(guild_id: int):
-    return db.reference(f"Partner/partners/{guild_id}")
-
-
-def _categories_ref(guild_id: int):
-    return db.reference(f"Partner/categories/{guild_id}")
-
-
-def _panel_ref(guild_id: int):
-    return db.reference(f"Partner/panels/{guild_id}")
-
-
-def _cooldown_ref(guild_id: int, user_id: int = None):
-    base = db.reference(f"Partner/Cooldown/{guild_id}")
-    return base.child(str(user_id)) if user_id else base
+YES = "<:yes:1036811164891480194>"
+NO = "<:no:1036810470860013639>"
+BLURPLE = "#5865F2"
+NO_ICON = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTEkPA5_-j6SudIbSZh-ExIs1eSeuCYIIRthjHfg0P2dbwUH2E&s"
+THREADS_PICTURE = "https://media.discordapp.net/attachments/1106727534479032341/1366102857366896781/thread_instructions.png?ex=680fb9ee&is=680e686e&hm=4a80c4dda380d4b3e5ef7781576a9be6981e909a0179780e50dc605b1a4570c1&="
+STATUSES = {
+    "pending": ("🟡", 0xFEE75C),
+    "accepted": ("🟢", 0x57F287),
+    "rejected": ("🔴", 0xED4245),
+    "blacklisted": ("⚫", 0x000000),
+}
+STAFF = app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+EDITORS = app_commands.checks.has_permissions(
+    manage_webhooks=True, manage_channels=True, manage_messages=True
+)
 
 
-def _blacklist_ref(guild_id: int):
-    return db.reference(f"Partner/Blacklist/{guild_id}")
+def ref(name, guild_id):
+    """Gives one server's part of the partnership data; BrawlKit keeps its own here too."""
+    return db.reference(f"Partner/{name}/{guild_id}")
+
+
+def color(text):
+    """Turns a hex code like #5865F2 into a number."""
+    return int(text.lstrip("#"), 16)
+
+
+def plural(count, word):
+    """Gives "1 message" or "2 messages"."""
+    return f"{count} {word}{'s' if count != 1 else ''}"
+
+
+def edge(section, colour, title, name):
+    """Builds the header or footer embed, or a hint on how to edit it when it is empty."""
+    embed = discord.Embed(
+        title=section.get("title", None),
+        description=section.get("description", None),
+        color=color(section.get("color", BLURPLE)),
+    )
+    if embed.title is None and embed.description is None:
+        embed = discord.Embed(
+            title=title,
+            description=f'Use {SlashCommand("partner edit-panel")} and select `{name}` to edit this embed!',
+            color=colour,
+        )
+    if "thumbnail" in section:
+        embed.set_thumbnail(url=section["thumbnail"])
+    if "image" in section:
+        embed.set_image(url=section["image"])
+    return embed
+
+
+def link(partner, group):
+    """Gives a partner's line on the panel; an all-digit invite is a bot's ID."""
+    url = (
+        f"https://discord.com/oauth2/authorize?client_id={partner['invite']}"
+        if partner["invite"].isdigit()
+        else f"https://discord.gg/{partner['invite']}"
+    )
+    return f"{group.get('prefix', '')} [{partner['name']}]({url}) {group.get('suffix', '')}"
+
+
+def letter_fields(partners, group):
+    """Splits a group's sorted partners into fields named by their first letters."""
+    fields = []
+    first, start = "A", 0
+    while first <= "Z" and start < len(partners):
+        while start < len(partners) and partners[start]["name"][0].upper() < first:
+            start += 1
+        if start == len(partners):
+            break
+
+        lines, length, end = [], 0, start
+        for index in range(start, len(partners)):
+            line = link(partners[index], group)
+            if length + len(line) + 1 > 1024:
+                break
+            lines.append(line)
+            length += len(line) + 1
+            end = index + 1
+        if not lines:
+            first = chr(ord(first) + 1) if first != "Z" else "Z"
+            continue
+
+        last = partners[end - 1]["name"][0].upper()
+        fields.append([first, last, "\n".join(lines)])
+        first = chr(ord(last) + 1) if last != "Z" else "Z"
+        start = end
+
+    if fields:
+        fields[-1][1] = "Z"
+    return [(f"{first} - {last}", value) for first, last, value in fields]
 
 
 async def _build_panel_embeds(guild_id: int) -> List[discord.Embed]:
-    config = _config_ref(guild_id).get()
-    partners = _partners_ref(guild_id).get() or {}
-    categories = _categories_ref(guild_id).get() or {}
-    embed_config = config.get("embed", {})
-    header = embed_config.get("header", {})
-    footer = embed_config.get("footer", {})
+    """Builds the panel: the header, each group's partners by letter, and the footer."""
+    config = ref("config", guild_id).get()
+    partners = ref("partners", guild_id).get() or {}
+    groups = ref("categories", guild_id).get() or {}
+    sections = config.get("embed", {})
+    header = sections.get("header", {})
+    footer = sections.get("footer", {})
+    fallback = color(header.get("color", BLURPLE))
 
-    header_embed = discord.Embed(
-        title=header.get("title", None),
-        description=header.get("description", None),
-        color=int(header.get("color", "#5865F2").lstrip("#"), 16),
-    )
-    if header_embed.title is None and header_embed.description is None:
-        header_embed = discord.Embed(
-            title="Server Partner List",
-            description=f'Use {SlashCommand("partner edit-panel")} and select `Header` to edit this embed!',
-            color=int(header.get("color", "#5865F2").lstrip("#"), 16),
+    embeds = [edge(header, fallback, "Server Partner List", "Header")]
+    for name, group in groups.items():
+        members = sorted(
+            (p for p in partners.values() if p.get("category") == name),
+            key=lambda partner: partner["name"].lower(),
         )
-    if "thumbnail" in header:
-        header_embed.set_thumbnail(url=header["thumbnail"])
-    if "image" in header:
-        header_embed.set_image(url=header["image"])
-
-    category_embeds = []
-    for cat_name, cat_data in categories.items():
-        category_partners = [
-            p for p in partners.values() if p.get("category") == cat_name
-        ]
-        if not category_partners:
-            continue
-
-        sorted_partners = sorted(category_partners, key=lambda x: x["name"].lower())
-        lines = []
-        for p in sorted_partners:
-            if p["invite"].isdigit():  # Bot application ID
-                # print(p['invite'].isdigit())
-                line = f"{cat_data.get('prefix', '')} [{p['name']}](https://discord.com/oauth2/authorize?client_id={p['invite']}) {cat_data.get('suffix', '')}"
-                lines.append(line)
-            else:
-                line = f"{cat_data.get('prefix', '')} [{p['name']}](https://discord.gg/{p['invite']}) {cat_data.get('suffix', '')}"
-                lines.append(line)
-
-        fields = []
-        current_start_char = "A"
-        start_idx = 0
-
-        def next_char(c):
-            return chr(ord(c) + 1) if c != "Z" else "Z"
-
-        while current_start_char <= "Z" and start_idx < len(sorted_partners):
-            while start_idx < len(sorted_partners):
-                server_first_char = sorted_partners[start_idx]["name"][0].upper()
-                if server_first_char >= current_start_char:
-                    break
-                start_idx += 1
-            else:
-                break
-
-            current_chunk = []
-            current_length = 0
-            end_idx = start_idx
-
-            for i in range(start_idx, len(sorted_partners)):
-                if sorted_partners[i]["invite"].isdigit():  # Bot application ID
-                    line = f"{cat_data.get('prefix', '')} [{sorted_partners[i]['name']}](https://discord.com/oauth2/authorize?client_id={sorted_partners[i]['invite']}) {cat_data.get('suffix', '')}"
-                else:
-                    line = f"{cat_data.get('prefix', '')} [{sorted_partners[i]['name']}](https://discord.gg/{sorted_partners[i]['invite']}) {cat_data.get('suffix', '')}"
-                line_length = len(line) + 1
-
-                if current_length + line_length > 1024:
-                    break
-                current_chunk.append(line)
-                current_length += line_length
-                end_idx = i + 1
-
-            if not current_chunk:
-                current_start_char = next_char(current_start_char)
-                continue
-
-            end_char = sorted_partners[end_idx - 1]["name"][0].upper()
-            fields.append(
-                {
-                    "name": f"{current_start_char} - {end_char}",
-                    "value": "\n".join(current_chunk),
-                }
+        fields = letter_fields(members, group)
+        for index in range(0, len(fields), 25):
+            embed = discord.Embed(
+                title=group.get("title", name),
+                color=color(group.get("color", BLURPLE)),
             )
+            if group.get("thumbnail"):
+                embed.set_thumbnail(url=group["thumbnail"])
+            for field, value in fields[index : index + 25]:
+                embed.add_field(name=field, value=value, inline=False)
+            embeds.append(embed)
 
-            current_start_char = next_char(end_char)
-            start_idx = end_idx
-
-        if fields:
-            last_field = fields[-1]
-            last_start = last_field["name"].split(" - ")[0]
-            fields[-1]["name"] = f"{last_start} - Z"
-
-        for i in range(0, len(fields), 25):
-            group = fields[i : i + 25]
-            group_embed = discord.Embed(
-                title=cat_data.get("title", cat_name),
-                color=int(cat_data.get("color", "#5865F2").lstrip("#"), 16),
-            )
-            if cat_data.get("thumbnail"):
-                group_embed.set_thumbnail(url=cat_data["thumbnail"])
-            for field in group:
-                group_embed.add_field(
-                    name=field["name"], value=field["value"], inline=False
-                )
-            category_embeds.append(group_embed)
-
-    footer_embed = discord.Embed(
-        title=footer.get("title", None),
-        description=footer.get("description", None),
-        color=int(footer.get("color", "#5865F2").lstrip("#"), 16),
-    )
-    if footer_embed.title is None and footer_embed.description is None:
-        footer_embed = discord.Embed(
-            title="Instructions",
-            description=f'Use {SlashCommand("partner edit-panel")} and select `Footer` to edit this embed!',
-            color=int(header.get("color", "#5865F2").lstrip("#"), 16),
-        )
-    if "thumbnail" in footer:
-        footer_embed.set_thumbnail(url=footer["thumbnail"])
-    if "image" in footer:
-        footer_embed.set_image(url=footer["image"])
-    footer_embed.set_footer(text="⚡ Panel automatically updated • Powered by Fischl")
-
-    return [header_embed] + category_embeds + [footer_embed]
+    last = edge(footer, fallback, "Instructions", "Footer")
+    last.set_footer(text="⚡ Panel automatically updated • Powered by Fischl")
+    return embeds + [last]
 
 
 def _calculate_embed_size(embed: discord.Embed) -> int:
-    size = 0
-
-    if embed.title:
-        size += len(embed.title)
-    if embed.description:
-        size += len(embed.description)
+    """Counts an embed's characters, with 100 to spare."""
+    size = len(embed.title or "") + len(embed.description or "") + 100
     if embed.author:
-        size += len(embed.author.name) if embed.author.name else 0
+        size += len(embed.author.name or "")
     if embed.footer:
-        size += len(embed.footer.text) if embed.footer.text else 0
-
-    for field in embed.fields:
-        size += len(field.name) + len(field.value)
-
-    size += 100
-    return size
+        size += len(embed.footer.text or "")
+    return size + sum(len(field.name) + len(field.value) for field in embed.fields)
 
 
 def _group_embeds_by_message_limit(
     embeds: List[discord.Embed], limit: int = 6000
 ) -> List[List[discord.Embed]]:
-    groups = []
-    current_group = []
-    current_size = 0
-
+    """Splits embeds into messages that each stay under Discord's size limit."""
+    groups, size = [[]], 0
     for embed in embeds:
-        embed_size = _calculate_embed_size(embed)
+        if size + _calculate_embed_size(embed) > limit and groups[-1]:
+            groups.append([])
+            size = 0
+        groups[-1].append(embed)
+        size += _calculate_embed_size(embed)
+    return groups if groups[-1] else []
 
-        if current_size + embed_size > limit and current_group:
-            groups.append(current_group)
-            current_group = [embed]
-            current_size = embed_size
-        else:
-            current_group.append(embed)
-            current_size += embed_size
 
-    if current_group:
-        groups.append(current_group)
+def panel_messages(panel):
+    """Gives a panel's message IDs; old panels stored only one."""
+    if "message_ids" in panel:
+        return panel.get("message_ids", [])
+    return [panel["message_id"]] if "message_id" in panel else []
 
-    return groups
+
+def request_view(last):
+    """Gives the Request Partnership button for a panel's last message only."""
+    if not last:
+        return None
+    view = View()
+    view.add_item(PartnerRequestButton())
+    return view
 
 
 async def _update_panel(guild_id: int, bot):
-    config = _config_ref(guild_id).get()
-    panel = _panel_ref(guild_id).get()
+    """Rewrites a server's panel in place and gives the line to tell staff, or None."""
+    config = ref("config", guild_id).get()
+    panel = ref("panels", guild_id).get()
     if not config or not panel:
         return None
 
@@ -223,82 +191,59 @@ async def _update_panel(guild_id: int, bot):
         if not channel:
             return None
 
-        all_embeds = await _build_panel_embeds(guild_id)
-        embed_groups = _group_embeds_by_message_limit(all_embeds, limit=6000)
-
-        old_message_ids = []
-        if "message_ids" in panel:
-            # New format: array of message IDs
-            old_message_ids = panel.get("message_ids", [])
-        elif "message_id" in panel:
-            # Old format: single message ID (backward compatibility)
-            old_message_ids = [panel["message_id"]]
-
-        new_message_ids = []
-
-        for group_idx, embed_group in enumerate(embed_groups):
-            is_last_group = group_idx == len(embed_groups) - 1
-            view = None
-            if is_last_group:
-                view = View()
-                view.add_item(PartnerRequestButton())
-
-            if group_idx < len(old_message_ids):
+        groups = _group_embeds_by_message_limit(await _build_panel_embeds(guild_id))
+        old = panel_messages(panel)
+        new = []
+        for index, embeds in enumerate(groups):
+            view = request_view(index == len(groups) - 1)
+            message = None
+            if index < len(old):
                 try:
-                    message = await channel.fetch_message(old_message_ids[group_idx])
-                    await message.edit(embeds=embed_group, view=view)
-                    new_message_ids.append(message.id)
+                    message = await channel.fetch_message(old[index])
+                    await message.edit(embeds=embeds, view=view)
                 except (discord.NotFound, discord.Forbidden):
-                    message = await channel.send(embeds=embed_group, view=view)
-                    new_message_ids.append(message.id)
-            else:
-                message = await channel.send(embeds=embed_group, view=view)
-                new_message_ids.append(message.id)
+                    message = None
+            if message is None:
+                message = await channel.send(embeds=embeds, view=view)
+            new.append(message.id)
 
-        for old_id in old_message_ids[len(embed_groups) :]:
+        for message_id in old[len(groups) :]:
             try:
-                message = await channel.fetch_message(old_id)
-                await message.delete()
+                await (await channel.fetch_message(message_id)).delete()
             except (discord.NotFound, discord.Forbidden):
                 pass
 
-        _panel_ref(guild_id).set(
-            {"message_ids": new_message_ids, "channel_id": panel["channel_id"]}
+        ref("panels", guild_id).set(
+            {"message_ids": new, "channel_id": panel["channel_id"]}
         )
-
-        return f"<:yes:1036811164891480194> Panel updated! ({len(embed_groups)} message{'s' if len(embed_groups) != 1 else ''})"
+        return f"{YES} Panel updated! ({plural(len(groups), 'message')})"
     except Exception as e:
-        return f"<:no:1036810470860013639> Failed to update panel: {e}"
+        return f"{NO} Failed to update panel: {e}"
 
 
 async def category_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> List[app_commands.Choice[str]]:
-    categories = _categories_ref(interaction.guild.id).get() or {}
+    """Suggests the server's groups that contain what was typed."""
+    groups = ref("categories", interaction.guild.id).get() or {}
     return [
         app_commands.Choice(name=name, value=name)
-        for name in categories.keys()
+        for name in groups
         if current.lower() in name.lower()
     ][:25]
 
 
 class PartnershipFirebaseListener:
+    """Updates a server's panel when its partners, groups or settings change in Firebase."""
+
     def __init__(self, bot):
         self.bot = bot
-        self.listeners = {}
         self.update_queue = asyncio.Queue()
         self.update_task = None
 
     def start_listeners(self):
-        partners_ref = db.reference("Partner/partners")
-        categories_ref = db.reference("Partner/categories")
-        config_ref = db.reference("Partner/config")
-        panel_ref = db.reference("Partner/panels")
-
-        partners_ref.listen(self._on_partners_change)
-        categories_ref.listen(self._on_categories_change)
-        config_ref.listen(self._on_config_change)
-
+        for name in ("partners", "categories", "config"):
+            db.reference(f"Partner/{name}").listen(self.changed)
         self.update_task = asyncio.create_task(self._process_updates())
         print("[Partnership] Firebase listeners started successfully")
 
@@ -306,80 +251,39 @@ class PartnershipFirebaseListener:
         if self.update_task:
             self.update_task.cancel()
 
-    def _on_partners_change(self, event):
+    def changed(self, event):
+        """Queues every server a Firebase event touches; runs on Firebase's thread."""
         if event.path == "/":
-            if event.data:
-                for guild_id in event.data.keys():
-                    self._queue_update(guild_id, "partners", event.event_type)
+            guilds = list(event.data.keys()) if event.data else []
         else:
-            guild_id = (
-                event.path.split("/")[1] if len(event.path.split("/")) > 1 else None
-            )
-            if guild_id:
-                self._queue_update(guild_id, "partners", event.event_type)
-
-    def _on_categories_change(self, event):
-        if event.path == "/":
-            if event.data:
-                for guild_id in event.data.keys():
-                    self._queue_update(guild_id, "categories", event.event_type)
-        else:
-            guild_id = (
-                event.path.split("/")[1] if len(event.path.split("/")) > 1 else None
-            )
-            if guild_id:
-                self._queue_update(guild_id, "categories", event.event_type)
-
-    def _on_config_change(self, event):
-        if event.path == "/":
-            if event.data:
-                for guild_id in event.data.keys():
-                    self._queue_update(guild_id, "config", event.event_type)
-        else:
-            guild_id = (
-                event.path.split("/")[1] if len(event.path.split("/")) > 1 else None
-            )
-            if guild_id:
-                self._queue_update(guild_id, "config", event.event_type)
-
-    def _queue_update(self, guild_id, data_type, event_type):
-        try:
-            guild_id = int(guild_id)
-
-            update_data = {
-                "guild_id": guild_id,
-                "data_type": data_type,
-                "event_type": event_type,
-                "timestamp": time.time(),
-            }
-
-            asyncio.run_coroutine_threadsafe(
-                self.update_queue.put(update_data), self.bot.loop
-            )
-        except Exception as e:
-            print(f"[Partnership] Error queuing update: {e}")
+            guilds = event.path.split("/")[1:2]
+        for guild_id in guilds:
+            if not guild_id:
+                continue
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self.update_queue.put(int(guild_id)), self.bot.loop
+                )
+            except Exception as e:
+                print(f"[Partnership] Error queuing update: {e}")
 
     async def _process_updates(self):
-        pending_updates = {}
-
+        """Updates each queued server once after 2 quiet seconds."""
+        pending = {}
         while True:
             try:
                 try:
-                    update = await asyncio.wait_for(
+                    guild_id = await asyncio.wait_for(
                         self.update_queue.get(), timeout=2.0
                     )
-                    guild_id = update["guild_id"]
-                    pending_updates[guild_id] = update
+                    pending[guild_id] = None
                 except asyncio.TimeoutError:
-                    if pending_updates:
-                        updates_to_process = list(pending_updates.values())
-                        pending_updates.clear()
-
-                        for update in updates_to_process:
-                            await self._execute_panel_update(update["guild_id"])
-
+                    if pending:
+                        guilds = list(pending)
+                        pending.clear()
+                        for guild_id in guilds:
+                            await self._execute_panel_update(guild_id)
                         await asyncio.sleep(0.5)
-
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -388,19 +292,15 @@ class PartnershipFirebaseListener:
 
     async def _execute_panel_update(self, guild_id):
         try:
-            panel = _panel_ref(guild_id).get()
-            if not panel:
+            if not ref("panels", guild_id).get():
                 return
-
             result = await _update_panel(guild_id, self.bot)
-
             if result and "Failed" not in result:
                 print(f"[Partnership] Panel update successful for guild {guild_id}")
             elif result is not None:
                 print(
                     f"[Partnership] Panel update failed for guild {guild_id}: {result}"
                 )
-
         except Exception as e:
             print(
                 f"[Partnership] Error executing panel update for guild {guild_id}: {e}"
@@ -410,12 +310,9 @@ class PartnershipFirebaseListener:
 async def _log_action(
     client, guild_id: int, user: discord.User, action: str, details: dict, button=None
 ):
-    config = _config_ref(guild_id).get() or {}
-    channel_id = config.get("log_channel")
-    if not channel_id:
-        return
-
-    channel = client.get_channel(channel_id)
+    """Posts what a member did in the server's partnership log channel."""
+    channel_id = (ref("config", guild_id).get() or {}).get("log_channel")
+    channel = client.get_channel(channel_id) if channel_id else None
     if not channel:
         return
 
@@ -425,22 +322,352 @@ async def _log_action(
         timestamp=datetime.datetime.now(datetime.timezone.utc),
     )
     embed.set_author(name=str(user), icon_url=user.display_avatar.url)
-
     for key, value in details.items():
         embed.add_field(name=key, value=str(value), inline=False)
 
+    view = None
     if button:
         view = View()
         view.add_item(button)
-    else:
-        view = None
     await channel.send(embed=embed, view=view)
+
+
+async def fetch_invite(code, **params):
+    """Gives the status and answer for an invite; a failed detailed ask has no answer."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"https://discord.com/api/v9/invites/{code}", params=params or None
+        ) as resp:
+            if resp.status != 200 and params:
+                return resp.status, None
+            return resp.status, await resp.json()
+
+
+def permanent(data):
+    """Says whether an invite never expires, as text for an embed."""
+    return f"{YES} Yes" if data.get("expires_at", None) is None else f"{NO} No"
+
+
+async def thread_for(channel, bot_id, server_id):
+    """Finds the request channel's thread, open or archived, for a server."""
+    threads = channel.threads + [thread async for thread in channel.archived_threads()]
+    for thread in threads:
+        try:
+            async for message in thread.history(limit=2, oldest_first=True):
+                if message.author.id != bot_id or len(message.embeds) == 0:
+                    continue
+                for field in message.embeds[0].fields:
+                    if field.name == "Server ID" and field.value == str(server_id):
+                        return thread
+        except Exception as e:
+            print(e)
+    return None
+
+
+def thread_embed(title, data, who, user):
+    """Builds the first message of a partnership thread."""
+    guild = data.get("guild", {})
+    embed = discord.Embed(
+        title=title,
+        description=f"-# - Staff can use {SlashCommand('partner status')} to update the thread and {SlashCommand('partner add-partner')} to add partner to the panel.\n-# - Everyone here can use {SlashCommand('partner invite')} to invite other server reps/staff to this thread.",
+        color=0xFEE75C,
+    )
+    embed.add_field(name="Server ID", value=guild["id"], inline=True)
+    embed.add_field(name="Server Name", value=guild.get("name"), inline=True)
+    embed.add_field(
+        name="Members",
+        value=data.get("approximate_member_count", "Unknown"),
+        inline=True,
+    )
+    embed.add_field(name="Permanent Server Invite", value=permanent(data), inline=True)
+    embed.add_field(name=f"{who} ID", value=user.id, inline=True)
+    embed.add_field(name=f"{who} Mention", value=user.mention, inline=True)
+    embed.set_footer(text="Status: 🟡 Pending")
+    return embed
+
+
+def invite_code(url):
+    """Pulls the invite code out of a link pasted in a partner list."""
+    for start in ("discord.gg/", "discord.com/invite/"):
+        if start in url:
+            return url.split(start)[-1].split("/")[0]
+    return url.rstrip("/").split("/")[-1]
+
+
+class PartnershipRequestModal(Modal, title="Partnership Request"):
+    invite_link = TextInput(
+        label="Your Server's Permanent Invite Link",
+        required=True,
+        placeholder="Other details will be fetched automatically.",
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        cooldown = ref("Cooldown", interaction.guild.id).child(str(interaction.user.id))
+        waited = datetime.datetime.now().timestamp() - (cooldown.get() or 0)
+        config = ref("config", interaction.guild.id).get()
+        wait = config.get("user_cooldown", 0)
+        manager = config.get("partner_manager_role_id", None)
+
+        if waited < wait:
+            remaining = int(wait - waited)
+            await interaction.followup.send(
+                f"{NO} You're on cooldown! Try again in {remaining//3600}h {remaining%3600//60}m",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            code = self.invite_link.value.split("/")[-1]
+            status, data = await fetch_invite(
+                code, with_counts="true", with_expiration="true"
+            )
+            if status != 200:
+                await interaction.followup.send(
+                    f"{NO} Invalid invite link!", ephemeral=True
+                )
+                return
+            guild = data.get("guild", {})
+            icon = guild.get("icon")
+            icon = (
+                f"https://cdn.discordapp.com/icons/{guild['id']}/{icon}.png"
+                if icon
+                else NO_ICON
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"{NO} Failed to validate invite!```{e}```", ephemeral=True
+            )
+            return
+
+        if ref("Blacklist", interaction.guild.id).child(guild["id"]).get():
+            await interaction.followup.send(
+                f"{NO} This server is blacklisted! If you believe this is a mistake, contact a server staff and ask them to unblacklist your server!",
+                ephemeral=True,
+            )
+            return
+
+        channel = interaction.guild.get_channel(config["request_channel"])
+        thread = await thread_for(channel, interaction.client.user.id, guild["id"])
+        if thread:
+            await interaction.followup.send(
+                f"{NO} A partnership thread for this server already exists: {thread.mention}",
+                ephemeral=True,
+            )
+            return
+
+        thread = await channel.create_thread(
+            name=f"🟡 {guild.get('name')}", type=discord.ChannelType.private_thread
+        )
+        await thread.add_user(interaction.user)
+
+        embed = thread_embed(
+            "New Partnership Request", data, "Requester", interaction.user
+        )
+        embed.set_thumbnail(url=icon)
+        ping = f"<@&{manager}>" if manager not in [None, ""] else ""
+        await thread.send(content=f"{ping} {self.invite_link}", embed=embed)
+
+        await _log_action(
+            interaction.client,
+            interaction.guild.id,
+            interaction.user,
+            f"New Partnership Request ({guild.get('name')})",
+            {
+                "Server ID": guild.get("id"),
+                "Server Name": guild.get("name"),
+                "Invite Link": f"https://discord.gg/{code}",
+                "Permanent Invite": permanent(data),
+                "Members": data.get("approximate_member_count", "Unknown"),
+            },
+            Button(
+                label="Go to thread",
+                style=discord.ButtonStyle.link,
+                url=thread.jump_url,
+            ),
+        )
+        await interaction.followup.send(
+            f"{YES} Request created in {thread.mention}", ephemeral=True
+        )
+        cooldown.set(datetime.datetime.now().timestamp())
+
+
+class EditPanelModal(Modal):
+    """Edits the panel's header or footer embed."""
+
+    def __init__(self, section, current):
+        super().__init__(title=f"Edit {section.capitalize()} Embed")
+        self.section = section
+        self.title_input = TextInput(
+            label="Title",
+            required=False,
+            placeholder="Enter an embed title",
+            default=current.get("title", ""),
+        )
+        self.description = TextInput(
+            label="Description",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            placeholder="Enter an embed description",
+            default=current.get("description", ""),
+        )
+        self.color = TextInput(
+            label="Color (hex code)",
+            required=False,
+            placeholder="e.g. #0f0f0f",
+            default=current.get("color", BLURPLE),
+        )
+        self.thumbnail = TextInput(
+            label="Thumbnail URL",
+            required=False,
+            placeholder="Enter an link for thumbnail image",
+            default=current.get("thumbnail", ""),
+        )
+        self.image = TextInput(
+            label="Image URL",
+            required=False,
+            placeholder="Enter an link for large image",
+            default=current.get("image", ""),
+        )
+        for field in (
+            self.title_input,
+            self.description,
+            self.color,
+            self.thumbnail,
+            self.image,
+        ):
+            self.add_item(field)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        updates = {
+            "title": self.title_input.value.strip() or None,
+            "description": self.description.value.strip() or None,
+            "color": self.color.value.strip() or BLURPLE,
+            "thumbnail": self.thumbnail.value.strip() or None,
+            "image": self.image.value.strip() or None,
+        }
+        section = ref("config", interaction.guild.id).child(f"embed/{self.section}")
+        existing = section.get() or {}
+        changes = {
+            key: value for key, value in updates.items() if value != existing.get(key)
+        }
+        if not changes:
+            await interaction.response.send_message(
+                f"{NO} No changes detected!", ephemeral=True
+            )
+            return
+
+        section.update(changes)
+        msg = await _update_panel(interaction.guild.id, interaction.client)
+        for key, value in changes.items():
+            if value is None:
+                section.child(key).delete()
+
+        await interaction.response.send_message(f"{msg}", ephemeral=True)
+        if "Failed to update panel" not in msg:
+            await _log_action(
+                interaction.client,
+                interaction.guild.id,
+                interaction.user,
+                f"Panel Edited ({self.section.capitalize()})",
+                changes,
+            )
+
+
+class EditGroupModal(Modal, title="Edit Partner Group"):
+    def __init__(self, original_name: str, current: dict):
+        super().__init__()
+        self.original_name = original_name
+        prefix = current.get("prefix", "-")
+        suffix = current.get("suffix", "")
+        self.name_input = TextInput(
+            label="Unique Group Name",
+            placeholder="Letters, numbers, underscores, hyphens",
+            default=original_name,
+            required=True,
+        )
+        self.title_input = TextInput(
+            label="Display Title",
+            default=current.get("title", ""),
+            required=False,
+        )
+        self.color = TextInput(
+            label="Color (hex)",
+            default=current.get("color", BLURPLE),
+            required=False,
+        )
+        self.prefix_suffix = TextInput(
+            label="Prefix, Suffix (separated by a comma)",
+            placeholder="Example: -, >",
+            default=f"{prefix}, {suffix}".strip(", "),
+            required=False,
+        )
+        self.thumbnail = TextInput(
+            label="Thumbnail URL",
+            default=current.get("thumbnail", ""),
+            required=False,
+        )
+        for field in (
+            self.name_input,
+            self.title_input,
+            self.color,
+            self.prefix_suffix,
+            self.thumbnail,
+        ):
+            self.add_item(field)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        new_name = self.name_input.value.strip()
+        prefix, _, suffix = self.prefix_suffix.value.partition(",")
+        updates = {
+            "title": self.title_input.value.strip() or new_name,
+            "color": self.color.value.strip(),
+            "prefix": prefix.strip(),
+            "suffix": suffix.strip(),
+            "thumbnail": self.thumbnail.value.strip() or None,
+        }
+
+        if not re.match(r"^[\w-]+$", new_name):
+            await interaction.response.send_message(
+                f"{NO} Invalid group name! Only letters, numbers, underscores, and hyphens allowed.",
+                ephemeral=True,
+            )
+            return
+
+        groups = ref("categories", interaction.guild.id)
+        if new_name.lower() != self.original_name.lower() and any(
+            name.lower() == new_name.lower() for name in groups.get() or {}
+        ):
+            await interaction.response.send_message(
+                f"{NO} Group name already exists!", ephemeral=True
+            )
+            return
+
+        if new_name != self.original_name:
+            groups.child(self.original_name).delete()
+            partners = ref("partners", interaction.guild.id)
+            for key, partner in (partners.get() or {}).items():
+                if partner.get("category") == self.original_name:
+                    partners.child(key).update({"category": new_name})
+
+        groups.child(new_name).update(updates)
+
+        msg = await _update_panel(interaction.guild.id, interaction.client)
+        await interaction.response.send_message(
+            f"{YES} Group updated! \n{msg}", ephemeral=True
+        )
+        await _log_action(
+            interaction.client,
+            interaction.guild.id,
+            interaction.user,
+            "Group Edited",
+            {"Original Name": self.original_name, "New Name": new_name, **updates},
+        )
 
 
 class Partner(commands.GroupCog, name="partner"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession()
         self.firebase_listener = PartnershipFirebaseListener(bot)
 
     async def cog_load(self):
@@ -448,184 +675,11 @@ class Partner(commands.GroupCog, name="partner"):
 
     async def cog_unload(self):
         self.firebase_listener.stop_listeners()
-        await self.session.close()
 
-    class PartnershipRequestModal(Modal, title="Partnership Request"):
-        invite_link = TextInput(
-            label="Your Server's Permanent Invite Link",
-            required=True,
-            placeholder="Other details will be fetched automatically.",
-        )
-
-        async def on_submit(self, interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
-            cooldown_ref = _cooldown_ref(interaction.guild.id, interaction.user.id)
-            last_request = cooldown_ref.get() or 0
-            config = _config_ref(interaction.guild.id).get()
-            cooldown_seconds = config.get("user_cooldown", 0)
-            partner_manager_role_id = config.get("partner_manager_role_id", None)
-
-            if datetime.datetime.now().timestamp() - last_request < cooldown_seconds:
-                remaining = int(
-                    cooldown_seconds
-                    - (datetime.datetime.now().timestamp() - last_request)
-                )
-                await interaction.followup.send(
-                    f"<:no:1036810470860013639> You're on cooldown! Try again in {remaining//3600}h {remaining%3600//60}m",
-                    ephemeral=True,
-                )
-                return
-
-            try:
-                code = self.invite_link.value.split("/")[-1]
-                # print(code)
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"https://discord.com/api/v9/invites/{code}",
-                        params={"with_counts": "true", "with_expiration": "true"},
-                    ) as resp:
-                        if resp.status != 200:
-                            await interaction.followup.send(
-                                "<:no:1036810470860013639> Invalid invite link!",
-                                ephemeral=True,
-                            )
-                            return
-
-                        data = await resp.json()
-                        guild_data = data.get("guild", {})
-                        expires_at = data.get("expires_at", None)
-                        is_permanent = expires_at is None
-
-                        icon_hash = guild_data.get("icon")
-                        server_icon_url = (
-                            f"https://cdn.discordapp.com/icons/{guild_data['id']}/{icon_hash}.png"
-                            if icon_hash
-                            else "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTEkPA5_-j6SudIbSZh-ExIs1eSeuCYIIRthjHfg0P2dbwUH2E&s"
-                        )
-
-            except Exception as e:
-                await interaction.followup.send(
-                    f"<:no:1036810470860013639> Failed to validate invite!```{e}```",
-                    ephemeral=True,
-                )
-                return
-
-            blacklisted = (
-                _blacklist_ref(interaction.guild.id).child(guild_data["id"]).get()
-            )
-            if blacklisted:
-                await interaction.followup.send(
-                    "<:no:1036810470860013639> This server is blacklisted! If you believe this is a mistake, contact a server staff and ask them to unblacklist your server!",
-                    ephemeral=True,
-                )
-                return
-
-            channel = interaction.guild.get_channel(config["request_channel"])
-            guild_id = guild_data["id"]
-            existing_threads = channel.threads
-            archived_threads = []
-            async for thread in channel.archived_threads():
-                archived_threads.append(thread)
-            all_threads = existing_threads + archived_threads
-            for thread in all_threads:
-                try:
-                    messages = [
-                        message
-                        async for message in thread.history(limit=2, oldest_first=True)
-                    ]
-                    for message in messages:
-                        if (
-                            message.author.id != interaction.client.user.id
-                            or len(message.embeds) == 0
-                        ):
-                            continue
-                        embed = message.embeds[0]
-                        for field in embed.fields:
-                            if field.name == "Server ID" and field.value == str(
-                                guild_id
-                            ):
-                                await interaction.followup.send(
-                                    f"<:no:1036810470860013639> A partnership thread for this server already exists: {thread.mention}",
-                                    ephemeral=True,
-                                )
-                                return
-                except Exception as e:
-                    print(e)
-                    continue
-
-            channel = interaction.guild.get_channel(config["request_channel"])
-            thread = await channel.create_thread(
-                name=f"🟡 {guild_data.get('name')}",
-                type=discord.ChannelType.private_thread,
-            )
-            await thread.add_user(interaction.user)
-
-            embed = discord.Embed(
-                title="New Partnership Request",
-                description=f"-# - Staff can use {SlashCommand('partner status')} to update the thread and {SlashCommand('partner add-partner')} to add partner to the panel.\n-# - Everyone here can use {SlashCommand('partner invite')} to invite other server reps/staff to this thread.",
-                color=0xFEE75C,
-            )
-
-            embed.add_field(name="Server ID", value=guild_id, inline=True)
-            embed.add_field(
-                name="Server Name", value=guild_data.get("name"), inline=True
-            )
-            embed.add_field(
-                name="Members",
-                value=data.get("approximate_member_count", "Unknown"),
-                inline=True,
-            )
-            embed.add_field(
-                name="Permanent Server Invite",
-                value=(
-                    "<:yes:1036811164891480194> Yes"
-                    if is_permanent
-                    else "<:no:1036810470860013639> No"
-                ),
-                inline=True,
-            )
-            embed.add_field(name="Requester ID", value=interaction.user.id, inline=True)
-            embed.add_field(
-                name="Requester Mention", value=interaction.user.mention, inline=True
-            )
-            embed.set_footer(text="Status: 🟡 Pending")
-            embed.set_thumbnail(url=server_icon_url)
-
-            ping_role = (
-                f"<@&{partner_manager_role_id}>"
-                if partner_manager_role_id not in [None, ""]
-                else ""
-            )
-            await thread.send(content=f"{ping_role} {self.invite_link}", embed=embed)
-
-            await _log_action(
-                interaction.client,
-                interaction.guild.id,
-                interaction.user,
-                f"New Partnership Request ({guild_data.get('name')})",
-                {
-                    "Server ID": guild_data.get("id"),
-                    "Server Name": guild_data.get("name"),
-                    "Invite Link": f"https://discord.gg/{code}",
-                    "Permanent Invite": (
-                        "<:yes:1036811164891480194> Yes"
-                        if is_permanent
-                        else "<:no:1036810470860013639> No"
-                    ),
-                    "Members": data.get("approximate_member_count", "Unknown"),
-                },
-                Button(
-                    label="Go to thread",
-                    style=discord.ButtonStyle.link,
-                    url=thread.jump_url,
-                ),
-            )
-            await interaction.followup.send(
-                f"<:yes:1036811164891480194> Request created in {thread.mention}",
-                ephemeral=True,
-            )
-            cooldown_ref.set(datetime.datetime.now().timestamp())
+    async def cog_app_command_error(
+        self, interaction: discord.Interaction, error: Exception
+    ):
+        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="status", description="Update partnership status")
     @app_commands.describe(status="New status", reason="Reason for status change")
@@ -637,7 +691,7 @@ class Partner(commands.GroupCog, name="partner"):
             app_commands.Choice(name="⚫ Blacklisted", value="blacklisted"),
         ]
     )
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_status(
         self,
         interaction: discord.Interaction,
@@ -646,47 +700,28 @@ class Partner(commands.GroupCog, name="partner"):
     ):
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "<:no:1036810470860013639> This command must be used in a partnership thread!",
+                f"{NO} This command must be used in a partnership thread!",
                 ephemeral=True,
             )
             return
 
-        status_emoji = {
-            "pending": "🟡",
-            "accepted": "🟢",
-            "rejected": "🔴",
-            "blacklisted": "⚫",
-        }[status]
+        emoji, colour = STATUSES[status]
+        old_name = interaction.channel.name
+        for mark, _ in STATUSES.values():
+            old_name = old_name.removeprefix(mark)
+        old_name = old_name.strip()
+        await interaction.channel.edit(name=f"{emoji} {old_name}")
 
-        old_name = (
-            interaction.channel.name.removeprefix("🟡")
-            .removeprefix("🟢")
-            .removeprefix("🔴")
-            .removeprefix("⚫")
-            .strip()
-        )
-        new_name = f"{status_emoji} {old_name}"
-        await interaction.channel.edit(name=new_name)
-
-        messages = [
-            message
-            async for message in interaction.channel.history(limit=2, oldest_first=True)
-        ]
-        for message in messages:
+        async for message in interaction.channel.history(limit=2, oldest_first=True):
             if (
                 message.author.id != interaction.client.user.id
                 or len(message.embeds) == 0
             ):
                 continue
             embed = message.embeds[0]
-            embed.color = {
-                "pending": 0xFEE75C,
-                "accepted": 0x57F287,
-                "rejected": 0xED4245,
-                "blacklisted": 0x000000,
-            }[status]
+            embed.color = colour
             embed.set_footer(
-                text=f"Status: {status_emoji} {status.capitalize()} | Reason: {reason}"
+                text=f"Status: {emoji} {status.capitalize()} | Reason: {reason}"
             )
             await message.edit(embed=embed)
 
@@ -694,20 +729,12 @@ class Partner(commands.GroupCog, name="partner"):
             interaction.client,
             interaction.guild.id,
             interaction.user,
-            f"Partner Status Updated {status_emoji}",
+            f"Partner Status Updated {emoji}",
             {"Server Name": old_name},
         )
-
         await interaction.response.send_message(
-            f"<:yes:1036811164891480194> Status updated to {status_emoji} {status}!",
-            ephemeral=True,
+            f"{YES} Status updated to {emoji} {status}!", ephemeral=True
         )
-
-    @partner_status.error
-    async def partner_status_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="invite",
@@ -719,151 +746,78 @@ class Partner(commands.GroupCog, name="partner"):
     ):
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "<:no:1036810470860013639> This command can only be used in partnership threads!",
+                f"{NO} This command can only be used in partnership threads!",
                 ephemeral=True,
             )
             return
 
-        thread = interaction.channel
         try:
-            await thread.add_user(user)
+            await interaction.channel.add_user(user)
             await interaction.response.send_message(
-                f"<:yes:1036811164891480194> {user.mention} has been added to the thread!",
-                ephemeral=True,
+                f"{YES} {user.mention} has been added to the thread!", ephemeral=True
             )
         except Exception:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Sorry, something went wrong!", ephemeral=True
+                f"{NO} Sorry, something went wrong!", ephemeral=True
             )
-
-    @partner_invite.error
-    async def partner_invite_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="create",
         description="Manually create a partnership thread (bypasses blacklist)",
     )
     @app_commands.describe(invite_link="Permanent invite link for the server")
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_create(self, interaction: discord.Interaction, invite_link: str):
         await interaction.response.defer(ephemeral=True)
-        config = _config_ref(interaction.guild.id).get()
+        config = ref("config", interaction.guild.id).get()
 
         try:
             code = invite_link.split("/")[-1]
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"https://discord.com/api/v9/invites/{code}",
-                    params={"with_counts": "true"},
-                ) as resp:
-                    if resp.status != 200:
-                        await interaction.followup.send(
-                            "<:no:1036810470860013639> Invalid invite link!",
-                            ephemeral=True,
-                        )
-                        return
-                    data = await resp.json()
-                    guild_data = data.get("guild", {})
-                    expires_at = data.get("expires_at", None)
-                    is_permanent = expires_at is None
+            status, data = await fetch_invite(code, with_counts="true")
+            if status != 200:
+                await interaction.followup.send(
+                    f"{NO} Invalid invite link!", ephemeral=True
+                )
+                return
+            guild = data.get("guild", {})
         except Exception as e:
             await interaction.followup.send(
-                f"<:no:1036810470860013639> Error validating invite: {e}",
-                ephemeral=True,
+                f"{NO} Error validating invite: {e}", ephemeral=True
             )
             return
 
         channel = interaction.guild.get_channel(config["request_channel"])
-        guild_id = guild_data["id"]
-        existing_threads = channel.threads
-        archived_threads = []
-        async for thread in channel.archived_threads():
-            archived_threads.append(thread)
-        all_threads = existing_threads + archived_threads
-        for thread in all_threads:
-            try:
-                messages = [
-                    message
-                    async for message in thread.history(limit=2, oldest_first=True)
-                ]
-                for message in messages:
-                    if (
-                        message.author.id != interaction.client.user.id
-                        or len(message.embeds) == 0
-                    ):
-                        continue
-                    embed = message.embeds[0]
-                    for field in embed.fields:
-                        if field.name == "Server ID" and field.value == str(guild_id):
-                            await interaction.followup.send(
-                                f"<:no:1036810470860013639> A partnership thread for this server already exists: {thread.mention}",
-                                ephemeral=True,
-                            )
-                            return
-            except Exception as e:
-                print(e)
-                continue
+        thread = await thread_for(channel, interaction.client.user.id, guild["id"])
+        if thread:
+            await interaction.followup.send(
+                f"{NO} A partnership thread for this server already exists: {thread.mention}",
+                ephemeral=True,
+            )
+            return
 
-        channel = interaction.guild.get_channel(config["request_channel"])
         thread = await channel.create_thread(
-            name=f"🟡 {guild_data.get('name')}", type=discord.ChannelType.private_thread
+            name=f"🟡 {guild.get('name')}", type=discord.ChannelType.private_thread
         )
-
-        embed = discord.Embed(
-            title="Partnership Thread (initiated by Staff)",
-            description=f"-# - Staff can use {SlashCommand('partner status')} to update the thread and {SlashCommand('partner add-partner')} to add partner to the panel.\n-# - Everyone here can use {SlashCommand('partner invite')} to invite other server reps/staff to this thread.",
-            color=0xFEE75C,
+        embed = thread_embed(
+            "Partnership Thread (initiated by Staff)", data, "Staff", interaction.user
         )
-
-        embed.add_field(name="Server ID", value=guild_id, inline=True)
-        embed.add_field(name="Server Name", value=guild_data.get("name"), inline=True)
-        embed.add_field(
-            name="Members",
-            value=data.get("approximate_member_count", "Unknown"),
-            inline=True,
-        )
-        embed.add_field(
-            name="Permanent Server Invite",
-            value=(
-                "<:yes:1036811164891480194> Yes"
-                if is_permanent
-                else "<:no:1036810470860013639> No"
-            ),
-            inline=True,
-        )
-        embed.add_field(name="Staff ID", value=interaction.user.id, inline=True)
-        embed.add_field(
-            name="Staff Mention", value=interaction.user.mention, inline=True
-        )
-
-        embed.set_footer(text="Status: 🟡 Pending")
-
         await thread.send(content=invite_link, embed=embed)
         await _log_action(
             interaction.client,
             interaction.guild.id,
             interaction.user,
-            f"Staff Partnership Thread Creation ({guild_data.get('name')})",
+            f"Staff Partnership Thread Creation ({guild.get('name')})",
             {
-                "Server ID": guild_data.get("id"),
-                "Server Name": guild_data.get("name"),
+                "Server ID": guild.get("id"),
+                "Server Name": guild.get("name"),
                 "Invite Link": f"https://discord.gg/{code}",
                 "Members": data.get("approximate_member_count", "Unknown"),
             },
         )
         await interaction.followup.send(
-            f"<:yes:1036811164891480194> Thread created: {thread.mention}. Use {SlashCommand('partner invite')} to invite server representatives to the thread!",
+            f"{YES} Thread created: {thread.mention}. Use {SlashCommand('partner invite')} to invite server representatives to the thread!",
             ephemeral=True,
         )
-
-    @partner_create.error
-    async def partner_create_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="blacklist", description="Blacklist a server from partnerships"
@@ -871,73 +825,55 @@ class Partner(commands.GroupCog, name="partner"):
     @app_commands.describe(
         invite_link="The invite link of server to blacklist (Leave blank to view blacklist)"
     )
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_blacklist(
         self, interaction: discord.Interaction, invite_link: Optional[str] = None
     ):
         if not invite_link:
-            blacklist = _blacklist_ref(interaction.guild.id).get() or {}
+            blacklist = ref("Blacklist", interaction.guild.id).get() or {}
             if not blacklist:
                 return await interaction.response.send_message(
                     "No servers are blacklisted!", ephemeral=True
                 )
 
             embed = discord.Embed(title="Blacklisted Server ID", color=0xFF0000)
-            embed.description = "\n".join([f"- `{gid}`" for gid in blacklist.keys()])
+            embed.description = "\n".join(f"- `{gid}`" for gid in blacklist.keys())
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         try:
-            code = invite_link.split("/")[-1]
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"https://discord.com/api/v9/invites/{code}"
-                ) as resp:
-                    data = await resp.json()
-                    guild_id = data["guild"]["id"]
+            _, data = await fetch_invite(invite_link.split("/")[-1])
+            guild_id = data["guild"]["id"]
         except Exception as e:
             await interaction.response.send_message(
-                f"<:no:1036810470860013639> Invalid invite: {e}", ephemeral=True
+                f"{NO} Invalid invite: {e}", ephemeral=True
             )
             return
 
-        _blacklist_ref(interaction.guild.id).child(guild_id).set(True)
+        ref("Blacklist", interaction.guild.id).child(guild_id).set(True)
         await interaction.response.send_message(
-            f"<:yes:1036811164891480194> Server {guild_id} blacklisted!", ephemeral=True
+            f"{YES} Server {guild_id} blacklisted!", ephemeral=True
         )
-
-    @partner_blacklist.error
-    async def partner_blacklist_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="unblacklist", description="Remove a server from blacklist"
     )
     @app_commands.describe(guild_id="Server ID to unblacklist")
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_unblacklist(
         self, interaction: discord.Interaction, guild_id: str
     ):
-        ref = _blacklist_ref(interaction.guild.id).child(guild_id)
-        if not ref.get():
+        server = ref("Blacklist", interaction.guild.id).child(guild_id)
+        if not server.get():
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Server not in blacklist!", ephemeral=True
+                f"{NO} Server not in blacklist!", ephemeral=True
             )
             return
 
-        ref.delete()
+        server.delete()
         await interaction.response.send_message(
-            f"<:yes:1036811164891480194> Server {guild_id} unblacklisted!",
-            ephemeral=True,
+            f"{YES} Server {guild_id} unblacklisted!", ephemeral=True
         )
-
-    @partner_unblacklist.error
-    async def partner_unblacklist_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="edit-panel", description="Edit panel embeds")
     @app_commands.describe(section="Section to edit")
@@ -947,148 +883,38 @@ class Partner(commands.GroupCog, name="partner"):
             app_commands.Choice(name="Footer", value="footer"),
         ]
     )
-    @app_commands.checks.has_permissions(
-        manage_webhooks=True, manage_channels=True, manage_messages=True
-    )
+    @EDITORS
     async def partner_edit_panel(self, interaction: discord.Interaction, section: str):
-        current_data = (
-            _config_ref(interaction.guild.id).child(f"embed/{section}").get() or {}
+        current = (
+            ref("config", interaction.guild.id).child(f"embed/{section}").get() or {}
         )
-
-        class EditPanelModal(Modal, title=f"Edit {section.capitalize()} Embed"):
-            title_input = TextInput(
-                label="Title",
-                required=False,
-                placeholder="Enter an embed title",
-                default=current_data.get("title", ""),
-            )
-            description = TextInput(
-                label="Description",
-                style=discord.TextStyle.paragraph,
-                required=False,
-                placeholder="Enter an embed description",
-                default=current_data.get("description", ""),
-            )
-            color = TextInput(
-                label="Color (hex code)",
-                required=False,
-                placeholder="e.g. #0f0f0f",
-                default=current_data.get("color", "#5865F2"),
-            )
-            thumbnail = TextInput(
-                label="Thumbnail URL",
-                required=False,
-                placeholder="Enter an link for thumbnail image",
-                default=current_data.get("thumbnail", ""),
-            )
-            image = TextInput(
-                label="Image URL",
-                required=False,
-                placeholder="Enter an link for large image",
-                default=current_data.get("image", ""),
-            )
-
-            async def on_submit(self, modal_interaction: discord.Interaction):
-                raw_updates = {
-                    "title": self.title_input.value.strip(),
-                    "description": self.description.value.strip(),
-                    "color": self.color.value.strip(),
-                    "thumbnail": self.thumbnail.value.strip(),
-                    "image": self.image.value.strip(),
-                }
-
-                updates = {k: (v if v != "" else None) for k, v in raw_updates.items()}
-
-                if updates.get("color") is None:
-                    updates["color"] = "#5865F2"
-
-                existing_data = (
-                    _config_ref(modal_interaction.guild.id)
-                    .child(f"embed/{section}")
-                    .get()
-                    or {}
-                )
-
-                final_updates = {}
-                for key, value in updates.items():
-                    if value != existing_data.get(key):
-                        final_updates[key] = value
-
-                if final_updates:
-                    _config_ref(modal_interaction.guild.id).child(
-                        f"embed/{section}"
-                    ).update(final_updates)
-                else:
-                    await modal_interaction.response.send_message(
-                        "<:no:1036810470860013639> No changes detected!", ephemeral=True
-                    )
-                    return
-
-                msg = await _update_panel(
-                    modal_interaction.guild.id, interaction.client
-                )
-
-                for key, value in final_updates.items():
-                    if value is None:
-                        _config_ref(modal_interaction.guild.id).child(
-                            f"embed/{section}/{key}"
-                        ).delete()
-
-                await modal_interaction.response.send_message(f"{msg}", ephemeral=True)
-
-                if "Failed to update panel" not in msg:
-                    await _log_action(
-                        interaction.client,
-                        modal_interaction.guild.id,
-                        modal_interaction.user,
-                        f"Panel Edited ({section.capitalize()})",
-                        final_updates or {"No changes": "N/A"},
-                    )
-
-        await interaction.response.send_modal(EditPanelModal())
-
-    @partner_edit_panel.error
-    async def partner_edit_panel_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+        await interaction.response.send_modal(EditPanelModal(section, current))
 
     @app_commands.command(name="disable", description="Disable partnership system")
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_disable(self, interaction: discord.Interaction):
-        config_ref = _config_ref(interaction.guild.id)
-        if not config_ref.get():
+        config = ref("config", interaction.guild.id)
+        if not config.get():
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Partnership system not enabled!",
-                ephemeral=True,
+                f"{NO} Partnership system not enabled!", ephemeral=True
             )
             return
 
-        panel = _panel_ref(interaction.guild.id).get()
+        panel = ref("panels", interaction.guild.id).get()
         if panel:
             try:
                 channel = self.bot.get_channel(panel.get("channel_id"))
-                if channel:
-                    if "message_ids" in panel:
-                        for msg_id in panel["message_ids"]:
-                            try:
-                                message = await channel.fetch_message(msg_id)
-                                await message.delete()
-                            except (discord.NotFound, discord.Forbidden):
-                                pass
-                    elif "message_id" in panel:
-                        try:
-                            message = await channel.fetch_message(panel["message_id"])
-                            await message.delete()
-                        except (discord.NotFound, discord.Forbidden):
-                            pass
+                for message_id in panel_messages(panel) if channel else ():
+                    try:
+                        await (await channel.fetch_message(message_id)).delete()
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
             except Exception as e:
                 print(f"[Partnership] Error deleting panel messages: {e}")
 
-        config_ref.delete()
-        _panel_ref(interaction.guild.id).delete()
-        _categories_ref(interaction.guild.id).delete()
-        _partners_ref(interaction.guild.id).delete()
+        config.delete()
+        for name in ("panels", "categories", "partners"):
+            ref(name, interaction.guild.id).delete()
 
         await _log_action(
             interaction.client,
@@ -1097,28 +923,20 @@ class Partner(commands.GroupCog, name="partner"):
             "Partnership System Disabled",
             {"Status": "All configurations removed"},
         )
-
         await interaction.response.send_message(
-            "<:yes:1036811164891480194> Partnership system disabled! All configurations removed.",
+            f"{YES} Partnership system disabled! All configurations removed.",
             ephemeral=True,
         )
 
-    @partner_disable.error
-    async def partner_disable_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
-
     @app_commands.command(name="send-panel", description="Send the partnership panel")
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_send_panel(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        config = _config_ref(interaction.guild.id).get()
+        config = ref("config", interaction.guild.id).get()
         if not config:
             await interaction.followup.send(
-                "<:no:1036810470860013639> Partnership system not enabled!",
-                ephemeral=True,
+                f"{NO} Partnership system not enabled!", ephemeral=True
             )
             return
 
@@ -1126,30 +944,22 @@ class Partner(commands.GroupCog, name="partner"):
             channel = self.bot.get_channel(config["panel_channel"])
             if not channel:
                 await interaction.followup.send(
-                    "<:no:1036810470860013639> Panel channel not found!", ephemeral=True
+                    f"{NO} Panel channel not found!", ephemeral=True
                 )
                 return
 
-            all_embeds = await _build_panel_embeds(interaction.guild.id)
-            embed_groups = _group_embeds_by_message_limit(all_embeds, limit=6000)
+            embeds = await _build_panel_embeds(interaction.guild.id)
+            groups = _group_embeds_by_message_limit(embeds)
+            messages = []
+            for index, group in enumerate(groups):
+                message = await channel.send(
+                    embeds=group, view=request_view(index == len(groups) - 1)
+                )
+                messages.append(message.id)
 
-            new_message_ids = []
-
-            for group_idx, embed_group in enumerate(embed_groups):
-                is_last_group = group_idx == len(embed_groups) - 1
-
-                view = None
-                if is_last_group:
-                    view = View()
-                    view.add_item(PartnerRequestButton())
-
-                message = await channel.send(embeds=embed_group, view=view)
-                new_message_ids.append(message.id)
-
-            _panel_ref(interaction.guild.id).set(
-                {"message_ids": new_message_ids, "channel_id": channel.id}
+            ref("panels", interaction.guild.id).set(
+                {"message_ids": messages, "channel_id": channel.id}
             )
-
             await _log_action(
                 interaction.client,
                 interaction.guild.id,
@@ -1157,66 +967,49 @@ class Partner(commands.GroupCog, name="partner"):
                 "Panel Sent",
                 {
                     "Channel": channel.mention,
-                    "Message Count": len(new_message_ids),
-                    "Embed Count": len(all_embeds),
+                    "Message Count": len(messages),
+                    "Embed Count": len(embeds),
                 },
             )
-
             await interaction.followup.send(
-                f"<:yes:1036811164891480194> Partnership panel sent! ({len(new_message_ids)} message{'s' if len(new_message_ids) != 1 else ''}, {len(all_embeds)} embed{'s' if len(all_embeds) != 1 else ''})\n*All other panels sent previously will no longer automatically update.*",
+                f"{YES} Partnership panel sent! ({plural(len(messages), 'message')}, {plural(len(embeds), 'embed')})\n*All other panels sent previously will no longer automatically update.*",
                 ephemeral=True,
             )
         except Exception as e:
             await interaction.followup.send(
-                f"<:no:1036810470860013639> Failed to send panel: {e}", ephemeral=True
+                f"{NO} Failed to send panel: {e}", ephemeral=True
             )
-
-    @partner_send_panel.error
-    async def partner_send_panel_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="update-panel", description="Manually update the partnership panel"
     )
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_update_panel(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
-        config = _config_ref(interaction.guild.id).get()
-        if not config:
+        if not ref("config", interaction.guild.id).get():
             await interaction.followup.send(
-                "<:no:1036810470860013639> Partnership system not enabled!",
-                ephemeral=True,
+                f"{NO} Partnership system not enabled!", ephemeral=True
             )
             return
 
-        panel = _panel_ref(interaction.guild.id).get()
-        if not panel:
+        if not ref("panels", interaction.guild.id).get():
             await interaction.followup.send(
-                "<:no:1036810470860013639> No panel found! Use `/partner send-panel` first.",
+                f"{NO} No panel found! Use `/partner send-panel` first.",
                 ephemeral=True,
             )
             return
 
         result = await _update_panel(interaction.guild.id, self.bot)
-
         if result and "Failed" not in result:
             await interaction.followup.send(
                 f"{result}\n*Panel updated successfully.*", ephemeral=True
             )
         else:
             await interaction.followup.send(
-                f"{result or '<:no:1036810470860013639> Update failed for unknown reason.'}",
+                f"{result or f'{NO} Update failed for unknown reason.'}",
                 ephemeral=True,
             )
-
-    @partner_update_panel.error
-    async def partner_update_panel_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="add-group",
@@ -1230,7 +1023,7 @@ class Partner(commands.GroupCog, name="partner"):
         suffix="Line suffix (default: None)",
         thumbnail="Thumbnail URL (optional)",
     )
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_add_group(
         self,
         interaction: discord.Interaction,
@@ -1243,19 +1036,19 @@ class Partner(commands.GroupCog, name="partner"):
     ):
         if not re.match(r"^[\w-]+$", name):
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Group name can only contain letters, numbers, underscores and hyphens!",
+                f"{NO} Group name can only contain letters, numbers, underscores and hyphens!",
                 ephemeral=True,
             )
             return
 
-        categories = _categories_ref(interaction.guild.id).get()
-        if name.lower() in [k.lower() for k in (categories or {})]:
+        groups = ref("categories", interaction.guild.id)
+        if name.lower() in [group.lower() for group in (groups.get() or {})]:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Group already exists!", ephemeral=True
+                f"{NO} Group already exists!", ephemeral=True
             )
             return
 
-        _categories_ref(interaction.guild.id).child(name).set(
+        groups.child(name).set(
             {
                 "title": title or name,
                 "color": color,
@@ -1265,7 +1058,6 @@ class Partner(commands.GroupCog, name="partner"):
                 "created_at": datetime.datetime.now().timestamp(),
             }
         )
-
         await _log_action(
             interaction.client,
             interaction.guild.id,
@@ -1280,171 +1072,48 @@ class Partner(commands.GroupCog, name="partner"):
                 "Thumbnail": thumbnail or "None",
             },
         )
-
         await interaction.response.send_message(
-            f"<:yes:1036811164891480194> Group '{name}' created! To delete a group, use {SlashCommand('partner remove-group')}.",
+            f"{YES} Group '{name}' created! To delete a group, use {SlashCommand('partner remove-group')}.",
             ephemeral=True,
         )
-
-    @partner_add_group.error
-    async def partner_add_group_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="edit-group", description="Edit an existing partner group"
     )
     @app_commands.describe(group="Group to edit")
     @app_commands.autocomplete(group=category_autocomplete)
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_edit_group(self, interaction: discord.Interaction, group: str):
-        categories = _categories_ref(interaction.guild.id).get() or {}
-        if group not in categories:
+        groups = ref("categories", interaction.guild.id).get() or {}
+        if group not in groups:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Group not found!", ephemeral=True
+                f"{NO} Group not found!", ephemeral=True
             )
             return
 
-        current_data = categories[group]
-
-        class EditGroupModal(Modal, title="Edit Partner Group"):
-            def __init__(self, original_name: str):
-                super().__init__()
-                self.original_name = original_name
-
-                prefix = current_data.get("prefix", "-")
-                suffix = current_data.get("suffix", "")
-                prefix_suffix_default = f"{prefix}, {suffix}".strip(", ")
-
-                self.name_input = TextInput(
-                    label="Unique Group Name",
-                    placeholder="Letters, numbers, underscores, hyphens",
-                    default=original_name,
-                    required=True,
-                )
-                self.title_input = TextInput(
-                    label="Display Title",
-                    default=current_data.get("title", ""),
-                    required=False,
-                )
-                self.color = TextInput(
-                    label="Color (hex)",
-                    default=current_data.get("color", "#5865F2"),
-                    required=False,
-                )
-                self.prefix_suffix = TextInput(
-                    label="Prefix, Suffix (separated by a comma)",
-                    placeholder="Example: -, >",
-                    default=prefix_suffix_default,
-                    required=False,
-                )
-                self.thumbnail = TextInput(
-                    label="Thumbnail URL",
-                    default=current_data.get("thumbnail", ""),
-                    required=False,
-                )
-
-                self.add_item(self.name_input)
-                self.add_item(self.title_input)
-                self.add_item(self.color)
-                self.add_item(self.prefix_suffix)
-                self.add_item(self.thumbnail)
-
-            async def on_submit(self, modal_interaction: discord.Interaction):
-                new_name = self.name_input.value.strip()
-                prefix_suffix = self.prefix_suffix.value.split(",", 1)
-                prefix = prefix_suffix[0].strip() if len(prefix_suffix) > 0 else "-"
-                suffix = prefix_suffix[1].strip() if len(prefix_suffix) > 1 else ""
-
-                updates = {
-                    "title": self.title_input.value.strip() or new_name,
-                    "color": self.color.value.strip(),
-                    "prefix": prefix,
-                    "suffix": suffix,
-                    "thumbnail": self.thumbnail.value.strip() or None,
-                }
-
-                if not re.match(r"^[\w-]+$", new_name):
-                    await modal_interaction.response.send_message(
-                        "<:no:1036810470860013639> Invalid group name! Only letters, numbers, underscores, and hyphens allowed.",
-                        ephemeral=True,
-                    )
-                    return
-
-                categories_ref = _categories_ref(modal_interaction.guild.id)
-                existing_groups = categories_ref.get() or {}
-
-                if new_name.lower() != self.original_name.lower() and any(
-                    name.lower() == new_name.lower() for name in existing_groups
-                ):
-                    await modal_interaction.response.send_message(
-                        "<:no:1036810470860013639> Group name already exists!",
-                        ephemeral=True,
-                    )
-                    return
-
-                if new_name != self.original_name:
-                    categories_ref.child(self.original_name).delete()
-                    partners_ref = _partners_ref(modal_interaction.guild.id)
-                    partners = partners_ref.get() or {}
-                    for p_id, p_data in partners.items():
-                        if p_data.get("category") == self.original_name:
-                            partners_ref.child(p_id).update({"category": new_name})
-
-                categories_ref.child(new_name).update(updates)
-
-                msg = await _update_panel(
-                    modal_interaction.guild.id, modal_interaction.client
-                )
-                await modal_interaction.response.send_message(
-                    f"<:yes:1036811164891480194> Group updated! \n{msg}", ephemeral=True
-                )
-
-                await _log_action(
-                    modal_interaction.client,
-                    modal_interaction.guild.id,
-                    modal_interaction.user,
-                    "Group Edited",
-                    {
-                        "Original Name": self.original_name,
-                        "New Name": new_name,
-                        **updates,
-                    },
-                )
-
-        modal = EditGroupModal(group)
-        await interaction.response.send_modal(modal)
-
-    @partner_edit_group.error
-    async def partner_edit_group_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+        await interaction.response.send_modal(EditGroupModal(group, groups[group]))
 
     @app_commands.command(
         name="remove-group", description="⚠️ Remove a group and ALL its partners"
     )
     @app_commands.describe(name="Group name to remove")
     @app_commands.autocomplete(name=category_autocomplete)
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_remove_group(self, interaction: discord.Interaction, name: str):
-        categories = _categories_ref(interaction.guild.id).get()
-        if not categories or name not in categories:
+        groups = ref("categories", interaction.guild.id)
+        if name not in (groups.get() or {}):
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Group not found!", ephemeral=True
+                f"{NO} Group not found!", ephemeral=True
             )
             return
 
-        partners = _partners_ref(interaction.guild.id).get() or {}
-        deleted_count = 0
-
-        for partner_id, partner_data in partners.items():
-            if partner_data.get("category") == name:
-                _partners_ref(interaction.guild.id).child(partner_id).delete()
-                deleted_count += 1
-
-        _categories_ref(interaction.guild.id).child(name).delete()
+        partners = ref("partners", interaction.guild.id)
+        deleted = 0
+        for key, partner in (partners.get() or {}).items():
+            if partner.get("category") == name:
+                partners.child(key).delete()
+                deleted += 1
+        groups.child(name).delete()
 
         await _update_panel(interaction.guild.id, interaction.client)
         await _log_action(
@@ -1452,18 +1121,12 @@ class Partner(commands.GroupCog, name="partner"):
             interaction.guild.id,
             interaction.user,
             "Group Removed",
-            {"Group Name": name, "Partners Deleted": deleted_count},
+            {"Group Name": name, "Partners Deleted": deleted},
         )
         await interaction.response.send_message(
-            f"<:yes:1036811164891480194> Group '{name}' and its {deleted_count} partner(s) were permanently deleted!",
+            f"{YES} Group '{name}' and its {deleted} partner(s) were permanently deleted!",
             ephemeral=True,
         )
-
-    @partner_remove_group.error
-    async def partner_remove_group_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="setup", description="Set up partnership system")
     @app_commands.describe(
@@ -1474,7 +1137,7 @@ class Partner(commands.GroupCog, name="partner"):
         partner_manager_role="Staff role to ping for new partnership requests (default: None)",
         user_cooldown="Cooldown between user requests (format: 3d12h45m; default: 0)",
     )
-    @app_commands.checks.has_permissions(manage_webhooks=True, manage_channels=True)
+    @STAFF
     async def partner_setup(
         self,
         interaction: discord.Interaction,
@@ -1483,40 +1146,29 @@ class Partner(commands.GroupCog, name="partner"):
         request_channel: discord.TextChannel,
         panel_channel: discord.TextChannel,
         partner_manager_role: discord.Role = None,
-        user_cooldown: str = "0m",  # Default cooldown set to 0
+        user_cooldown: str = "0m",
     ):
-        def format_pretty(days: int, hours: int, minutes: int) -> str:
-            parts = []
-            if days:
-                parts.append(f"{days} day{'s' if days != 1 else ''}")
-            if hours:
-                parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
-            if minutes:
-                parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-            return ", ".join(parts) if parts else "None"
-
-        seconds = 0
         match = re.fullmatch(r"(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?", user_cooldown)
-        if match:
-            days = int(match.group(1)) if match.group(1) else 0
-            hours = int(match.group(2)) if match.group(2) else 0
-            minutes = int(match.group(3)) if match.group(3) else 0
-            seconds = days * 86400 + hours * 3600 + minutes * 60
-            pretty_cooldown = format_pretty(days, hours, minutes)
-        else:
+        if not match:
             await interaction.response.send_message(
                 "⚠️ Invalid cooldown format. Use something like `3d12h45m`, `5h`, or `30m`.",
                 ephemeral=True,
             )
             return
+        days, hours, minutes = (int(part or 0) for part in match.groups())
+        pretty = ", ".join(
+            plural(count, word)
+            for count, word in ((days, "day"), (hours, "hour"), (minutes, "minute"))
+            if count
+        )
 
-        _config_ref(interaction.guild.id).update(
+        ref("config", interaction.guild.id).update(
             {
                 "log_channel": log_channel.id,
                 "partner_role": partner_role.id,
                 "request_channel": request_channel.id,
                 "panel_channel": panel_channel.id,
-                "user_cooldown": seconds,
+                "user_cooldown": days * 86400 + hours * 3600 + minutes * 60,
                 "partner_manager_role_id": (
                     str(partner_manager_role.id)
                     if partner_manager_role is not None
@@ -1527,7 +1179,7 @@ class Partner(commands.GroupCog, name="partner"):
         )
 
         embed = discord.Embed(
-            title="<:yes:1036811164891480194> Partnership System Setup Complete!",
+            title=f"{YES} Partnership System Setup Complete!",
             description=(
                 "Here are something you can do next to make everything work:\n"
                 f"- Check out {panel_channel.mention} and {request_channel.mention} and follow the instructions there.\n"
@@ -1552,62 +1204,51 @@ class Partner(commands.GroupCog, name="partner"):
                 if partner_manager_role is not None
                 else "None"
             ),
-            "User Cooldown": pretty_cooldown,
+            "User Cooldown": pretty or "None",
         }
-
         for name, value in fields.items():
             embed.add_field(name=name, value=value, inline=True)
-
         await interaction.response.send_message(embed=embed)
 
         try:
-            view = View()
-            view.add_item(PartnerRequestButton())
-            panel_message = await panel_channel.send(
-                embeds=await _build_panel_embeds(interaction.guild.id), view=view
+            panel = await panel_channel.send(
+                embeds=await _build_panel_embeds(interaction.guild.id),
+                view=request_view(True),
             )
-            _panel_ref(interaction.guild.id).set(
-                {"message_id": panel_message.id, "channel_id": panel_channel.id}
+            ref("panels", interaction.guild.id).set(
+                {"message_id": panel.id, "channel_id": panel_channel.id}
             )
 
-            log_embed = discord.Embed(
-                description="📝 This channel will be used for logging all partnership-related actions.",
-                color=0x5865F2,
+            await log_channel.send(
+                embed=discord.Embed(
+                    description="📝 This channel will be used for logging all partnership-related actions.",
+                    color=0x5865F2,
+                )
             )
-            await log_channel.send(embed=log_embed)
 
-            instructions_embed = discord.Embed(
+            instructions = discord.Embed(
                 title="Partnership Request Instructions", color=0x5865F2
             )
-            instructions_embed.add_field(
+            instructions.add_field(
                 name="For Server Representatives",
-                value=f"1. Click `Request Partnership` **[here]({panel_message.jump_url})** in {panel_channel.mention}\n2. Check existing threads using:\n  - **Threads <:thread_icon:1366092363822268598> button** at channel top\n  - **Channel Sidebar** on desktop (hover → 'See All')",
+                value=f"1. Click `Request Partnership` **[here]({panel.jump_url})** in {panel_channel.mention}\n2. Check existing threads using:\n  - **Threads <:thread_icon:1366092363822268598> button** at channel top\n  - **Channel Sidebar** on desktop (hover → 'See All')",
                 inline=False,
             )
-            instructions_embed.add_field(
+            instructions.add_field(
                 name="For Staff Only",
                 value=f"- Manage partnership requests in threads. Use the methods above to access all the threads.\n- Use {SlashCommand('partner create')} to manually create a partnership thread.",
                 inline=False,
             )
-            instructions_embed.set_image(
-                url="https://media.discordapp.net/attachments/1106727534479032341/1366102857366896781/thread_instructions.png?ex=680fb9ee&is=680e686e&hm=4a80c4dda380d4b3e5ef7781576a9be6981e909a0179780e50dc605b1a4570c1&="
-            )
-            instructions_embed.set_footer(
+            instructions.set_image(url=THREADS_PICTURE)
+            instructions.set_footer(
                 text="You may delete/replace this message if you wish to."
             )
-            await request_channel.send(embed=instructions_embed)
-
+            await request_channel.send(embed=instructions)
         except Exception as e:
             await interaction.followup.send(
                 f"⚠️ Partially completed setup: {type(e).__name__} - {str(e)}",
                 ephemeral=True,
             )
-
-    @partner_setup.error
-    async def partner_setup_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(
         name="mass-add-partner",
@@ -1618,55 +1259,37 @@ class Partner(commands.GroupCog, name="partner"):
         content="Formatted partner list (each line: [Server Name](invite_link))",
     )
     @app_commands.autocomplete(group=category_autocomplete)
-    @app_commands.checks.has_permissions(
-        manage_webhooks=True, manage_channels=True, manage_messages=True
-    )
+    @EDITORS
     async def partner_mass_add(
         self, interaction: discord.Interaction, group: str, content: str
     ):
         await interaction.response.defer(ephemeral=True)
 
-        categories = _categories_ref(interaction.guild.id).get()
-        if not categories or group not in categories:
+        if group not in (ref("categories", interaction.guild.id).get() or {}):
             await interaction.followup.send(
-                f"<:no:1036810470860013639> Invalid group! Create groups first using {SlashCommand('partner add-group')}.",
+                f"{NO} Invalid group! Create groups first using {SlashCommand('partner add-group')}.",
                 ephemeral=True,
             )
             return
 
-        pattern = r"\[([^\]]+)\]\(([^)]+)\)"
-        lines = content.splitlines()
-        added_count = 0
+        added = 0
         errors = []
-
-        for i, line in enumerate(lines, 1):
-            line = line.strip()
-            if not line:
+        for number, line in enumerate(content.splitlines(), 1):
+            if not line.strip():
                 continue
-
-            match = re.search(pattern, line)
+            match = re.search(r"\[([^\]]+)\]\(([^)]+)\)", line.strip())
             if not match:
-                errors.append(f"Line {i}: Invalid format")
+                errors.append(f"Line {number}: Invalid format")
                 continue
-
-            name = match.group(1)
-            url = match.group(2)
-
-            if "discord.gg/" in url:
-                code = url.split("discord.gg/")[-1].split("/")[0]
-            elif "discord.com/invite/" in url:
-                code = url.split("discord.com/invite/")[-1].split("/")[0]
-            else:
-                code = url.rstrip("/").split("/")[-1]
-
+            code = invite_code(match.group(2))
             if not code:
-                errors.append(f"Line {i}: Couldn't extract invite code")
+                errors.append(f"Line {number}: Couldn't extract invite code")
                 continue
 
             try:
-                _partners_ref(interaction.guild.id).push().set(
+                ref("partners", interaction.guild.id).push().set(
                     {
-                        "name": name,
+                        "name": match.group(1),
                         "invite": code,
                         "member_count": 0,
                         "staff_id": interaction.user.id,
@@ -1674,19 +1297,18 @@ class Partner(commands.GroupCog, name="partner"):
                         "category": group,
                     }
                 )
-                added_count += 1
+                added += 1
             except Exception as e:
-                errors.append(f"Line {i}: {str(e)}")
+                errors.append(f"Line {number}: {str(e)}")
 
         update_msg = await _update_panel(interaction.guild.id, interaction.client)
 
-        response = f"<:yes:1036811164891480194> Added {added_count} partners to group `{group}`!\n{update_msg}"
+        response = f"{YES} Added {added} partners to group `{group}`!\n{update_msg}"
         if errors:
             error_list = "\n".join(errors[:5])
             if len(errors) > 5:
                 error_list += f"\n...and {len(errors)-5} more errors"
             response += f"\n\n**Errors:**\n{error_list}"
-
         await interaction.followup.send(response, ephemeral=True)
 
         await _log_action(
@@ -1694,14 +1316,8 @@ class Partner(commands.GroupCog, name="partner"):
             interaction.guild.id,
             interaction.user,
             "Mass Partner Add",
-            {"Group": group, "Added Count": added_count, "Error Count": len(errors)},
+            {"Group": group, "Added Count": added, "Error Count": len(errors)},
         )
-
-    @partner_mass_add.error
-    async def partner_mass_add_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
     @app_commands.command(name="add-partner", description="Add a partner server")
     @app_commands.describe(
@@ -1711,9 +1327,7 @@ class Partner(commands.GroupCog, name="partner"):
         server_rep="The server's representative to get the partner role",
     )
     @app_commands.autocomplete(group=category_autocomplete)
-    @app_commands.checks.has_permissions(
-        manage_webhooks=True, manage_channels=True, manage_messages=True
-    )
+    @EDITORS
     async def add_partner(
         self,
         interaction: discord.Interaction,
@@ -1723,132 +1337,84 @@ class Partner(commands.GroupCog, name="partner"):
         server_rep: discord.User = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        categories = _categories_ref(interaction.guild.id).get()
-        if not categories or group not in categories:
+        if group not in (ref("categories", interaction.guild.id).get() or {}):
             await interaction.followup.send(
-                f"<:no:1036810470860013639> Invalid group! Create groups first using {SlashCommand('partner add-group')}.",
+                f"{NO} Invalid group! Create groups first using {SlashCommand('partner add-group')}.",
                 ephemeral=True,
             )
             return
 
         if server_rep is not None:
-            config = _config_ref(interaction.guild.id).get()
-            partner_role_id = config.get("partner_role", {})
+            config = ref("config", interaction.guild.id).get()
             try:
                 await server_rep.add_roles(
-                    interaction.guild.get_role(int(partner_role_id))
+                    interaction.guild.get_role(int(config.get("partner_role", {})))
                 )
             except Exception:
                 await interaction.followup.send(
-                    "<:no:1036810470860013639> Invalid partner role. Double check to see if the role has been deleted.",
+                    f"{NO} Invalid partner role. Double check to see if the role has been deleted.",
                     ephemeral=True,
                 )
                 return
 
-        if invite_link.isdigit():  # Bot application ID
-            _partners_ref(interaction.guild.id).push().set(
-                {
-                    "name": name,
-                    "invite": invite_link,
-                    "member_count": "N/A",
-                    "staff_id": interaction.user.id,
-                    "created_at": int(datetime.datetime.now().timestamp()),
-                    "category": group,
-                }
-            )
-
-            await _update_panel(interaction.guild.id, interaction.client)
-            await _log_action(
-                interaction.client,
-                interaction.guild.id,
-                interaction.user,
-                "Bot Partner Added",
-                {
-                    "Server Name": name,
-                    "Invite Code": invite_link,
-                    "Category": group,
-                    "Member Count": "N/A",
-                },
-            )
-            await interaction.followup.send(
-                "<:yes:1036811164891480194> Bot partner added!", ephemeral=True
-            )
-        else:
+        bot = invite_link.isdigit()
+        code, members = invite_link, "N/A"
+        if not bot:
             try:
                 code = invite_link.split("/")[-1]
-                # print(code)
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"https://discord.com/api/v9/invites/{code}",
-                        params={"with_counts": "true", "with_expiration": "true"},
-                    ) as resp:
-                        if resp.status != 200:
-                            await interaction.followup.send(
-                                "<:no:1036810470860013639> Invalid invite link!",
-                                ephemeral=True,
-                            )
-                            return
-
-                        data = await resp.json()
-                        guild_data = data.get("guild", {})
-                        expires_at = data.get("expires_at", None)
-                        is_permanent = expires_at is None
-
-                        if not is_permanent:
-                            await interaction.followup.send(
-                                "<:no:1036810470860013639> Invite link is not permanent.",
-                                ephemeral=True,
-                            )
-                            return
-
+                status, data = await fetch_invite(
+                    code, with_counts="true", with_expiration="true"
+                )
+                if status != 200:
+                    await interaction.followup.send(
+                        f"{NO} Invalid invite link!", ephemeral=True
+                    )
+                    return
+                if data.get("expires_at", None) is not None:
+                    await interaction.followup.send(
+                        f"{NO} Invite link is not permanent.", ephemeral=True
+                    )
+                    return
+                members = data.get("approximate_member_count", 0)
             except Exception as e:
                 await interaction.followup.send(
-                    f"<:no:1036810470860013639> Failed to validate invite!```{e}```",
-                    ephemeral=True,
+                    f"{NO} Failed to validate invite!```{e}```", ephemeral=True
                 )
                 return
 
-            _partners_ref(interaction.guild.id).push().set(
-                {
-                    "name": name,
-                    "invite": code,
-                    "member_count": guild_data.get("approximate_member_count", 0),
-                    "staff_id": interaction.user.id,
-                    "created_at": int(datetime.datetime.now().timestamp()),
-                    "category": group,
-                }
-            )
-
-            await _update_panel(interaction.guild.id, interaction.client)
-            await _log_action(
-                interaction.client,
-                interaction.guild.id,
-                interaction.user,
-                "Partner Added",
-                {
-                    "Server Name": name,
-                    "Invite Code": code,
-                    "Category": group,
-                    "Member Count": data.get("approximate_member_count", 0),
-                },
-            )
-            await interaction.followup.send(
-                "<:yes:1036811164891480194> Partner server added!", ephemeral=True
-            )
-
-    @add_partner.error
-    async def add_partner_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+        ref("partners", interaction.guild.id).push().set(
+            {
+                "name": name,
+                "invite": code,
+                "member_count": members,
+                "staff_id": interaction.user.id,
+                "created_at": int(datetime.datetime.now().timestamp()),
+                "category": group,
+            }
+        )
+        await _update_panel(interaction.guild.id, interaction.client)
+        await _log_action(
+            interaction.client,
+            interaction.guild.id,
+            interaction.user,
+            "Bot Partner Added" if bot else "Partner Added",
+            {
+                "Server Name": name,
+                "Invite Code": code,
+                "Category": group,
+                "Member Count": members,
+            },
+        )
+        await interaction.followup.send(
+            f"{YES} Bot partner added!" if bot else f"{YES} Partner server added!",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="remove-partner", description="Remove a partner server")
     @app_commands.describe(
         server_name="Server name to remove", invite="Invite link to remove"
     )
-    @app_commands.checks.has_permissions(
-        manage_webhooks=True, manage_channels=True, manage_messages=True
-    )
+    @EDITORS
     async def remove_partner(
         self,
         interaction: discord.Interaction,
@@ -1857,40 +1423,33 @@ class Partner(commands.GroupCog, name="partner"):
     ):
         if not server_name and not invite:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> You must provide either server name or invite link!",
+                f"{NO} You must provide either server name or invite link!",
                 ephemeral=True,
             )
             return
 
-        partners = _partners_ref(interaction.guild.id).get() or {}
-        found_partner = None
+        partners = ref("partners", interaction.guild.id).get() or {}
+        found = None
+        for key, partner in partners.items():
+            named = server_name and partner["name"].lower() == server_name.lower()
+            invited = invite and partner["invite"] in invite
+            if not named and not invited:
+                continue
+            if server_name and invite and not (named and invited):
+                await interaction.response.send_message(
+                    f"{NO} Server name and invite don't match!", ephemeral=True
+                )
+                return
+            found = key
+            break
 
-        for key, data in partners.items():
-            if (server_name and data["name"].lower() == server_name.lower()) or (
-                invite and data["invite"] in invite
-            ):
-
-                if server_name and invite:
-                    if (
-                        data["name"].lower() != server_name.lower()
-                        or data["invite"] not in invite
-                    ):
-                        await interaction.response.send_message(
-                            "<:no:1036810470860013639> Server name and invite don't match!",
-                            ephemeral=True,
-                        )
-                        return
-
-                found_partner = key
-                break
-
-        if not found_partner:
+        if not found:
             await interaction.response.send_message(
-                "<:no:1036810470860013639> Partner server not found!", ephemeral=True
+                f"{NO} Partner server not found!", ephemeral=True
             )
             return
 
-        _partners_ref(interaction.guild.id).child(found_partner).delete()
+        ref("partners", interaction.guild.id).child(found).delete()
         await _update_panel(interaction.guild.id, interaction.client)
         await _log_action(
             interaction.client,
@@ -1898,28 +1457,18 @@ class Partner(commands.GroupCog, name="partner"):
             interaction.user,
             "Partner Removed",
             {
-                "Partner ID": found_partner,
-                "Server Name": partners[found_partner]["name"],
-                "Invite Code": partners[found_partner]["invite"],
+                "Partner ID": found,
+                "Server Name": partners[found]["name"],
+                "Invite Code": partners[found]["invite"],
             },
         )
         await interaction.response.send_message(
-            "<:yes:1036811164891480194> Partner server removed!", ephemeral=True
+            f"{YES} Partner server removed!", ephemeral=True
         )
-
-    @remove_partner.error
-    async def remove_partner_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
 
 
 class PartnerRequestButtonView(discord.ui.View):
-    def __init__(
-        self,
-        *,
-        timeout=None,
-    ):
+    def __init__(self, *, timeout=None):
         super().__init__(timeout=timeout)
         self.add_item(PartnerRequestButton())
 
@@ -1933,7 +1482,7 @@ class PartnerRequestButton(Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(Partner.PartnershipRequestModal())
+        await interaction.response.send_modal(PartnershipRequestModal())
 
 
 async def setup(bot: commands.Bot):
