@@ -93,8 +93,11 @@ class BasePaginationView(View):
         )
 
         try:
-            if self.message:
-                await self.message.edit(view=self)
+            message = self.message
+            if isinstance(message, discord.InteractionCallbackResponse):
+                message = message.resource
+            if message:
+                await message.edit(view=self)
         except discord.NotFound:
             pass
 
