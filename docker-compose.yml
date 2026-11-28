@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: .
+    init: true
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - .:/srv/Fischl
+      # Quicktype draws with the server's fonts; Debian's builds of them render differently.
+      - /usr/share/fonts/truetype:/usr/share/fonts/truetype:ro
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"

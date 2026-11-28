@@ -50,7 +50,9 @@ The `pool` fixture gives a real Postgres pool on an empty database. It needs `TE
 
 ### How a deploy works
 
-- Production runs `python3 fischl.py` in a `screen` session, and `web/main.py` as a second process for the website.
+- Production runs in one Docker container (`docker compose up -d --build`). `start.sh` starts `fischl.py` and, beside it, `web/main.py` for the website.
+- `docker compose restart` restarts both. To restart only the website, run `docker compose exec bot pkill -f "python main.py"`; `start.sh` starts it again.
+- The image installs `requirements.lock`, which pins every package. `requirements.txt` lists only what the code imports; change both together and rebuild.
 - Slash commands sync when the bot starts.
 - After a restart, read `console_output.log` for `Failed to load` lines and make sure the bot connected. A file that fails to load does not stop the bot, so the log is the only place it shows.
 - Anything that has to survive a restart belongs in a database. Memory is wiped.
