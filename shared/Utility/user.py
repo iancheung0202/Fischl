@@ -39,6 +39,7 @@ class User(commands.Cog):
     async def user(
         self, interaction: discord.Interaction, user: discord.Member = None
     ) -> None:
+        """Shows a member's details, the caller's own by default."""
         user = user or interaction.user
         embed = discord.Embed(
             colour=user.top_role.colour.value,

@@ -14,6 +14,7 @@ class Server(commands.Cog):
     )
     @app_commands.guild_only()
     async def server(self, interaction: discord.Interaction) -> None:
+        """Shows the server's details."""
         guild = interaction.guild
         embed = discord.Embed(
             title=guild.name,

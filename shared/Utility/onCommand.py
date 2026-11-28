@@ -86,8 +86,7 @@ class OnCommand(commands.Cog):
 
     @commands.Cog.listener()
     async def on_app_command_completion(self, interaction, command):
-        """Posts every used command in the command log channel."""
-        print(interaction.data)
+        """Posts every used command in the command log channel, if the bot can see it."""
         user = interaction.user
         embed = discord.Embed(
             description=(
@@ -102,7 +101,9 @@ class OnCommand(commands.Cog):
             colour=discord.Color.blurple(),
             timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
-        await self.client.get_channel(COMMAND_LOG_CHANNEL).send(embed=embed)
+        channel = self.client.get_channel(COMMAND_LOG_CHANNEL)
+        if channel:
+            await channel.send(embed=embed)
 
 
 async def setup(bot):

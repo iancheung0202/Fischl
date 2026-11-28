@@ -1,6 +1,7 @@
 """The embed editor: /embed, /editembed and the Edit Embed message menu, with saved templates."""
 
 import asyncio
+import copy
 import datetime
 import uuid
 
@@ -162,13 +163,15 @@ class EmbedEditor:
         )
 
     def to_dict(self) -> dict:
-        """Gives the record a template is saved as."""
-        return {
-            "message_content": self.message_content,
-            "embed_data": self.embed_data,
-            "button_links": self.button_links,
-            "template_owner": self.template_owner or self.user_id,
-        }
+        """Gives the record a template is saved as, as a copy of its own."""
+        return copy.deepcopy(
+            {
+                "message_content": self.message_content,
+                "embed_data": self.embed_data,
+                "button_links": self.button_links,
+                "template_owner": self.template_owner or self.user_id,
+            }
+        )
 
     @classmethod
     def from_dict(cls, user_id, guild_id, data, template_id=None):

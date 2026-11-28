@@ -662,3 +662,38 @@ async def test_setup_adds_the_cog_and_the_message_menu():
     await module.setup(bot)
     assert isinstance(bot.add_cog.call_args.args[0], module.EmbedCommand)
     bot.tree.add_command.assert_called_once_with(module.edit_embed_context_menu)
+
+
+async def test_templates_are_read_and_written_off_the_event_loop(firebase, monkeypatch):
+    threads = []
+
+    async def in_thread(function, *args):
+        threads.append(function.__name__)
+        return function(*args)
+
+    monkeypatch.setattr(module.asyncio, "to_thread", in_thread)
+    monkeypatch.setattr(module.db, "reference", lambda path: 1 / 0)
+    monkeypatch.setattr(
+        module,
+        "templates_ref",
+        lambda *path: firebase("/".join(map(str, ("Embed Templates", *path)))),
+    )
+    mine = editor()
+    await typed(SaveModal(mine), "Rules").on_submit(press())
+    (mine.template_id,) = firebase(f"Embed Templates/{GUILD}").get()
+    mine.template_owner = AMY
+    view = EmbedMainView(mine, press())
+    await view.save_template.callback(press())
+    await TemplateSelectView(AMY, GUILD).load_templates(MagicMock())
+    await module.start(press())
+    await view.children[-1].callback(press())
+    assert threads == ["get", "set", "update", "get", "get", "delete"]
+
+
+def test_a_saved_record_does_not_share_the_editors_lists():
+    mine = editor(fields=[{"name": "a", "value": "b", "inline": True}])
+    saved = mine.to_dict()
+    mine.embed_data["fields"][0]["name"] = "changed"
+    mine.button_links.append({"label": "x", "url": "https://x", "emoji": ""})
+    assert saved["embed_data"]["fields"][0]["name"] == "a"
+    assert saved["button_links"] == []

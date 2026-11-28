@@ -4,7 +4,6 @@ import textwrap
 import traceback
 
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 
@@ -15,6 +14,7 @@ class Eval(commands.Cog):
     @commands.command(name="eval")
     @commands.is_owner()
     async def eval_command(self, ctx, *, code: str):
+        """Runs the owner's Python code and answers with what it printed or raised."""
         if code.startswith("```") and code.endswith("```"):
             code = "\n".join(code.split("\n")[1:-1])
 

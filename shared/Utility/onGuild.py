@@ -31,18 +31,20 @@ class OnGuild(commands.Cog):
         self.client = bot
 
     async def log(self, guild, title: str, color: discord.Color) -> None:
-        """Posts a joined or left server in the log channel."""
+        """Posts a joined or left server in the log channel, if the bot can see it."""
         channel = self.client.get_channel(GUILD_LOG_CHANNEL)
-        await channel.send(
-            embed=guild_embed(guild, title, color, len(self.client.guilds))
-        )
+        if channel:
+            total = len(self.client.guilds)
+            await channel.send(embed=guild_embed(guild, title, color, total))
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
+        """Logs a server the bot was added to."""
         await self.log(guild, "Guild Joined", discord.Color.green())
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
+        """Logs a server the bot was removed from."""
         await self.log(guild, "Guild Left", discord.Color.red())
 
 

@@ -311,3 +311,12 @@ async def test_a_failed_phone_notice_is_only_printed(monkeypatch, capsys):
     monkeypatch.setattr(onCommand.aiohttp, "ClientSession", Web(error=OSError("down")))
     await onCommand.OnCommand(bot()).on_app_command_error(press(), RuntimeError("x"))
     assert "Error sending ntfy notification: down" in capsys.readouterr().out
+
+
+async def test_logs_are_skipped_in_a_bot_that_cannot_see_the_log_channels():
+    client = MagicMock()
+    client.get_channel = lambda channel_id: None
+    await onGuild.OnGuild(client).log(guild(), "Guild Joined", discord.Color.green())
+    made = MagicMock(spec=app_commands.Command)
+    made.qualified_name = "ping"
+    await onCommand.OnCommand(client).on_app_command_completion(press(), made)
