@@ -198,7 +198,7 @@ async def save_link(interaction, link, name, timestamp):
 
 async def reward_purchase(interaction, embed, xp):
     """Counts the purchase for quests, pays its XP and shows the result."""
-    from commands.Events.event import add_xp
+    from commands.Events.games.common import add_xp
     from commands.Events.quests import update_quest
     from commands.Events.trackData import check_tier_rewards
 

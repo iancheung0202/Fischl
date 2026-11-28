@@ -7,7 +7,8 @@ import discord
 import pytest
 from discord import app_commands
 
-from commands.Events import buy, config, event, quests, trackData
+from commands.Events import buy, config, quests, trackData
+from commands.Events.games import common
 
 GUILD = 10
 USER = 555
@@ -128,7 +129,7 @@ def shop(monkeypatch):
         monkeypatch.setattr(buy, name, shop.subtract)
     monkeypatch.setattr(buy, "TierRewardsView", TierView)
     monkeypatch.setattr(quests, "update_quest", shop.update_quest)
-    monkeypatch.setattr(event, "add_xp", shop.add_xp)
+    monkeypatch.setattr(common, "add_xp", shop.add_xp)
     monkeypatch.setattr(trackData, "check_tier_rewards", shop.check_tier_rewards)
     monkeypatch.setattr(buy, "global_purchase_queue", asyncio.Queue())
     return shop

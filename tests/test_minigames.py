@@ -45,10 +45,11 @@ async def game(pool, monkeypatch):
 @pytest.fixture
 def xp(monkeypatch):
     """Stands in for the XP track; gives the mock that is asked to add XP."""
-    from commands.Events import event, trackData
+    from commands.Events import trackData
+    from commands.Events.games import common
 
     add = AsyncMock(return_value=(1, 100, 350))
-    monkeypatch.setattr(event, "add_xp", add)
+    monkeypatch.setattr(common, "add_xp", add)
     monkeypatch.setattr(
         trackData, "check_tier_rewards", AsyncMock(return_value=("free", "elite"))
     )
@@ -1288,11 +1289,11 @@ async def test_gifting_unlocked_twice_at_once_is_announced_once(track):
 
 
 async def test_xp_gained_at_the_same_moment_all_counts(track):
-    from commands.Events import event
+    from commands.Events.games import common
 
     client = SimpleNamespace(pool=track.pool)
     gains = await asyncio.gather(
-        *(event.add_xp(USER, GUILD, 30, client) for _ in range(10))
+        *(common.add_xp(USER, GUILD, 30, client) for _ in range(10))
     )
     assert await progress(track.pool, "xp") == 300
     assert sorted(old for _, old, _ in gains) == list(range(0, 300, 30))
@@ -1301,8 +1302,8 @@ async def test_xp_gained_at_the_same_moment_all_counts(track):
 
 
 async def test_xp_for_a_new_member_starts_from_zero(track):
-    from commands.Events import event
+    from commands.Events.games import common
 
     await track.pool.execute("DELETE FROM minigame_progression")
-    gain = await event.add_xp(USER, GUILD, 150, SimpleNamespace(pool=track.pool))
+    gain = await common.add_xp(USER, GUILD, 150, SimpleNamespace(pool=track.pool))
     assert gain == (1, 0, 150)

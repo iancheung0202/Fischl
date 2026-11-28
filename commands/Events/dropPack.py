@@ -104,7 +104,7 @@ class DropPackView(View):
             self.add_item(DropPackDelete())
             await interaction.response.edit_message(embed=embed, view=self)
 
-            from commands.Events.event import add_xp
+            from commands.Events.games.common import add_xp
             from commands.Events.quests import update_quest
             from commands.Events.trackData import check_tier_rewards
 

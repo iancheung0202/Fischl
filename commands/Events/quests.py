@@ -262,7 +262,7 @@ async def advance(pool, member, duration, rows, quest_dict, boost):
 
 async def announce(userID, guildID, channelID, total_xp, lines, client):
     """Pays the XP and tells the member which quests were completed."""
-    from commands.Events.event import add_xp
+    from commands.Events.games.common import add_xp
     from commands.Events.trackData import check_tier_rewards
 
     tier, old_xp, new_xp = await add_xp(userID, guildID, total_xp, client)

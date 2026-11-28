@@ -790,9 +790,9 @@ async def test_mora_numbers_come_from_the_days_played(game):
 
 
 async def test_a_milestone_is_still_announced_when_the_member_left(game, monkeypatch):
-    from commands.Events import event
+    from commands.Events.games import common
 
-    monkeypatch.setattr(event, "userAndTitle", AsyncMock(return_value="<@1>"))
+    monkeypatch.setattr(common, "user_and_title", AsyncMock(return_value="<@1>"))
     await helperFunctions.add_milestone(game.pool, GUILD, "501", "Rich", 100)
     await earn(game.pool, USER, 150)
     gone = discord.NotFound(MagicMock(status=404), "Unknown Member")

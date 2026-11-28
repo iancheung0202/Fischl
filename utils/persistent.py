@@ -5,7 +5,8 @@ from commands.CoOp.coOpSystem import CoOpView as CoOpViewSystem
 from commands.CoOp.coOpWuwaJinhsi import CoOpButtonViewWuwa, CoOpViewWuwa
 from commands.Custom.celestial import LeaksAccessCelestial, RefreshStaffViewCelestial
 from commands.Custom.levelUp import ShowPerksBulletin
-from commands.Events.event import PersistentChestInfoView, UserSelectView
+from commands.Events.chests import PersistentChestInfoView
+from commands.Events.games.double import UserSelectView
 from commands.Events.helperFunctions import TierRewardsView
 from commands.Partnership.partnershipSystem import PartnerRequestButtonView
 from commands.Utility.topic import TopicAcceptRejectView

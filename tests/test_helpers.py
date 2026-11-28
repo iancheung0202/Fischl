@@ -72,9 +72,9 @@ async def test_sigils_everywhere_add_up_over_servers(db):
 
 
 async def test_a_milestone_is_given_exactly_on_its_threshold_and_once(db, monkeypatch):
-    from commands.Events import event
+    from commands.Events.games import common
 
-    monkeypatch.setattr(event, "userAndTitle", AsyncMock(return_value="<@1>"))
+    monkeypatch.setattr(common, "user_and_title", AsyncMock(return_value="<@1>"))
     await helpers.add_milestone(db, GUILD, "Rich", "Has 100", 100)
     client = SimpleNamespace(get_guild=lambda id: None, get_channel=lambda id: None)
     await earn(db, USER, 99)

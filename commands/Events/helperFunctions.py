@@ -1219,9 +1219,9 @@ async def check_milestones(pool: asyncpg.Pool, user_id, guild_id, channel_id, cl
         channel = client.get_channel(channel_id) if channel_id else None
         if not channel:
             continue
-        from commands.Events.event import userAndTitle
+        from commands.Events.games.common import user_and_title
 
-        name = await userAndTitle(user_id, guild_id, pool)
+        name = await user_and_title(user_id, guild_id, pool)
         earned = f"<@&{reward}>" if is_role else reward
         await channel.send(
             embed=discord.Embed(

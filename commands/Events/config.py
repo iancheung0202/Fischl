@@ -12,7 +12,6 @@ except ImportError:
             return f"`/{self.name}`"
 
 
-
 CURRENCY_NAME = "Mora"
 MORA_EMOTE = "<:MORA:1364030973611610205>"
 
