@@ -581,13 +581,14 @@ async def test_reverse_quicktype_times_out_with_the_answer(client, uploads):
 
 
 async def test_quicktype_wants_the_exact_phrase(client, uploads, monkeypatch):
-    import sys
-
     from commands.Events.games import typed as races
 
-    generator = MagicMock()
-    generator.DocumentGenerator.return_value.sentence.return_value = "The quick brown fox jumps over the dog"  # fmt: skip
-    monkeypatch.setitem(sys.modules, "essential_generators", generator)
+    phrases = races.PHRASES.read_text(encoding="utf-8").splitlines()
+    assert len(set(phrases)) == len(phrases) == 10000
+    assert all(phrase == phrase.strip() and 0 < len(phrase) <= 25 for phrase in phrases)
+    monkeypatch.setattr(
+        races.random, "choice", lambda words: "The quick brown fox jumps"
+    )
     channel = Channel()
     heard = typed(client, channel, (5, "The quick brown fox jumpz ove"), (6, "The quick brown fox jumps"))  # fmt: skip
     await races.quicktype(channel, client)

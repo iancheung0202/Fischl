@@ -16,4 +16,3 @@ pytz==2025.2
 psutil==7.0.0
 groq==0.31.1
 enka.py==1.2.2
-essential-generators==1.0

@@ -3,6 +3,7 @@ import io
 import random
 import time
 from collections import Counter
+from pathlib import Path
 
 import discord
 from PIL import Image, ImageDraw, ImageFont
@@ -20,6 +21,8 @@ from commands.Events.games.common import count, earn, prize, took_part, user_and
 IMAGE_CHANNEL = 1026968305208131645
 REVERSE_BG_PATH = "./assets/94e3fe.png"
 SECONDS = 300
+# Quicktype phrases, made once with essential_generators; loading that library took 300 MB.
+PHRASES = Path(__file__).with_name("phrases.txt")
 
 
 def draw(text: str, background: str) -> io.BytesIO:
@@ -97,12 +100,9 @@ def matches(typed: str, wanted: str) -> int:
 
 
 async def quicktype(channel, client):
-    from essential_generators import DocumentGenerator
-
     reward = await prize(client, channel, 4000, 6000)
-    words = str(DocumentGenerator().sentence())[:25]
-    wanted = words.strip()
-    url = await picture_url(client, words)
+    wanted = random.choice(PHRASES.read_text(encoding="utf-8").splitlines())
+    url = await picture_url(client, wanted)
     title = "Quicktype Racer"
     message = await channel.send(
         embed=embed(
@@ -127,7 +127,7 @@ async def quicktype(channel, client):
         ),
         embed(
             "Quicktype Racer - Time Out! ⌛",
-            f"No one typed the phrase in time!\n**Correct answer:** `{words}`",
+            f"No one typed the phrase in time!\n**Correct answer:** `{wanted}`",
             discord.Color.light_grey(),
             url,
         ),
