@@ -678,7 +678,10 @@ class ToggleView(discord.ui.View):
         """Switches to a tab and shows its embed."""
         self.state = state
         await self.update_buttons(interaction.client.pool)
-        await interaction.response.edit_message(embed=embed, view=self)
+        if interaction.response.is_done():
+            await interaction.edit_original_response(embed=embed, view=self)
+        else:
+            await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(
         label="Inventory",
@@ -696,11 +699,12 @@ class ToggleView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
         member = self.member
+        await interaction.response.defer()  # drawing can take longer than Discord waits
         result = await generate_mora_graph(
             interaction.client.pool, member.id, member.guild.id, member.display_name
         )
         if not result:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "No data available! Start playing to see your stats.", ephemeral=True
             )
             return

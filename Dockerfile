@@ -8,8 +8,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # The lock file lists every package at the version production ran before Docker.
+# matplotlib lists its fonts on first use, which takes seconds, so that is done here.
 COPY requirements.lock /tmp/
-RUN pip install --no-cache-dir --no-deps -r /tmp/requirements.lock
+RUN pip install --no-cache-dir --no-deps -r /tmp/requirements.lock \
+    && python -c "import matplotlib.font_manager"
 
 WORKDIR /srv/Fischl
 CMD ["bash", "start.sh"]

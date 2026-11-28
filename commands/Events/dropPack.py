@@ -50,7 +50,10 @@ class DropPackView(View):
     async def on_timeout(self):
         for child in self.children:
             child.disabled = True
-        await self.message.edit(view=self)
+        try:
+            await self.message.edit(view=self)
+        except discord.NotFound:
+            pass
 
     @discord.ui.button(label="Open Drop", style=discord.ButtonStyle.green, emoji="🎁")
     async def open_drop(

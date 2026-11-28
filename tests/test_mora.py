@@ -38,15 +38,22 @@ class Sent:
         self.channel = SimpleNamespace(id=CHANNEL)
         self.data = {"custom_id": custom_id}
         self.said, self.edits, self.modals, self.followups = [], [], [], []
+        self.deferred = False
         self.response = SimpleNamespace(
-            defer=AsyncMock(),
+            defer=self.defer,
             send_message=self.say,
             edit_message=self.edit,
             send_modal=self.open,
+            is_done=lambda: self.deferred,
         )
         self.followup = SimpleNamespace(send=self.follow)
+        self.edit_original_response = self.edit
+
+    async def defer(self, **_):
+        self.deferred = True
 
     async def say(self, text, ephemeral=False):
+        assert not self.deferred
         self.said.append(text)
 
     async def edit(self, **shown):
@@ -336,11 +343,14 @@ async def test_tabs_mark_the_open_one_and_home_returns(game):
 async def test_stats_tab_needs_earnings_then_posts_the_graph(game):
     _, _, view = await open_mora(game)
     sent = await press(game, view, "graph")
-    assert sent.said == ["No data available! Start playing to see your stats."]
+    assert sent.deferred and sent.followups == [
+        ("No data available! Start playing to see your stats.", {"ephemeral": True})
+    ]
 
     await earn(game.pool, USER, 500)
     await chests(game.pool, 0, 0, None)
     sent = await press(game, view, "graph")
+    assert sent.deferred
     embed = sent.edits[0]["embed"]
     assert embed.title == "Name20's Player Statistics in Server"
     assert embed.image.url == f"link/{USER}.png"
