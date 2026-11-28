@@ -527,12 +527,15 @@ class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
         max_length=5,
     )
 
-    def __init__(self, guild_id: int, user_id: int, max_restorable: int):
+    def __init__(self, button_view: discord.ui.View):
         super().__init__()
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.max_restorable = max_restorable
-        self.days.placeholder = f"Enter number of days between 1 and {max_restorable}"
+        self.button_view = button_view
+        self.guild_id = button_view.guild_id
+        self.user_id = button_view.user_id
+        self.max_restorable = button_view.max_restorable
+        self.days.placeholder = (
+            f"Enter number of days between 1 and {self.max_restorable}"
+        )
 
     async def on_submit(self, interaction: discord.Interaction):
         pool = interaction.client.pool
@@ -595,6 +598,7 @@ class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
             ),
             color=discord.Color.green(),
         )
+        self.button_view.stop()
         await interaction.response.edit_message(embed=embed, view=None)
 
 
@@ -628,9 +632,7 @@ class RestoreStreakView(discord.ui.View):
                 "You can't use this button!", ephemeral=True
             )
             return
-        await interaction.response.send_modal(
-            RestoreStreakModal(self.guild_id, self.user_id, self.max_restorable)
-        )
+        await interaction.response.send_modal(RestoreStreakModal(self))
 
 
 class ToggleView(discord.ui.View):
@@ -754,11 +756,11 @@ class ToggleView(discord.ui.View):
     async def sigils_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
+        shown = self.member
+        if interaction.user.id == shown.id:
+            shown = interaction.user
         embed = await sigils_embed(
-            interaction.client.pool,
-            self.member,
-            interaction.channel,
-            self.custom_color,
+            interaction.client.pool, shown, interaction.channel, self.custom_color
         )
         await self.show(interaction, "sigils", embed)
 

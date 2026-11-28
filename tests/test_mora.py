@@ -432,6 +432,18 @@ async def test_sigils_tab_is_about_the_member_shown(game):
     assert "sending 7 messages" in embed.footer.text
 
 
+async def test_sigils_tab_counts_a_role_gained_since_the_command(game):
+    await game.pool.execute(
+        "INSERT INTO minigame_settings (channel_id, chat_boosted_roles) VALUES ($1, $2)",
+        CHANNEL,
+        ["501:+10"],
+    )
+    _, _, view = await open_mora(game, game.me)
+    now = Member(game.guild, USER, roles=[game.roles[501]])
+    embed = (await press(game, view, "sigils", user=now)).edits[0]["embed"]
+    assert fields(embed)["Daily Chat Progress"] == "`0/70` Sigils earned"
+
+
 async def test_settings_tab_turns_a_feature_off_and_on(game):
     flags = []
     game.get_cog = lambda name: SimpleNamespace(
@@ -619,6 +631,14 @@ async def test_broken_streak_is_restored_for_mora(game):
         f"{NO} Your streak isn't broken anymore, there's nothing to restore!"
     ]
 
+    assert view.is_finished()
+
+
+async def test_restore_button_greys_out_when_left_alone(game):
+    old = (TODAY - datetime.timedelta(days=5)).isoformat()
+    await chests(game.pool, 3, 8, old)
+    view = (await streak(game))["view"]
+    assert not view.is_finished()
     await view.on_timeout()
     assert view.restore_button.disabled
     view.message.edit.assert_awaited_once_with(view=view)
