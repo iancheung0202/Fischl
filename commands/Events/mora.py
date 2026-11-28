@@ -124,7 +124,7 @@ BOLD_DIGITS = dict(zip("0123456789", "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗")
 RANK = """
     SELECT total, place FROM (
         SELECT uid, SUM({amount}) AS total,
-               ROW_NUMBER() OVER (ORDER BY SUM({amount}) DESC) AS place
+               ROW_NUMBER() OVER (ORDER BY SUM({amount}) DESC, uid) AS place
         FROM {table} {where} GROUP BY uid
     ) ranked WHERE uid = $1
 """
