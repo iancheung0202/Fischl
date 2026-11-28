@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import io
 from types import SimpleNamespace
@@ -649,3 +650,74 @@ async def test_fixstreak_is_for_the_owner(game):
     assert await balance(game.pool, USER) == 400
     saved = await helperFunctions.get_chest_streaks(game.pool, GUILD, USER)
     assert (saved["streak"], saved["max_streak"]) == (5, 9)
+
+
+async def test_two_earnings_in_one_second_are_both_kept(game, monkeypatch):
+    monkeypatch.setattr(helperFunctions.time, "time", lambda: 1_700_000_000)
+    await helperFunctions.addMora(game.pool, USER, 30, CHANNEL, GUILD)
+    await helperFunctions.addMora(game.pool, USER, 12, CHANNEL, GUILD)
+    assert await balance(game.pool, USER) == 42
+
+
+async def test_two_gifts_at_once_cannot_spend_the_same_mora(game, monkeypatch):
+    monkeypatch.setattr(mora, "update_quest", AsyncMock())
+    await progress(game.pool, gift_tax=0)
+    await earn(game.pool, USER, 1000)
+    first, second = await asyncio.gather(
+        gift(game, game.friend, 700), gift(game, game.friend, 700)
+    )
+    refused = [content for content, _ in (first, second) if "You need" in content]
+    assert len(refused) == 1
+    assert await balance(game.pool, USER) == 300
+    assert await balance(game.pool, OTHER) == 700
+
+
+async def test_spending_rechecks_milestones_and_refuses_too_much(game):
+    await earn(game.pool, USER, 100)
+    spend = helperFunctions.spend_mora
+    assert await spend(game.pool, USER, 101, CHANNEL, GUILD, game) is False
+    helperFunctions.delayed_check_milestones.assert_not_called()
+    assert await spend(game.pool, USER, 100, CHANNEL, GUILD, game) is True
+    helperFunctions.delayed_check_milestones.assert_called_once_with(
+        game.pool, USER, GUILD, CHANNEL, game
+    )
+    assert await balance(game.pool, USER) == 0
+
+
+async def test_server_spend_gives_what_is_left(game):
+    await earn(game.pool, USER, 100)
+    await earn(game.pool, USER, 900, guild=11)
+    take = helperFunctions.subtractGuildMora
+    assert await take(game.pool, USER, 101, CHANNEL, GUILD) is False
+    assert await take(game.pool, USER, 100, CHANNEL, GUILD) == 0
+    assert await helperFunctions.get_total_mora(game.pool, USER) == 900
+
+
+async def test_global_spend_empties_this_server_first(game):
+    await earn(game.pool, USER, 100)
+    await earn(game.pool, USER, 900, guild=11)
+    await earn(game.pool, USER, -50, guild=12)
+    take = helperFunctions.subtract_global_mora
+    assert await take(game.pool, USER, 951, CHANNEL, GUILD) is False
+    assert await helperFunctions.get_total_mora(game.pool, USER) == 950
+    assert await take(game.pool, USER, 400, CHANNEL, GUILD) is True
+    assert await balance(game.pool, USER) == 0
+    assert await helperFunctions.get_guild_mora(game.pool, USER, 11) == 600
+    assert await helperFunctions.get_guild_mora(game.pool, USER, 12) == -50
+
+
+async def test_sigils_are_spent_here_first_and_never_twice(game):
+    await helperFunctions.add_sigils(game.pool, USER, GUILD, 10)
+    assert await helperFunctions.add_sigils(game.pool, USER, GUILD, 5) == 15
+    await helperFunctions.add_sigils(game.pool, USER, 11, 20)
+    here, everywhere = (
+        helperFunctions.subtract_guild_sigils,
+        helperFunctions.subtract_global_sigils,
+    )
+    assert await here(game.pool, USER, GUILD, 16) is False
+    paid = await asyncio.gather(*(here(game.pool, USER, GUILD, 10) for _ in range(2)))
+    assert sorted(paid) == [False, True]
+    assert await everywhere(game.pool, USER, GUILD, 26) is False
+    assert await everywhere(game.pool, USER, GUILD, 15) is True
+    assert await helperFunctions.get_sigils_balance(game.pool, USER, GUILD) == 0
+    assert await helperFunctions.get_sigils_balance(game.pool, USER, 11) == 10

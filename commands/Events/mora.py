@@ -76,6 +76,7 @@ from commands.Events.helperFunctions import (
     get_user_mora_history,
     get_user_stats,
     parse_boosted_roles,
+    spend_mora,
     upsert_chest_streaks,
     upsert_user_minigame_setting,
 )
@@ -553,12 +554,12 @@ class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
 
         cost = restored * STREAK_RESTORE_COST_PER_DAY
         balance = await get_guild_mora(pool, self.user_id, self.guild_id)
+        short = (
+            f"{NO_EMOTE} Restoring {days(restored)} costs {MORA_EMOTE} `{cost:,}`, "
+            f"but you only have {MORA_EMOTE} `{int(balance):,}`!"
+        )
         if balance < cost:
-            return await interaction.response.send_message(
-                f"{NO_EMOTE} Restoring {days(restored)} costs {MORA_EMOTE} `{cost:,}`, "
-                f"but you only have {MORA_EMOTE} `{int(balance):,}`!",
-                ephemeral=True,
-            )
+            return await interaction.response.send_message(short, ephemeral=True)
 
         current, longest, broken = streak_state(
             await get_chest_streaks(pool, self.guild_id, self.user_id)
@@ -570,15 +571,16 @@ class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
             )
 
         streak = min(current + restored, longest)
-        await addMora(
+        paid = await spend_mora(
             pool,
             self.user_id,
-            -cost,
+            cost,
             interaction.channel.id,
             self.guild_id,
             interaction.client,
-            bypass_boost=True,
         )
+        if not paid:
+            return await interaction.response.send_message(short, ephemeral=True)
         today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         await upsert_chest_streaks(
             pool, self.guild_id, self.user_id, streak, longest, today
@@ -1114,12 +1116,13 @@ class Mora(commands.Cog):
         total_cost = amount + tax
         donor_mora = await get_guild_mora(pool, donor.id, guild_id)
         recipient_mora = await get_guild_mora(pool, user.id, guild_id)
-        if donor_mora < total_cost:
+        if donor_mora < total_cost or not await spend_mora(
+            pool, donor.id, total_cost, channel_id, guild_id, client
+        ):
             return await interaction.followup.send(
                 f"You need {MORA_EMOTE} `{total_cost}` ({amount} + {tax_rate}% tax) to make this gift! \n-# You currently only have {MORA_EMOTE} `{donor_mora}`."
             )
 
-        await addMora(pool, donor.id, -total_cost, channel_id, guild_id, client)
         await addMora(
             pool, user.id, amount, channel_id, guild_id, client, bypass_boost=True
         )

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import datetime
 import math
 import time
@@ -609,6 +610,60 @@ async def get_mora_stats(pool: asyncpg.Pool, uid: int, gid: int) -> dict:
     }
 
 
+MORA_ENTRY = """
+    INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (gid, uid, cid, timestamp)
+    DO UPDATE SET count = minigame_mora.count + EXCLUDED.count
+"""
+SIGILS_ENTRY = """
+    INSERT INTO minigame_sigils (uid, gid, date, earnings)
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (uid, gid, date)
+    DO UPDATE SET earnings = minigame_sigils.earnings + EXCLUDED.earnings
+    RETURNING earnings
+"""
+MORA_BY_SERVER = (
+    "SELECT gid, SUM(count) AS balance FROM minigame_mora WHERE uid = $1 GROUP BY gid"
+)
+SIGILS_BY_SERVER = "SELECT gid, SUM(earnings) AS balance FROM minigame_sigils WHERE uid = $1 GROUP BY gid"
+
+
+@contextlib.asynccontextmanager
+async def wallet(pool: asyncpg.Pool, uid: int):
+    """Gives a connection on which one member's spend is checked and paid; two spends at once wait their turn."""
+    async with pool.acquire() as conn, conn.transaction():
+        await conn.execute("SELECT pg_advisory_xact_lock($1)", uid)
+        yield conn
+
+
+def today() -> str:
+    """Gives the UTC date Sigils are stored under."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
+async def take(
+    conn, balances: str, uid: int, gid: int, amount: int, everywhere: bool, pay
+):
+    """Takes an amount from this server's balance, then from the others when `everywhere`; False if short."""
+    held = {
+        row["gid"]: int(row["balance"] or 0) for row in await conn.fetch(balances, uid)
+    }
+    here = held.pop(gid, 0)
+    if amount > (here + sum(held.values()) if everywhere else here):
+        return False
+    if not everywhere:
+        await pay(conn, gid, amount)
+        return here - amount
+    remaining = amount
+    for server, balance in [(gid, here), *held.items()]:
+        part = min(balance, remaining)
+        if part > 0:
+            await pay(conn, server, part)
+            remaining -= part
+    return here - amount
+
+
 async def addMora(
     pool: asyncpg.Pool,
     userID: int,
@@ -618,6 +673,7 @@ async def addMora(
     client=None,
     bypass_boost=False,
 ):
+    """Adds Mora with the member's boost; gives the text shown for the gain and the amount added."""
     baseMora = addedMora
     boost = 0
 
@@ -625,21 +681,9 @@ async def addMora(
         boost = await get_mora_boost(pool, guildID, userID)
         addedMora = int(addedMora * (1 + boost / 100))
 
-    timestamp = int(time.time())
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (gid, uid, cid, timestamp)
-            DO UPDATE SET count = $5
-        """,
-            userID,
-            guildID,
-            channelID,
-            timestamp,
-            addedMora,
-        )
+    await pool.execute(
+        MORA_ENTRY, userID, guildID, channelID, int(time.time()), addedMora
+    )
 
     asyncio.create_task(
         delayed_check_milestones(pool, userID, guildID, channelID, client)
@@ -655,67 +699,41 @@ async def addMora(
     return abs(addedMora), addedMora
 
 
+async def take_mora(
+    pool: asyncpg.Pool, uid: int, amount: int, cid: int, gid: int, everywhere: bool
+):
+    """Takes Mora in one step, so two spends at once cannot both pass; gives what is left here, or False."""
+
+    async def pay(conn, server, part):
+        await conn.execute(MORA_ENTRY, uid, server, cid, int(time.time()), -part)
+
+    async with wallet(pool, uid) as conn:
+        return await take(conn, MORA_BY_SERVER, uid, gid, amount, everywhere, pay)
+
+
+async def spend_mora(
+    pool: asyncpg.Pool, uid: int, amount: int, cid: int, gid: int, client=None
+) -> bool:
+    """Takes Mora a member pays in this server and rechecks their milestones; False if they have too little."""
+    if await take_mora(pool, uid, amount, cid, gid, False) is False:
+        return False
+    asyncio.create_task(delayed_check_milestones(pool, uid, gid, cid, client))
+    return True
+
+
 async def subtractGuildMora(
     pool: asyncpg.Pool, userID: int, subtractMora: int, channelID: int, guildID: int
 ) -> int | bool:
-    total_available = await get_guild_mora(pool, userID, guildID)
-
-    if subtractMora > total_available:
-        return False
-
-    timestamp = int(time.time())
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO minigame_mora (uid, gid, cid, timestamp, count)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (gid, uid, cid, timestamp)
-            DO UPDATE SET count = $5
-        """,
-            userID,
-            guildID,
-            channelID,
-            timestamp,
-            -subtractMora,
-        )
-
-    return total_available - subtractMora
+    """Takes Mora from a member in this server; gives what is left, or False if they have too little."""
+    return await take_mora(pool, userID, subtractMora, channelID, guildID, False)
 
 
 async def subtract_global_mora(
     pool: asyncpg.Pool, userID: int, amount: int, channelID: int, guildID: int
 ) -> bool:
-    total = await get_total_mora(pool, userID)
-    if amount > total:
-        return False
-    remaining = amount
-    guild_bal = await get_guild_mora(pool, userID, guildID)
-    if guild_bal > 0:
-        deduct = min(guild_bal, remaining)
-        await subtractGuildMora(pool, userID, deduct, channelID, guildID)
-        remaining -= deduct
-    if remaining > 0:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT gid, SUM(count) as bal
-                FROM minigame_mora
-                WHERE uid = $1 AND gid != $2
-                GROUP BY gid
-                HAVING SUM(count) > 0
-            """,
-                userID,
-                guildID,
-            )
-        for row in rows:
-            if remaining <= 0:
-                break
-            other_gid = row["gid"]
-            other_bal = row["bal"]
-            deduct = min(other_bal, remaining)
-            await subtractGuildMora(pool, userID, deduct, channelID, other_gid)
-            remaining -= deduct
-    return remaining <= 0
+    """Takes Mora from this server first, then from the member's other servers; False if they have too little."""
+    left = await take_mora(pool, userID, amount, channelID, guildID, True)
+    return left is not False
 
 
 # Inventory helper functions
@@ -1437,90 +1455,39 @@ async def get_global_sigils_balance(pool, uid: int) -> int:
     return val or 0
 
 
-async def subtract_guild_sigils(pool, uid: int, gid: int, amount: int) -> bool:
-    bal = await get_sigils_balance(pool, uid, gid)
-    if amount > bal:
-        return False
-    import datetime
+async def take_sigils(pool, uid: int, gid: int, amount: int, everywhere: bool) -> bool:
+    """Takes Sigils in one step, so two spends at once cannot both pass; False if the member has too little."""
 
-    date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO minigame_sigils (uid, gid, date, earnings)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (uid, gid, date) DO UPDATE SET
-                earnings = minigame_sigils.earnings + EXCLUDED.earnings
-        """,
-            uid,
-            gid,
-            date,
-            -amount,
-        )
-    return True
+    async def pay(conn, server, part):
+        await conn.execute(SIGILS_ENTRY, uid, server, today(), -part)
+
+    async with wallet(pool, uid) as conn:
+        left = await take(conn, SIGILS_BY_SERVER, uid, gid, amount, everywhere, pay)
+    return left is not False
+
+
+async def subtract_guild_sigils(pool, uid: int, gid: int, amount: int) -> bool:
+    """Takes Sigils from a member in this server; False if they have too little."""
+    return await take_sigils(pool, uid, gid, amount, False)
 
 
 async def subtract_global_sigils(pool, uid: int, gid: int, amount: int) -> bool:
-    total = await get_global_sigils_balance(pool, uid)
-    if amount > total:
-        return False
-    remaining = amount
-    guild_bal = await get_sigils_balance(pool, uid, gid)
-    if guild_bal > 0:
-        deduct = min(guild_bal, remaining)
-        await subtract_guild_sigils(pool, uid, gid, deduct)
-        remaining -= deduct
-    if remaining > 0:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT gid, SUM(earnings) as bal
-                FROM minigame_sigils
-                WHERE uid = $1 AND gid != $2
-                GROUP BY gid
-                HAVING SUM(earnings) > 0
-            """,
-                uid,
-                gid,
-            )
-        for row in rows:
-            if remaining <= 0:
-                break
-            other_gid = row["gid"]
-            other_bal = row["bal"]
-            deduct = min(other_bal, remaining)
-            await subtract_guild_sigils(pool, uid, other_gid, deduct)
-            remaining -= deduct
-    return remaining <= 0
+    """Takes Sigils from this server first, then from the member's other servers; False if they have too little."""
+    return await take_sigils(pool, uid, gid, amount, True)
 
 
 async def add_sigils(
     pool, uid: int, gid: int, amount: int, channel_id=None, client=None
 ) -> int:
-    import datetime
-
-    date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO minigame_sigils (uid, gid, date, earnings)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (uid, gid, date) DO UPDATE SET
-                earnings = minigame_sigils.earnings + EXCLUDED.earnings
-            RETURNING earnings
-        """,
-            uid,
-            gid,
-            date,
-            amount,
-        )
+    """Adds Sigils to today's entry and gives the day's total."""
+    earnings = await pool.fetchval(SIGILS_ENTRY, uid, gid, today(), amount)
 
     if amount > 0 and channel_id is not None and client is not None:
         asyncio.create_task(
             delayed_check_milestones(pool, uid, gid, channel_id, client)
         )
 
-    return row["earnings"] if row else amount
+    return earnings
 
 
 async def parse_boosted_roles(raw: list) -> list:
