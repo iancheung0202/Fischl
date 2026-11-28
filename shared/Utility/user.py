@@ -4,6 +4,27 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+FIELD_LIMIT = 1024
+
+
+def role_list(member, everyone_id: int) -> str:
+    """Gives a member's roles, highest first, cut with a count of the rest when they pass a field's limit."""
+    if len(getattr(member, "roles", ())) <= 1:
+        return "None"
+    roles = sorted(member.roles, key=lambda role: role.position, reverse=True)
+    mentions = [f"<@&{role.id}>" for role in roles if role.id != everyone_id]
+    shown, length = [], 0
+    for index, mention in enumerate(mentions):
+        left = len(mentions) - index - 1
+        suffix = f" ({left} more roles)" if left > 0 else ""
+        longer = length + len(mention) + (2 if shown else 0)
+        if longer + len(suffix) > FIELD_LIMIT:
+            break
+        shown.append(mention)
+        length = longer
+    left = len(mentions) - len(shown)
+    return ", ".join(shown) + (f" ({left} more roles)" if left > 0 else "")
+
 
 class User(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
@@ -18,64 +39,25 @@ class User(commands.Cog):
     async def user(
         self, interaction: discord.Interaction, user: discord.Member = None
     ) -> None:
-        if user is None:
-            user = interaction.user
-
-        if hasattr(user, "roles") and len(user.roles) > 1:
-            sorted_roles = [
-                role
-                for role in sorted(
-                    user.roles, key=lambda role: role.position, reverse=True
-                )
-                if role.id != interaction.guild.default_role.id
-            ]
-            roles_str = ""
-            total_length = 0
-            included_roles = []
-
-            for i, role in enumerate(sorted_roles):
-                role_mention = f"<@&{role.id}>"
-                next_length = (
-                    total_length + len(role_mention) + (2 if included_roles else 0)
-                )
-                remaining = len(sorted_roles) - (i + 1)
-                suffix = f" ({remaining} more roles)" if remaining > 0 else ""
-                if next_length + len(suffix) <= 1024:
-                    included_roles.append(role_mention)
-                    total_length = next_length
-                else:
-                    break
-
-            remaining = len(sorted_roles) - len(included_roles)
-            roles_str = ", ".join(included_roles)
-            if remaining > 0:
-                roles_str += f" ({remaining} more roles)"
-        else:
-            roles_str = "None"
-
-        embed = discord.Embed(colour=user.top_role.colour.value)
+        user = user or interaction.user
+        embed = discord.Embed(
+            colour=user.top_role.colour.value,
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
         embed.set_thumbnail(url=user.display_avatar.url)
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
         if user.banner:
             embed.set_image(url=user.banner.url)
-        embed.add_field(name="Username", value=user.name, inline=True)
-        embed.add_field(
-            name="Server Nick",
-            value=user.nick if hasattr(user, "nick") else "None",
-            inline=True,
-        )
-        embed.add_field(name="User ID", value=f"`{user.id}`", inline=True)
-        embed.add_field(
-            name="Account created",
-            value=f"<t:{int(user.created_at.timestamp())}:R>",
-            inline=True,
-        )
-        embed.add_field(
-            name="Joined this server",
-            value=f"<t:{int(user.joined_at.timestamp())}:R>",
-            inline=True,
-        )
-        embed.add_field(name="Roles", value=roles_str, inline=False)
+        fields = {
+            "Username": user.name,
+            "Server Nick": user.nick if hasattr(user, "nick") else "None",
+            "User ID": f"`{user.id}`",
+            "Account created": f"<t:{int(user.created_at.timestamp())}:R>",
+            "Joined this server": f"<t:{int(user.joined_at.timestamp())}:R>",
+        }
+        for name, value in fields.items():
+            embed.add_field(name=name, value=value, inline=True)
+        roles = role_list(user, interaction.guild.default_role.id)
+        embed.add_field(name="Roles", value=roles, inline=False)
         await interaction.response.send_message(embed=embed)
 
 

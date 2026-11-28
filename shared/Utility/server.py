@@ -14,63 +14,30 @@ class Server(commands.Cog):
     )
     @app_commands.guild_only()
     async def server(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
         embed = discord.Embed(
-            title=interaction.guild.name,
-            description=interaction.guild.description,
+            title=guild.name,
+            description=guild.description,
             color=discord.Color.blurple(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
-
-        if interaction.guild.icon:
-            embed.set_thumbnail(url=interaction.guild.icon.url)
-
-        if interaction.guild.banner:
-            embed.set_image(url=interaction.guild.banner.url)
-
-        embed.add_field(name="Server Name", value=interaction.guild.name, inline=True)
-
-        embed.add_field(
-            name="Server ID", value=f"`{interaction.guild.id}`", inline=True
-        )
-
-        embed.add_field(
-            name="Members Count", value=interaction.guild.member_count, inline=True
-        )
-
-        embed.add_field(
-            name="Text Channels",
-            value=len(interaction.guild.text_channels),
-            inline=True,
-        )
-
-        embed.add_field(
-            name="Voice channels",
-            value=len(interaction.guild.voice_channels),
-            inline=True,
-        )
-
-        embed.add_field(
-            name="Created At",
-            value=f"<t:{int(interaction.guild.created_at.timestamp())}:R>",
-            inline=True,
-        )
-
-        embed.add_field(
-            name="Owner", value=f"<@{interaction.guild.owner_id}>", inline=True
-        )
-
-        embed.add_field(
-            name="Emojis",
-            value=f"{len(interaction.guild.emojis)}/{interaction.guild.emoji_limit}",
-            inline=True,
-        )
-
-        embed.add_field(
-            name="Stickers",
-            value=f"{len(interaction.guild.stickers)}/{interaction.guild.sticker_limit}",
-            inline=True,
-        )
-
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        if guild.banner:
+            embed.set_image(url=guild.banner.url)
+        fields = {
+            "Server Name": guild.name,
+            "Server ID": f"`{guild.id}`",
+            "Members Count": guild.member_count,
+            "Text Channels": len(guild.text_channels),
+            "Voice channels": len(guild.voice_channels),
+            "Created At": f"<t:{int(guild.created_at.timestamp())}:R>",
+            "Owner": f"<@{guild.owner_id}>",
+            "Emojis": f"{len(guild.emojis)}/{guild.emoji_limit}",
+            "Stickers": f"{len(guild.stickers)}/{guild.sticker_limit}",
+        }
+        for name, value in fields.items():
+            embed.add_field(name=name, value=value, inline=True)
         await interaction.response.send_message(embed=embed)
 
 

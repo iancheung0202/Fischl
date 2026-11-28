@@ -1,5 +1,5 @@
 import io
-import os
+import os  # noqa: F401 - kept so evaluated code can use it
 import textwrap
 import traceback
 
