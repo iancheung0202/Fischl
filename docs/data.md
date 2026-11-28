@@ -13,7 +13,7 @@ Fischl uses two databases.
 | Activity service | `Ian Activity` |
 | Status and heartbeat | `Bot Status`, `Uptime` (the website reads both straight from the browser) |
 | Boosters (`shared/`) | `Booster Role` |
-| Tickets (`shared/`) | `Tickets`, `Ticket Panels`, `Ticket Blacklist`, `Ticket Closing Messages`, `Ticket Instructions`, `Ticket Snippets` |
+| Tickets (`shared/`) | `Tickets`, `Ticket Panels`, `Ticket Blacklist`, `Ticket Closing Messages`, `Ticket Instructions`, `Ticket Snippets`, `Tickets Cooldown` |
 | Welcome (`shared/`) | `Welcome`, `Welcome Content`, `WelcomeV2` |
 | Embeds (`shared/`) | `Embed Templates` |
 | Website | `Dashboard Users` |

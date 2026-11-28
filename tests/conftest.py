@@ -26,6 +26,10 @@ class Ref:
     def __init__(self, tree, path):
         self.tree, self.path = tree, path.strip("/")
 
+    @property
+    def key(self):
+        return self.path.rsplit("/", 1)[-1]
+
     def child(self, key):
         return Ref(self.tree, f"{self.path}/{key}")
 
