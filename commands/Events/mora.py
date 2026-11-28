@@ -1,12 +1,15 @@
+"""/mora and its tabs (stats, track, quests, kingdom, sigils, settings), /gift, and chest streaks."""
+
+import asyncio
 import datetime
+import io
 import os
 import time
 
-import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Button, Select, View
+from discord.ui import Select
 
 from commands.Events.config import (
     ANIMATED_INVENTORY_BG_PATH,
@@ -20,7 +23,6 @@ from commands.Events.config import (
     EMOTE_STREAK,
     GLOBAL_MORA_EMOTE,
     GLOBAL_SIGIL_EMOTE,
-    GRAPHS_DIRECTORY,
     GUILD_MORA_EMOTE,
     GUILD_SIGIL_EMOTE,
     INVENTORY_BG_PATH,
@@ -31,9 +33,9 @@ from commands.Events.config import (
     NO_EMOTE,
     NO_EMOTE_2,
     PRESTIGE_EMOTE,
-    PROFILE_LINK_BUTTON,
     REPLY_EMOTE,
     RESOLVED_EMOTE,
+    SEASONS,
     SIGIL_CURRENCY_NAME,
     SIGIL_EMOTE,
     TRACK_EMOTE,
@@ -43,6 +45,7 @@ from commands.Events.config import (
     YES_EMOTE_2,
     PurchaseEliteTrack,
     ThanksEliteTrack,
+    profile_link_button,
 )
 from commands.Events.createProfileCard import createProfileCard
 from commands.Events.domain import (
@@ -60,19 +63,18 @@ from commands.Events.helperFunctions import (
     get_chest_streaks,
     get_cosmetics,
     get_daily_sigils,
-    get_global_leaderboard,
-    get_global_sigils_balance,
-    get_global_sigils_leaderboard,
-    get_guild_leaderboard,
+    get_domain_discount,
     get_guild_mora,
     get_guild_settings,
-    get_guild_sigils_leaderboard,
+    get_kingdom_buildings,
     get_milestones_list,
     get_mora_stats,
+    get_progression_data,
     get_sigils_balance,
     get_user_inventory,
     get_user_minigame_settings,
     get_user_mora_history,
+    get_user_stats,
     parse_boosted_roles,
     upsert_chest_streaks,
     upsert_user_minigame_setting,
@@ -85,266 +87,117 @@ from commands.Events.quests import (
     update_quest,
 )
 from commands.Events.seasons import get_current_season
+from commands.Events.shop import is_role
 from commands.Events.trackData import get_current_track, is_elite_active
 from utils.commands import SlashCommand
 
 FIXSTREAK_OWNER_ID = 692254240290242601
 STREAK_RESTORE_COST_PER_DAY = 10000
+# Images are sent here so an embed can show them by link.
+IMAGE_CHANNEL = 1026968305208131645
+LAST_TIER = 31
+BONUS_TIER_XP = 2500
+FIELD_LIMIT = 1024
+# Room kept in the inventory field for the "(n more...)" line.
+MORE_LINE_ROOM = 15
+TABS = ("home", "graph", "track", "quests", "domain", "sigils", "settings")
+# What each settings choice turns on or off: its column, its name in the menu and in the answer.
+SETTINGS = {
+    "toggle_chest_spawn": (
+        "chest_disabled",
+        "Daily Chest Spawning",
+        "Daily chest spawning",
+    ),
+    "toggle_minigame_spawn": (
+        "minigame_disabled",
+        "Minigame Spawning",
+        "Minigame spawning",
+    ),
+    "toggle_sigils_spawn": (
+        "sigils_disabled",
+        f"{SIGIL_CURRENCY_NAME} Chat Earning",
+        f"{SIGIL_CURRENCY_NAME} chat earning",
+    ),
+}
+STREAK_TIP = "Tip: Claim your chest at the same time each day to keep your streak!"
+BOLD_DIGITS = dict(zip("0123456789", "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗"))
+RANK = """
+    SELECT total, place FROM (
+        SELECT uid, SUM({amount}) AS total,
+               ROW_NUMBER() OVER (ORDER BY SUM({amount}) DESC) AS place
+        FROM {table} {where} GROUP BY uid
+    ) ranked WHERE uid = $1
+"""
+# pyplot draws one figure at a time.
+GRAPH_LOCK = asyncio.Lock()
 
 
-def _parse_streak_data(
-    streak_data: dict,
-) -> tuple[int, int, "datetime.date | None", bool]:
-    """
-    Given a raw streak_data dict from get_chest_streaks, returns:
-    (live_current_streak, max_streak, last_claimed_date, is_broken)
+def days(count: int) -> str:
+    """Gives a number of days as shown in embeds, such as `3` days."""
+    return f"`{count}` day{'s' if count != 1 else ''}"
 
-    live_current_streak mirrors the display logic used elsewhere (e.g. generate_mora_graph):
-    it's 0 if the streak has lapsed (more than 1 day since last claim), even if the
-    'streak' column in the DB hasn't been overwritten yet (that only happens on next claim).
-    """
-    last_claimed = streak_data.get("last_claimed") if streak_data else None
-    if last_claimed:
-        if isinstance(last_claimed, str):
-            last_claimed = datetime.datetime.fromisoformat(last_claimed).date()
-        elif isinstance(last_claimed, datetime.datetime):
-            last_claimed = last_claimed.date()
-        elif not isinstance(last_claimed, datetime.date):
-            last_claimed = None
 
+def streak_state(saved: dict) -> tuple[int, int, bool]:
+    """Gives the streak as it counts today, the longest streak, and whether the streak is broken."""
+    last = saved.get("last_claimed") if saved else None
+    if isinstance(last, str):
+        last = datetime.datetime.fromisoformat(last).date()
+    elif isinstance(last, datetime.datetime):
+        last = last.date()
+    elif not isinstance(last, datetime.date):
+        last = None
     today = datetime.datetime.now(datetime.timezone.utc).date()
-    is_broken = not (last_claimed and (today - last_claimed).days <= 1)
-    raw_streak = streak_data.get("streak", 0) if streak_data else 0
-    live_current_streak = 0 if is_broken else raw_streak
-    max_streak = streak_data.get("max_streak", raw_streak) if streak_data else 0
-
-    return live_current_streak, max_streak, last_claimed, is_broken
+    broken = not (last and (today - last).days <= 1)
+    stored = saved.get("streak", 0) if saved else 0
+    longest = saved.get("max_streak", stored) if saved else 0
+    return (0 if broken else stored), longest, broken
 
 
-class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
-    days = discord.ui.TextInput(
-        label="Days to restore",
-        placeholder="Enter a number of days",
-        required=True,
-        max_length=5,
-    )
-
-    def __init__(
-        self,
-        guild_id: int,
-        user_id: int,
-        max_restorable: int,
-        max_streak: int,
-        base_streak: int,
-    ):
-        super().__init__()
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.max_restorable = max_restorable
-        self.max_streak = max_streak
-        self.base_streak = base_streak
-        self.days.placeholder = f"Enter number of days between 1 and {max_restorable}"
-
-    async def on_submit(self, interaction: discord.Interaction):
-        raw = str(self.days.value).strip().replace(",", "")
-        if not raw.isdigit():
-            return await interaction.response.send_message(
-                f"{NO_EMOTE} Please enter a whole number!", ephemeral=True
-            )
-
-        days_to_restore = int(raw)
-        if days_to_restore <= 0:
-            return await interaction.response.send_message(
-                f"{NO_EMOTE} You need to restore at least `1` day!", ephemeral=True
-            )
-
-        if days_to_restore > self.max_restorable:
-            return await interaction.response.send_message(
-                f"{NO_EMOTE} You can only restore up to `{self.max_restorable}` day{'s' if self.max_restorable != 1 else ''}!",
-                ephemeral=True,
-            )
-
-        cost = days_to_restore * STREAK_RESTORE_COST_PER_DAY
-        balance = await get_guild_mora(
-            interaction.client.pool, self.user_id, self.guild_id
-        )
-
-        if balance < cost:
-            return await interaction.response.send_message(
-                f"{NO_EMOTE} Restoring `{days_to_restore}` day{'s' if days_to_restore != 1 else ''} costs {MORA_EMOTE} `{cost:,}`, "
-                f"but you only have {MORA_EMOTE} `{int(balance):,}`!",
-                ephemeral=True,
-            )
-
-        # Re-check current state at the moment of submission to avoid stale/racey data
-        streak_data = await get_chest_streaks(
-            interaction.client.pool, self.guild_id, self.user_id
-        )
-        live_current_streak, max_streak, _, is_broken = _parse_streak_data(streak_data)
-
-        if not is_broken or max_streak <= live_current_streak:
-            return await interaction.response.send_message(
-                f"{NO_EMOTE} Your streak isn't broken anymore, there's nothing to restore!",
-                ephemeral=True,
-            )
-
-        new_streak = min(live_current_streak + days_to_restore, max_streak)
-
-        await addMora(
-            interaction.client.pool,
-            self.user_id,
-            -cost,
-            interaction.channel.id,
-            self.guild_id,
-            interaction.client,
-            bypass_boost=True,
-        )
-
-        today_iso = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-        await upsert_chest_streaks(
-            interaction.client.pool,
-            self.guild_id,
-            self.user_id,
-            new_streak,
-            max_streak,
-            today_iso,
-        )
-
-        embed = discord.Embed(
-            title=f"{YES_EMOTE} Streak Restored!",
-            description=(
-                f"{EMOTE_STREAK} **New Streak:** `{new_streak}` day{'s' if new_streak != 1 else ''}\n"
-                f"{EMOTE_MAX_STREAK} **Max Streak:** `{max_streak}` day{'s' if max_streak != 1 else ''}\n"
-                f"{MORA_EMOTE} **Cost Paid:** `{cost:,}`"
-            ),
-            color=discord.Color.green(),
-        )
-        await interaction.response.edit_message(embed=embed, view=None)
-
-
-class RestoreStreakView(discord.ui.View):
-    def __init__(
-        self,
-        guild_id: int,
-        user_id: int,
-        max_restorable: int,
-        max_streak: int,
-        base_streak: int,
-    ):
-        super().__init__(timeout=180)
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.max_restorable = max_restorable
-        self.max_streak = max_streak
-        self.base_streak = base_streak
-
-    async def on_timeout(self) -> None:
-        for child in self.children:
-            child.disabled = True
-
-    @discord.ui.button(
-        label="Restore Streak", style=discord.ButtonStyle.green, emoji="✨"
-    )
-    async def restore_button(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        modal = RestoreStreakModal(
-            self.guild_id,
-            self.user_id,
-            self.max_restorable,
-            self.max_streak,
-            self.base_streak,
-        )
-        await interaction.response.send_modal(modal)
-
-
-async def generate_mora_graph(
-    pool: asyncpg.Pool, user_id: int, guild_id: int, display_name: str
-) -> str:
-    history = await get_user_mora_history(pool, user_id, guild_id)
-    if not history:
-        return None
-
-    timestamps, mora_values = zip(*history) if history else ([], [])
-    timestamps = list(timestamps)
-    mora_values = list(mora_values)
-
-    stats_data = await get_mora_stats(pool, user_id, guild_id)
-
-    largest_daily = stats_data["largest_daily"]
-    largest_daily_date = stats_data["largest_daily_date"]
-    entry_count = stats_data["entry_count"]
-    first_played = stats_data["first_played"]
-    average_daily = stats_data["average_daily"]
-    days_active = stats_data["days_active"]
-
-    gc = await get_guild_settings(pool, guild_id)
-    tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
-    tier_emotes_list = gc.get("chests_emotes", [])
-    tier_emotes = dict(zip(tier_names, tier_emotes_list)) if tier_emotes_list else {}
-
+async def chest_counts_text(pool, guild_id: int, user_id: int) -> tuple[str, int]:
+    """Gives the line of chests a member opened per tier, and how many in all."""
+    settings = await get_guild_settings(pool, guild_id)
+    names = settings.get("chests_tier_names", MORA_CHEST_TIERS)
+    emotes = dict(zip(names, settings.get("chests_emotes", [])))
     counts = await get_chest_counts(pool, guild_id, user_id)
-    total_chests = sum(counts)
+    text = ""
+    for index, name in enumerate(names):
+        count = counts[index] if index < len(counts) else 0
+        text += f"{emotes.get(name, EMOTE_BLANK)} `{count}` {EMOTE_BLANK}"
+    return text, sum(counts)
 
-    streak_data = await get_chest_streaks(pool, guild_id, user_id)
 
-    last_claimed = streak_data.get("last_claimed") if streak_data else None
-    if last_claimed:
-        if isinstance(last_claimed, str):
-            last_claimed = datetime.datetime.fromisoformat(last_claimed).date()
-        elif isinstance(last_claimed, (datetime.datetime, datetime.date)):
-            if isinstance(last_claimed, datetime.datetime):
-                last_claimed = last_claimed.date()
-        else:
-            last_claimed = None
-    current_streak = (
-        streak_data.get("streak", 0)
-        if last_claimed
-        and (datetime.datetime.now(datetime.timezone.utc).date() - last_claimed).days
-        <= 1
-        else 0
-    )
-    max_streak = streak_data.get("max_streak", current_streak)
+async def standing(pool, table: str, amount: str, user_id: int, guild_id: int = None):
+    """Gives a member's total in a table and their place among everyone; 0 and "N/A" with no entries."""
+    scope = ("WHERE gid = $2", guild_id) if guild_id else ("",)
+    statement = RANK.format(table=table, amount=amount, where=scope[0])
+    row = await pool.fetchrow(statement, user_id, *scope[1:])
+    return (row["total"] or 0, row["place"]) if row else (0, "N/A")
 
-    chest_info = ""
-    for i, name in enumerate(tier_names):
-        emote = tier_emotes.get(name, EMOTE_BLANK)
-        count = counts[i] if i < len(counts) else 0
-        chest_info += f"{emote} `{count}` {EMOTE_BLANK}"
-    chest_info += (
-        f"\n**Total:** `{total_chests}` {EMOTE_BLANK}"
-        f"{EMOTE_STREAK} `{current_streak}` day{'s' if current_streak > 1 else ''} {EMOTE_BLANK}"
-        f"{EMOTE_MAX_STREAK} `{max_streak}` day{'s' if max_streak > 1 else ''}"
-    )
 
-    stats = {
-        f"`📦` {MORA_CHEST_NAME}s": chest_info,
-        "`📅` First Played": f"<t:{first_played}:D>",
-        "`💰` Largest Day Earning": f"<t:{largest_daily_date}:D>\n({MORA_EMOTE} `{largest_daily:,}`)",
-        f"`📈` Average Daily {CURRENCY_NAME}": f"{MORA_EMOTE} `{average_daily:,}`",
-        "`✌️` Minigame Wins": f"`{entry_count - total_chests}` total wins",
-        "`😎` Active Days": f"`{days_active}` different day(s)",
-    }
+def short_amount(value, _) -> str:
+    """Writes an axis value as 1.5M, 20K or 300."""
+    if value >= 1_000_000:
+        return f"{value/1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{value/1_000:.0f}K"
+    return f"{value:.0f}"
 
+
+def draw_earnings(history: list, display_name: str) -> io.BytesIO:
+    """Draws a member's running Mora total over time as a PNG."""
     import matplotlib.pyplot as plt
     import pandas as pd
     from matplotlib.dates import DateFormatter
 
+    timestamps, amounts = zip(*history)
     df = pd.DataFrame(
-        {"timestamp": pd.to_datetime(timestamps, unit="s"), "mora": mora_values}
+        {"timestamp": pd.to_datetime(list(timestamps), unit="s"), "mora": list(amounts)}
     ).sort_values("timestamp")
 
     plt.style.use("seaborn-v0_8-darkgrid")
     fig, ax = plt.subplots(figsize=(10, 6))
     df["cumulative"] = df["mora"].cumsum()
     df["smooth"] = df["cumulative"].rolling(7, min_periods=1).mean()
-
     ax.plot(
         df["timestamp"],
         df["smooth"],
@@ -352,16 +205,7 @@ async def generate_mora_graph(
         linewidth=3,
         solid_capstyle="round",
     )
-
-    def format_mora(value, _):
-        if value >= 1_000_000:
-            return f"{value/1_000_000:.1f}M"
-        if value >= 1_000:
-            return f"{value/1_000:.0f}K"
-        return f"{value:.0f}"
-
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(format_mora))
-
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(short_amount))
     ax.set_title(
         f"{display_name}'s {CURRENCY_NAME} Earnings History",
         fontsize=20,
@@ -377,43 +221,444 @@ async def generate_mora_graph(
     ax.spines["right"].set_visible(False)
 
     plt.tight_layout()
-    os.makedirs(GRAPHS_DIRECTORY, exist_ok=True)
-    path = f"{GRAPHS_DIRECTORY}/{user_id}.png"
-    plt.savefig(path, bbox_inches="tight", dpi=120, transparent=True)
+    image = io.BytesIO()
+    plt.savefig(image, format="png", bbox_inches="tight", dpi=120, transparent=True)
     plt.close()
+    image.seek(0)
+    return image
 
-    return (path, stats)
+
+async def generate_mora_graph(pool, user_id: int, guild_id: int, display_name: str):
+    """Gives a member's earnings graph and the fields of their statistics, or None with no earnings."""
+    history = await get_user_mora_history(pool, user_id, guild_id)
+    if not history:
+        return None
+
+    numbers = await get_mora_stats(pool, user_id, guild_id)
+    chests, total_chests = await chest_counts_text(pool, guild_id, user_id)
+    current, longest, _ = streak_state(await get_chest_streaks(pool, guild_id, user_id))
+    chests += (
+        f"\n**Total:** `{total_chests}` {EMOTE_BLANK}"
+        f"{EMOTE_STREAK} {days(current)} {EMOTE_BLANK}"
+        f"{EMOTE_MAX_STREAK} {days(longest)}"
+    )
+    stats = {
+        f"`📦` {MORA_CHEST_NAME}s": chests,
+        "`📅` First Played": f"<t:{numbers['first_played']}:D>",
+        "`💰` Largest Day Earning": f"<t:{numbers['largest_daily_date']}:D>\n({MORA_EMOTE} `{numbers['largest_daily']:,}`)",
+        f"`📈` Average Daily {CURRENCY_NAME}": f"{MORA_EMOTE} `{numbers['average_daily']:,}`",
+        "`✌️` Minigame Wins": f"`{numbers['entry_count'] - total_chests}` total wins",
+        "`😎` Active Days": f"`{numbers['days_active']}` different day(s)",
+    }
+    async with GRAPH_LOCK:
+        image = await asyncio.to_thread(draw_earnings, history, display_name)
+    return discord.File(image, filename=f"{user_id}.png"), stats
+
+
+async def image_link(client, file: discord.File) -> str:
+    """Posts an image in the image channel and gives its link."""
+    message = await client.get_channel(IMAGE_CHANNEL).send(file=file)
+    return message.attachments[0].proxy_url
+
+
+def tier_reached(track: list, xp: int) -> int:
+    """Gives the highest tier of a track that this much XP reaches."""
+    reached = 0
+    for tier in track:
+        if xp < tier["cumulative_xp"]:
+            break
+        reached = tier["tier"]
+    return reached
+
+
+def reward_text(text: str) -> str:
+    """Colours a track reward: cosmetics cyan, prestige red."""
+    lower = text.lower()
+    if any(k in lower for k in ["title", "frame", "background", "custom", "express"]):
+        return f"\u001b[1;2m\u001b[1;36m{text}\u001b[0m\u001b[0m"
+    if "prestige" in lower:
+        return f"\u001b[1;2m\u001b[1;31m{text}\u001b[0m\u001b[0m"
+    return text
+
+
+def track_table(track: list, current_tier: int) -> str:
+    """Gives the code block listing the tiers up to two past the member's own."""
+    table = "```ansi\n\u001b[2;34mTier    Free Track\u001b[0m              \u001b[2;33mElite Track (Patrons)\u001b[0m\n"
+    table += "------------------------------------------------------\n"
+    last_shown = min(len(track), current_tier + 2)
+    visible = track[: last_shown + 1]
+    for tier in visible:
+        if tier["tier"] <= current_tier:
+            status = "✅"
+        elif tier["tier"] == current_tier + 1:
+            status = "🔄"
+        else:
+            status = "🔐"
+        free = reward_text(tier["free"].split("|")[0].strip()[:22].ljust(24))
+        elite = reward_text(tier["elite"].split("|")[0].strip()[:22])
+        table += (
+            f"\u001b[1;37m{tier['tier']:2d}\u001b[0m  {status.ljust(2)} {free}{elite}\n"
+        )
+    if last_shown < len(track) - 1:
+        table += f"... ({len(track) - (last_shown + 1)} more)\n"
+    if any(tier["tier"] == LAST_TIER for tier in visible):
+        table += f"Earn Bonus Drop Packs for every {BONUS_TIER_XP} XP gained!"
+    return table + "```"
+
+
+def progress_bar(fraction: float) -> str:
+    """Gives a 20-character bar filled to a fraction."""
+    filled = int(max(0, min(fraction, 1)) * 20)
+    return "━" * filled + "-" * (20 - filled)
+
+
+def bold_number(number: int) -> str:
+    """Writes a number in bold digits."""
+    return "".join(BOLD_DIGITS[digit] for digit in str(number))
+
+
+async def track_embed(pool, member: discord.Member, custom_color) -> discord.Embed:
+    """Gives the embed of a member's season track: tier, progress, the tiers ahead and their perks."""
+    guild = member.guild
+    data = await get_progression_data(pool, guild.id, member.id)
+    xp = data["xp"]
+    track = get_current_track()
+    current_tier = tier_reached(track, xp)
+    start_xp = track[current_tier - 1]["cumulative_xp"] if current_tier > 0 else 0
+    xp_in_tier = xp - start_xp
+    tier_xp = track[current_tier]["xp_req"] if current_tier < len(track) else 0
+
+    if current_tier == LAST_TIER:
+        tier_display = f"{LAST_TIER} + {data.get('bonus_tier', 0)} Bonus"
+        past_last = (xp - track[-1]["cumulative_xp"]) % BONUS_TIER_XP
+        next_tier = f"Next Bonus Tier: {past_last} / {BONUS_TIER_XP} XP"
+    else:
+        tier_display = str(current_tier)
+        next_tier = f"\n Next Tier: {xp_in_tier} / {tier_xp} XP"
+    bar = ""
+    if current_tier < LAST_TIER:
+        bar = f" {bold_number(current_tier)} {progress_bar(xp_in_tier / tier_xp if tier_xp else 0)} {bold_number(current_tier + 1)}\n"
+    elite = await is_elite_active(pool, member.id, guild.id)
+
+    season = get_current_season()
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Progression Track in {guild.name}",
+        description=(
+            f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) {TRACK_EMOTE}\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# {REPLY_EMOTE} **Earn XP** by purchasing in the shop and completing quests.\n"
+            f"```diff\n"
+            f"+ Current Tier: {tier_display} ({xp} total XP)\n"
+            f"- Status: {'Elite Track Activated' if elite else 'Free Track Only'}\n"
+            f"{next_tier}\n"
+            f"{bar}"
+            f"```\n"
+            f"{track_table(track, current_tier)}\n"
+            "`✅` = Tier reached     `🔄` = In progress     `🔐` = Locked\n"
+        ),
+        color=custom_color or discord.Color.purple(),
+    )
+
+    stats = await get_user_stats(pool, guild.id, member.id)
+    gift_tax = stats.get("gift_tax", "Not unlocked")
+    percent = "%" if gift_tax != "Not unlocked" and gift_tax is not None else ""
+    cosmetics = await get_cosmetics(pool, guild.id, member.id)
+    color = "`Not unlocked`"
+    if cosmetics and cosmetics["embed_color"]:
+        chosen = cosmetics.get("selected_embed_color_hex")
+        color = f"`{chosen}`" if chosen else "`Unlocked but not set`"
+    perks = {
+        f"{MORA_EMOTE} {CURRENCY_NAME} Boost": f"`+{stats.get('mora_boost', 0)}%`",
+        ":arrow_up_small: Daily Chest Upgrades": f"`{stats.get('chest_upgrades', 4)}`",
+        ":gift: Gift Tax": f"`{gift_tax}{percent}`",
+        "🧲 Minigame Summons": f"`{stats.get('minigame_summons', 0)}`",
+        "🏷️ Shop Discount": f"`{stats.get('shop_discount', 0)}%`",
+        f"🏰 {KINGDOM_NAME} Discount": f"`{stats.get('domain_discount', 0)}%`",
+        "🎨 Custom Accent Color": color,
+    }
+    for name, value in perks.items():
+        embed.add_field(name=name, value=value, inline=True)
+    embed.add_field(
+        name=f"{PRESTIGE_EMOTE} Prestige", value=f"`{data.get('prestige', 0)}`"
+    )
+    embed.set_footer(text="Tip: XP Progression is tracked separately per server.")
+    return embed
+
+
+async def quests_embed(client, member: discord.Member, channel_id: int, custom_color):
+    """Gives the embed of a member's daily, weekly and monthly quests, renewed first when they ran out."""
+    guild = member.guild
+    await update_quest(member.id, guild.id, channel_id, 0, client, refresh_only=True)
+    saved = await get_quest_data(client.pool, guild.id, member.id)
+
+    lines = []
+    for duration in ["daily", "weekly", "monthly"]:
+        cycle = saved.get(duration, {})
+        quests = cycle.get("quests", {})
+        if not quests:
+            continue
+        end_time = cycle.get("end_time", 0)
+        reset = f"<t:{end_time}:R>" if end_time else "Unknown"
+        lines.append(
+            f"### {duration.capitalize()} Quests - `{QUEST_XP_REWARDS[duration]}` XP each *(resets {reset})*"
+        )
+        for quest, progress in quests.items():
+            status = f"`{progress['current']}/{progress['goal']}`"
+            if quest in cycle.get("completed", {}):
+                status += f" {YES_EMOTE}"
+            lines.append(f"- {QUEST_DESCRIPTIONS.get(quest, quest)}: {status}")
+        if cycle.get("bonus_awarded"):
+            lines.append(
+                f"-# {REPLY_EMOTE} *`{QUEST_BONUS_XP[duration]}` XP bonus already claimed! {RESOLVED_EMOTE}*"
+            )
+        else:
+            lines.append(
+                f"-# {REPLY_EMOTE} *Complete all for `+{QUEST_BONUS_XP[duration]}` XP bonus! {UNRESOLVED_EMOTE}*"
+            )
+    if not lines:
+        starts = [s.start_ts for s in SEASONS if s.start_ts > time.time()]
+        lines = ["No active quests."]
+        if starts:
+            lines[0] += f" The next season starts <t:{int(min(starts))}:R>."
+
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Quests in {guild.name}",
+        description="\n".join(lines),
+        color=custom_color or discord.Color.green(),
+    )
+    embed.set_footer(text="Tip: Quests reset at the same time chests do")
+    return embed
+
+
+async def sigils_embed(pool, member: discord.Member, channel, custom_color):
+    """Gives the embed of a member's sigils: balance, today's chat earnings and the roles that raise the cap."""
+    guild = member.guild
+    now = datetime.datetime.now(datetime.timezone.utc)
+    balance = await get_sigils_balance(pool, member.id, guild.id)
+    today = await get_daily_sigils(pool, member.id, guild.id, now.strftime("%Y-%m-%d"))
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    reset = midnight + datetime.timedelta(days=1)
+
+    guild_settings = await get_guild_settings(pool, guild.id)
+    cap = int(guild_settings.get("chat_max_cap", DEFAULT_CHAT_MAX_CAP))
+    settings = await get_channel_settings(pool, channel.id) if channel else {}
+    bonuses = []
+    for role_id, bonus in await parse_boosted_roles(
+        settings.get("chat_boosted_roles", [])
+    ):
+        role = guild.get_role(role_id)
+        if not role:
+            continue
+        if role not in member.roles:
+            bonuses.append(f"-# {DOT_EMOTE} {role.mention}: `{bonus}`")
+            continue
+        if str(bonus).startswith("+"):
+            cap += int(str(bonus).lstrip("+"))
+        else:
+            cap = max(cap, int(bonus))
+        bonuses.append(f"{DOT_EMOTE} {role.mention}: `{bonus}` {YES_EMOTE}")
+
+    embed = discord.Embed(
+        title=f"{member.display_name}'s {SIGIL_CURRENCY_NAME} in {guild.name}",
+        color=custom_color or discord.Color.purple(),
+    )
+    embed.add_field(name=f"{SIGIL_EMOTE} Balance", value=f"`{balance}`", inline=True)
+    embed.add_field(
+        name="Daily Chat Progress",
+        value=f"`{today.get('earnings', 0)}/{cap}` {SIGIL_CURRENCY_NAME} earned",
+        inline=True,
+    )
+    embed.add_field(
+        name="Reset Time", value=f"<t:{int(reset.timestamp())}:R>", inline=True
+    )
+    if bonuses:
+        embed.add_field(
+            name="Role Bonuses to Max Sigils", value="\n".join(bonuses), inline=False
+        )
+    messages = settings.get("chat_msg_range", list(DEFAULT_CHAT_MSG_RANGE))
+    embed.set_footer(
+        text=f"Tip: Earn a batch of {SIGIL_CURRENCY_NAME} by sending {'-'.join(str(count) for count in messages[:2])} messages in enabled channels."
+    )
+    return embed
+
+
+async def settings_embed(pool, member: discord.Member, channel, custom_color):
+    """Gives the embed of what a member turned off for themselves beside what the channel has on."""
+    guild = member.guild
+    own = await get_user_minigame_settings(pool, guild.id, member.id)
+    here = await get_channel_settings(pool, channel.id) if channel else {}
+    features = (
+        ("Daily Chest Spawning", "chest_disabled", "chests_enabled"),
+        ("Minigame Spawning", "minigame_disabled", "minigames_enabled"),
+        (f"{SIGIL_CURRENCY_NAME} Chat Earning", "sigils_disabled", "chat_enabled"),
+    )
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Settings in {guild.name}",
+        description="A feature works only when both **you** and a **channel** both have it enabled.",
+        color=custom_color or discord.Color.blurple(),
+    )
+    embed.add_field(
+        name="Your Server Preferences",
+        value=" \n".join(
+            f"-# {DOT_EMOTE} {name}: {NO_EMOTE_2 if own[off] else YES_EMOTE_2}"
+            for name, off, _ in features
+        ),
+        inline=True,
+    )
+    shown = guild.get_channel(channel.id) if channel else None
+    embed.add_field(
+        name=f"#{shown.name} (Current Channel)" if shown else "Current Channel",
+        value=" \n".join(
+            f"-# {DOT_EMOTE} {name}: {YES_EMOTE if here.get(on, False) else NO_EMOTE}"
+            for name, _, on in features
+        ),
+        inline=True,
+    )
+    embed.set_footer(text="Tip: You can toggle your server preferences at any time.")
+    return embed
+
+
+class RestoreStreakModal(discord.ui.Modal, title="Restore Your Streak"):
+    """Asks how many days of a broken streak to buy back."""
+
+    days = discord.ui.TextInput(
+        label="Days to restore",
+        placeholder="Enter a number of days",
+        required=True,
+        max_length=5,
+    )
+
+    def __init__(self, guild_id: int, user_id: int, max_restorable: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.max_restorable = max_restorable
+        self.days.placeholder = f"Enter number of days between 1 and {max_restorable}"
+
+    async def on_submit(self, interaction: discord.Interaction):
+        pool = interaction.client.pool
+        raw = str(self.days.value).strip().replace(",", "")
+        if not raw.isdigit():
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} Please enter a whole number!", ephemeral=True
+            )
+        restored = int(raw)
+        if restored <= 0:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} You need to restore at least `1` day!", ephemeral=True
+            )
+        if restored > self.max_restorable:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} You can only restore up to {days(self.max_restorable)}!",
+                ephemeral=True,
+            )
+
+        cost = restored * STREAK_RESTORE_COST_PER_DAY
+        balance = await get_guild_mora(pool, self.user_id, self.guild_id)
+        if balance < cost:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} Restoring {days(restored)} costs {MORA_EMOTE} `{cost:,}`, "
+                f"but you only have {MORA_EMOTE} `{int(balance):,}`!",
+                ephemeral=True,
+            )
+
+        current, longest, broken = streak_state(
+            await get_chest_streaks(pool, self.guild_id, self.user_id)
+        )
+        if not broken or longest <= current:
+            return await interaction.response.send_message(
+                f"{NO_EMOTE} Your streak isn't broken anymore, there's nothing to restore!",
+                ephemeral=True,
+            )
+
+        streak = min(current + restored, longest)
+        await addMora(
+            pool,
+            self.user_id,
+            -cost,
+            interaction.channel.id,
+            self.guild_id,
+            interaction.client,
+            bypass_boost=True,
+        )
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        await upsert_chest_streaks(
+            pool, self.guild_id, self.user_id, streak, longest, today
+        )
+
+        embed = discord.Embed(
+            title=f"{YES_EMOTE} Streak Restored!",
+            description=(
+                f"{EMOTE_STREAK} **New Streak:** {days(streak)}\n"
+                f"{EMOTE_MAX_STREAK} **Max Streak:** {days(longest)}\n"
+                f"{MORA_EMOTE} **Cost Paid:** `{cost:,}`"
+            ),
+            color=discord.Color.green(),
+        )
+        await interaction.response.edit_message(embed=embed, view=None)
+
+
+class RestoreStreakView(discord.ui.View):
+    """The button under /streak that opens the restore box."""
+
+    def __init__(self, guild_id: int, user_id: int, max_restorable: int):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.max_restorable = max_restorable
+        self.message = None
+
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+    @discord.ui.button(
+        label="Restore Streak", style=discord.ButtonStyle.green, emoji="✨"
+    )
+    async def restore_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "You can't use this button!", ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(
+            RestoreStreakModal(self.guild_id, self.user_id, self.max_restorable)
+        )
 
 
 class ToggleView(discord.ui.View):
+    """The tabs under /mora; `member` is whose data is shown, and only the one who ran the command may use them."""
+
     def __init__(
-        self,
-        original_embed,
-        user_id,
-        command_user_id,
-        message=None,
-        guild_id=None,
-        custom_color=None,
-        is_elite=False,
+        self, original_embed, member, command_user_id, custom_color=None, is_elite=False
     ):
         super().__init__(timeout=180)
         self.original_embed = original_embed
-        self.user_id = user_id
+        self.member = member
         self.command_user_id = command_user_id
-        self.message = message
-        self.state = "home"
-        self.guild_id = guild_id
-        self.purchase_button = None
         self.custom_color = custom_color
-
-        self.upgrade_select = None
-        self.settings_select = None
-
-        self.profile_button = PROFILE_LINK_BUTTON
-        self.add_item(self.profile_button)
-
+        self.message = None
+        self.state = "home"
+        self.select = None
+        self.add_item(profile_link_button())
         self.purchase_button = ThanksEliteTrack() if is_elite else PurchaseEliteTrack()
         self.add_item(self.purchase_button)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if (
+            interaction.user.id == self.command_user_id
+            or interaction.data.get("custom_id") == self.purchase_button.custom_id
+        ):
+            return True
+        await interaction.response.send_message(
+            "You can't use this button!", ephemeral=True
+        )
+        return False
 
     async def on_timeout(self) -> None:
         for child in self.children:
@@ -425,6 +670,12 @@ class ToggleView(discord.ui.View):
                 pass
         self.stop()
 
+    async def show(self, interaction: discord.Interaction, state: str, embed):
+        """Switches to a tab and shows its embed."""
+        self.state = state
+        await self.update_buttons(interaction.client.pool)
+        await interaction.response.edit_message(embed=embed, view=self)
+
     @discord.ui.button(
         label="Inventory",
         style=discord.ButtonStyle.blurple,
@@ -434,31 +685,15 @@ class ToggleView(discord.ui.View):
     async def home_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        self.state = "home"
-        await self.update_buttons(interaction.client.pool)
-        await interaction.response.edit_message(embed=self.original_embed, view=self)
+        await self.show(interaction, "home", self.original_embed)
 
     @discord.ui.button(label="Stats", style=discord.ButtonStyle.grey, custom_id="graph")
     async def graph_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
+        member = self.member
         result = await generate_mora_graph(
-            interaction.client.pool,
-            self.user_id,
-            interaction.guild.id,
-            (await interaction.guild.fetch_member(self.user_id)).display_name,
+            interaction.client.pool, member.id, member.guild.id, member.display_name
         )
         if not result:
             await interaction.response.send_message(
@@ -466,236 +701,25 @@ class ToggleView(discord.ui.View):
             )
             return
 
-        graph_path, stats = result
-        chn = interaction.client.get_channel(1026968305208131645)
-        msg = await chn.send(file=discord.File(graph_path))
-        graph_url = msg.attachments[0].proxy_url
-
-        graph_embed = discord.Embed(
-            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Player Statistics in {interaction.guild.name}",
+        graph, stats = result
+        embed = discord.Embed(
+            title=f"{member.display_name}'s Player Statistics in {member.guild.name}",
             color=self.custom_color or 0x02E6C3,
         )
-
-        first = True
-        for key, value in stats.items():
-            if first:
-                graph_embed.add_field(name=key, value=value, inline=False)
-                first = False
-            else:
-                graph_embed.add_field(name=key, value=value, inline=True)
-        graph_embed.set_image(url=graph_url)
-        graph_embed.set_footer(
-            text="Tip: Claim your chest at the same time each day to keep your streak!"
-        )
-
-        self.state = "graph"
-        await self.update_buttons(interaction.client.pool)
-        await interaction.response.edit_message(embed=graph_embed, view=self)
+        for index, (name, value) in enumerate(stats.items()):
+            embed.add_field(name=name, value=value, inline=index > 0)
+        embed.set_image(url=await image_link(interaction.client, graph))
+        embed.set_footer(text=STREAK_TIP)
+        await self.show(interaction, "graph", embed)
 
     @discord.ui.button(label="Track", style=discord.ButtonStyle.grey, custom_id="track")
     async def track_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        track_embed = await self.create_track_embed(interaction)
-
-        self.state = "track"
-        await self.update_buttons(interaction.client.pool)
-        await interaction.response.edit_message(embed=track_embed, view=self)
-
-    async def create_track_embed(
-        self, interaction: discord.Interaction
-    ) -> discord.Embed:
-        from commands.Events.helperFunctions import get_progression_data
-
-        data = await get_progression_data(
-            interaction.client.pool, interaction.guild.id, self.user_id
+        embed = await track_embed(
+            interaction.client.pool, self.member, self.custom_color
         )
-        user_xp = data["xp"]
-        prestige = data.get("prestige", 0)
-
-        TRACK_DATA = get_current_track()
-        current_tier = 0
-        for tier in TRACK_DATA:
-            if user_xp >= tier["cumulative_xp"]:
-                current_tier = tier["tier"]
-            else:
-                break
-
-        prev_xp = (
-            TRACK_DATA[current_tier - 1]["cumulative_xp"] if current_tier > 0 else 0
-        )
-        xp_in_current_tier = user_xp - prev_xp
-
-        if current_tier < len(TRACK_DATA):
-            next_tier_xp = TRACK_DATA[current_tier]["xp_req"]
-        else:
-            next_tier_xp = 0
-
-        track_table = "```ansi\n[2;34mTier    Free Track[0m              [2;33mElite Track (Patrons)[0m\n"
-        track_table += "------------------------------------------------------\n"
-
-        max_tier_to_show = min(len(TRACK_DATA), current_tier + 2)
-        visible_tiers = TRACK_DATA[: max_tier_to_show + 1]  # inclusive
-
-        if max_tier_to_show < len(TRACK_DATA) - 1:
-            hidden_remaining = len(TRACK_DATA) - (max_tier_to_show + 1)
-            show_footer_dots = True
-        else:
-            show_footer_dots = False
-
-        for tier in visible_tiers:
-            if tier["tier"] <= current_tier:
-                status = "✅"
-            elif tier["tier"] == current_tier + 1:
-                status = "🔄"
-            else:
-                status = "🔐"
-
-            def format_reward(text: str) -> str:
-                lower = text.lower()
-                if any(
-                    k in lower
-                    for k in ["title", "frame", "background", "custom", "express"]
-                ):
-                    return f"\u001b[1;2m\u001b[1;36m{text}\u001b[0m\u001b[0m"
-                if "prestige" in lower:
-                    return f"\u001b[1;2m\u001b[1;31m{text}\u001b[0m\u001b[0m"
-                return text
-
-            free_reward = format_reward(
-                tier["free"].split("|")[0].strip()[:22].ljust(24)
-            )
-            elite_reward = format_reward(tier["elite"].split("|")[0].strip()[:22])
-
-            track_table += (
-                f"[1;37m{tier['tier']:2d}[0m  "
-                f"{status.ljust(2)} "
-                f"{free_reward}"
-                f"{elite_reward}\n"
-            )
-
-        if show_footer_dots:
-            track_table += f"... ({hidden_remaining} more)\n"
-
-        last_tier_visible = any(tier["tier"] == 31 for tier in visible_tiers)
-        bonus_message = (
-            "Earn Bonus Drop Packs for every 2500 XP gained!"
-            if last_tier_visible
-            else ""
-        )
-        track_table += f"{bonus_message}```"
-
-        bonus_tiers = 0
-        if current_tier == 31:
-            bonus_tiers = data.get("bonus_tier", 0)
-            current_tier_display = f"31 + {bonus_tiers} Bonus"
-            xp_past_max = user_xp - TRACK_DATA[-1]["cumulative_xp"]
-            current_progress = xp_past_max % 2500
-            next_tier_info = f"Next Bonus Tier: {current_progress} / 2500 XP"
-        else:
-            current_tier_display = str(current_tier)
-            next_tier_info = f"\n Next Tier: {xp_in_current_tier} / {next_tier_xp} XP"
-
-        def emoji_bar(fraction):
-            bar_len = 20
-            fraction = max(0, min(fraction, 1))
-            filled = int(fraction * bar_len)
-            return "━" * filled + "-" * (bar_len - filled)
-
-        def double_struck_number(num):
-            ds_digits = {
-                "0": "𝟎",
-                "1": "𝟏",
-                "2": "𝟐",
-                "3": "𝟑",
-                "4": "𝟒",
-                "5": "𝟓",
-                "6": "𝟔",
-                "7": "𝟕",
-                "8": "𝟖",
-                "9": "𝟗",
-            }
-            return "".join(ds_digits[d] for d in str(num))
-
-        season = get_current_season()
-        embed = discord.Embed(
-            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Progression Track in {interaction.guild.name}",
-            description=(
-                f"### [Season {season.id}: **{season.name}**](https://fischl.app/profile) {TRACK_EMOTE}\n-# <a:clock:1382887924273774754> *Season ends <t:{int(season.end_ts)}:R>* {VIEW_FULL_TRACK}\n-# {REPLY_EMOTE} **Earn XP** by purchasing in the shop and completing quests.\n"
-                f"```diff\n"
-                f"+ Current Tier: {current_tier_display} ({user_xp} total XP)\n"
-                + f"- Status: {'Elite Track Activated' if await is_elite_active(interaction.client.pool, self.user_id, self.guild_id) else 'Free Track Only'}\n"
-                + f"{next_tier_info}\n"
-                + (
-                    f" {double_struck_number(current_tier)} {emoji_bar(xp_in_current_tier / next_tier_xp if next_tier_xp else 0)} {double_struck_number(current_tier + 1)}\n"
-                    if current_tier < 31
-                    else ""
-                )
-                + f"```\n"
-                + f"{track_table}\n"
-                + "`✅` = Tier reached     `🔄` = In progress     `🔐` = Locked\n"
-            ),
-            color=self.custom_color or discord.Color.purple(),
-        )
-        from commands.Events.helperFunctions import get_user_stats
-
-        stats = await get_user_stats(
-            interaction.client.pool, interaction.guild.id, self.user_id
-        )
-        embed.add_field(
-            name=f"{MORA_EMOTE} {CURRENCY_NAME} Boost",
-            value=f"`+{stats.get('mora_boost', 0)}%`",
-            inline=True,
-        )
-        embed.add_field(
-            name=":arrow_up_small: Daily Chest Upgrades",
-            value=f"`{stats.get('chest_upgrades', 4)}`",
-            inline=True,
-        )
-        gift_tax = stats.get("gift_tax", "Not unlocked")
-        embed.add_field(
-            name=":gift: Gift Tax",
-            value=f"`{gift_tax}{'%' if gift_tax != 'Not unlocked' and gift_tax is not None else ''}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🧲 Minigame Summons",
-            value=f"`{stats.get('minigame_summons', 0)}`",
-            inline=True,
-        )
-        embed.add_field(
-            name="🏷️ Shop Discount",
-            value=f"`{stats.get('shop_discount', 0)}%`",
-            inline=True,
-        )
-        embed.add_field(
-            name=f"🏰 {KINGDOM_NAME} Discount",
-            value=f"`{stats.get('domain_discount', 0)}%`",
-            inline=True,
-        )
-
-        cosmetics = await get_cosmetics(
-            interaction.client.pool, interaction.guild.id, self.user_id
-        )
-        selected = dict(cosmetics) if cosmetics else {}
-        color_unlocked = cosmetics["embed_color"] if cosmetics else False
-        color_status = "`Not unlocked`"
-        if color_unlocked:
-            custom_color = selected.get("selected_embed_color_hex")
-            color_status = (
-                f"`{custom_color}`" if custom_color else "`Unlocked but not set`"
-            )
-        embed.add_field(name="🎨 Custom Accent Color", value=color_status, inline=True)
-        embed.add_field(name=f"{PRESTIGE_EMOTE} Prestige", value=f"`{prestige}`")
-
-        embed.set_footer(text="Tip: XP Progression is tracked separately per server.")
-        return embed
+        await self.show(interaction, "track", embed)
 
     @discord.ui.button(
         label="Quests", style=discord.ButtonStyle.grey, custom_id="quests"
@@ -703,72 +727,10 @@ class ToggleView(discord.ui.View):
     async def quests_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        await update_quest(
-            self.user_id,
-            interaction.guild.id,
-            interaction.channel.id,
-            0,
-            interaction.client,
-            refresh_only=True,
+        embed = await quests_embed(
+            interaction.client, self.member, interaction.channel.id, self.custom_color
         )
-
-        quest_data = await get_quest_data(
-            interaction.client.pool, self.guild_id, self.user_id
-        )
-
-        quest_text = []
-        for duration in ["daily", "weekly", "monthly"]:
-            dur_data = quest_data.get(duration, {})
-            quests = dur_data.get("quests", {})
-            completed = dur_data.get("completed", {})
-            end_time = dur_data.get("end_time", 0)
-
-            if not quests:
-                continue
-
-            reset_time = f"<t:{end_time}:R>" if end_time else "Unknown"
-            quest_text.append(
-                f"### {duration.capitalize()} Quests - `{QUEST_XP_REWARDS[duration]}` XP each *(resets {reset_time})*"
-            )
-
-            for q_type, data in quests.items():
-                status = (
-                    f"`{data['current']}/{data['goal']}` {YES_EMOTE}"
-                    if q_type in completed
-                    else f"`{data['current']}/{data['goal']}`"
-                )
-                quest_text.append(
-                    f"- {QUEST_DESCRIPTIONS.get(q_type, q_type)}: {status}"
-                )
-
-            if dur_data.get("bonus_awarded"):
-                quest_text.append(
-                    f"-# {REPLY_EMOTE} *`{QUEST_BONUS_XP[duration]}` XP bonus already claimed! {RESOLVED_EMOTE}*"
-                )
-            else:
-                quest_text.append(
-                    f"-# {REPLY_EMOTE} *Complete all for `+{QUEST_BONUS_XP[duration]}` XP bonus! {UNRESOLVED_EMOTE}*"
-                )
-
-        if not quest_text:
-            quest_text = ["No active quests. The next season starts <t:1751328000:R>."]
-
-        quests_embed = discord.Embed(
-            title=f"{(await interaction.guild.fetch_member(self.user_id)).display_name}'s Quests in {interaction.guild.name}",
-            description="\n".join(quest_text),
-            color=self.custom_color or discord.Color.green(),
-        )
-        quests_embed.set_footer(text="Tip: Quests reset at the same time chests do")
-
-        self.state = "quests"
-        await self.update_buttons(interaction.client.pool)
-        await interaction.response.edit_message(embed=quests_embed, view=self)
+        await self.show(interaction, "quests", embed)
 
     @discord.ui.button(
         label=KINGDOM_NAME, style=discord.ButtonStyle.grey, custom_id="domain"
@@ -776,23 +738,13 @@ class ToggleView(discord.ui.View):
     async def domain_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        self.state = "domain"
-        await self.update_buttons(interaction.client.pool)
-
-        target_user = await interaction.guild.fetch_member(self.user_id)
         embed = await get_kingdom_embed(
-            target_user,
-            interaction.guild.id,
+            self.member,
+            self.member.guild.id,
             self.custom_color,
             interaction.client.pool,
         )
-        await interaction.response.edit_message(embed=embed, view=self)
+        await self.show(interaction, "domain", embed)
 
     @discord.ui.button(
         label=SIGIL_CURRENCY_NAME, style=discord.ButtonStyle.grey, custom_id="sigils"
@@ -800,106 +752,13 @@ class ToggleView(discord.ui.View):
     async def sigils_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        self.state = "sigils"
-        await self.update_buttons(interaction.client.pool)
-
-        balance = await get_sigils_balance(
-            interaction.client.pool, self.user_id, interaction.guild.id
+        embed = await sigils_embed(
+            interaction.client.pool,
+            self.member,
+            interaction.channel,
+            self.custom_color,
         )
-        import datetime as dt
-
-        today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
-        daily_data = await get_daily_sigils(
-            interaction.client.pool, self.user_id, interaction.guild.id, today
-        )
-        daily_earned = daily_data.get("earnings", 0)
-        reset_ts = (
-            dt.datetime.now(dt.timezone.utc).replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
-            + dt.timedelta(days=1)
-        ).timestamp()
-
-        guild_settings = await get_guild_settings(
-            interaction.client.pool, interaction.guild.id
-        )
-        base_cap = guild_settings.get("chat_max_cap", DEFAULT_CHAT_MAX_CAP)
-        effective_cap = int(base_cap)
-        bonus_text = []
-        all_settings = (
-            await get_channel_settings(interaction.client.pool, interaction.channel.id)
-            if interaction.channel
-            else {}
-        )
-        boosted_raw = (
-            await parse_boosted_roles(all_settings.get("chat_boosted_roles", []))
-            if all_settings
-            else []
-        )
-        if boosted_raw:
-            member = await interaction.guild.fetch_member(self.user_id)
-            for rid, bonus in boosted_raw:
-                role = interaction.guild.get_role(rid)
-                if role:
-                    has_role = role in member.roles
-                    if has_role and str(bonus).startswith("+"):
-                        effective_cap += int(str(bonus).lstrip("+"))
-                    elif has_role:
-                        effective_cap = max(effective_cap, int(bonus))
-                    bonus_text.append(
-                        f"{DOT_EMOTE} {role.mention}: `{bonus}` {YES_EMOTE}"
-                        if has_role
-                        else f"-# {DOT_EMOTE} {role.mention}: `{bonus}`"
-                    )
-
-        embed = discord.Embed(
-            title=f"{interaction.user.display_name}'s {SIGIL_CURRENCY_NAME} in {interaction.guild.name}",
-            color=self.custom_color or discord.Color.purple(),
-        )
-        embed.add_field(
-            name=f"{SIGIL_EMOTE} Balance", value=f"`{balance}`", inline=True
-        )
-        embed.add_field(
-            name="Daily Chat Progress",
-            value=f"`{daily_earned}/{effective_cap}` {SIGIL_CURRENCY_NAME} earned",
-            inline=True,
-        )
-        embed.add_field(
-            name="Reset Time",
-            value=(
-                f"<t:{int(reset_ts)}:R>" if reset_ts > time.time() else "Available now!"
-            ),
-            inline=True,
-        )
-
-        if bonus_text:
-            embed.add_field(
-                name="Role Bonuses to Max Sigils",
-                value="\n".join(bonus_text),
-                inline=False,
-            )
-
-        chat_msg_range = (
-            all_settings.get("chat_msg_range", list(DEFAULT_CHAT_MSG_RANGE))
-            if all_settings
-            else list(DEFAULT_CHAT_MSG_RANGE)
-        )
-        msg_footer = (
-            f"{chat_msg_range[0]}"
-            if len(chat_msg_range) == 1
-            else f"{chat_msg_range[0]}-{chat_msg_range[1]}"
-        )
-        embed.set_footer(
-            text=f"Tip: Earn a batch of {SIGIL_CURRENCY_NAME} by sending {msg_footer} messages in enabled channels."
-        )
-
-        await interaction.response.edit_message(embed=embed, view=self)
+        await self.show(interaction, "sigils", embed)
 
     @discord.ui.button(
         label="Settings", style=discord.ButtonStyle.grey, custom_id="settings"
@@ -907,306 +766,198 @@ class ToggleView(discord.ui.View):
     async def settings_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ):
-        if interaction.user.id != self.command_user_id:
-            await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
-            return
-
-        self.state = "settings"
-        await self.update_buttons(interaction.client.pool)
-        embed = await self.build_settings_embed(
+        embed = await settings_embed(
             interaction.client.pool,
-            interaction.guild,
-            self.user_id,
-            interaction.channel.id if interaction.channel else None,
+            self.member,
+            interaction.channel,
+            self.custom_color,
         )
-        await interaction.response.edit_message(embed=embed, view=self)
+        await self.show(interaction, "settings", embed)
 
     async def upgrade_select_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.command_user_id:
+        """Buys the next level of the chosen building."""
+        building = self.select.values[0].replace("upgrade_", "")
+        success, said = await upgrade_building(
+            interaction.user.id, interaction.guild.id, building, interaction
+        )
+        if not success:
             return await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
+                f"{NO_EMOTE} {said}", ephemeral=True
             )
-
-        building_key = self.upgrade_select.values[0].replace("upgrade_", "")
-
-        success, msg = await upgrade_building(
-            interaction.user.id, interaction.guild.id, building_key, interaction
+        embed = await get_kingdom_embed(
+            interaction.user,
+            interaction.guild.id,
+            self.custom_color,
+            interaction.client.pool,
         )
-
-        if success:
-            embed = await get_kingdom_embed(
-                interaction.user,
-                interaction.guild.id,
-                self.custom_color,
-                interaction.client.pool,
-            )
-            await self.update_buttons(interaction.client.pool)
-            await interaction.response.edit_message(embed=embed, view=self)
-            await interaction.followup.send(f"{YES_EMOTE} {msg}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"{NO_EMOTE} {msg}", ephemeral=True)
-
-    async def build_settings_embed(self, pool, guild, user_id, channel_id):
-        user_settings = await get_user_minigame_settings(pool, guild.id, user_id)
-        chest_disabled = user_settings["chest_disabled"]
-        minigame_disabled = user_settings["minigame_disabled"]
-        sigils_disabled = user_settings["sigils_disabled"]
-
-        csettings = await get_channel_settings(pool, channel_id) if channel_id else {}
-        chests_enabled = csettings.get("chests_enabled", False)
-        minigames_enabled = csettings.get("minigames_enabled", False)
-        chat_enabled = csettings.get("chat_enabled", False)
-
-        channel = guild.get_channel(channel_id) if channel_id else None
-
-        def pref(user_off):
-            return NO_EMOTE_2 if user_off else YES_EMOTE_2
-
-        def ch_state(enabled):
-            return YES_EMOTE if enabled else NO_EMOTE
-
-        try:
-            member = await guild.fetch_member(user_id)
-            title = f"{member.display_name}'s Settings in {guild.name}"
-        except:
-            title = "Settings"
-
-        desc = f"A feature works only when both **you** and a **channel** both have it enabled."
-
-        embed = discord.Embed(
-            title=title,
-            description=desc,
-            color=self.custom_color or discord.Color.blurple(),
-        )
-
-        prefs = (
-            f"-# {DOT_EMOTE} Daily Chest Spawning: {pref(chest_disabled)} \n"
-            f"-# {DOT_EMOTE} Minigame Spawning: {pref(minigame_disabled)} \n"
-            f"-# {DOT_EMOTE} {SIGIL_CURRENCY_NAME} Chat Earning: {pref(sigils_disabled)}"
-        )
-        embed.add_field(name="Your Server Preferences", value=prefs, inline=True)
-
-        states = (
-            f"-# {DOT_EMOTE} Daily Chest Spawning: {ch_state(chests_enabled)} \n"
-            f"-# {DOT_EMOTE} Minigame Spawning: {ch_state(minigames_enabled)} \n"
-            f"-# {DOT_EMOTE} {SIGIL_CURRENCY_NAME} Chat Earning: {ch_state(chat_enabled)}"
-        )
-        ch_name = f"#{channel.name} (Current Channel)" if channel else "Current Channel"
-        embed.add_field(name=ch_name, value=states, inline=True)
-
-        embed.set_footer(
-            text="Tip: You can toggle your server preferences at any time."
-        )
-        return embed
+        await self.show(interaction, "domain", embed)
+        await interaction.followup.send(f"{YES_EMOTE} {said}", ephemeral=True)
 
     async def settings_select_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.command_user_id:
-            return await interaction.response.send_message(
-                "You can't use this button!", ephemeral=True
-            )
+        """Turns the chosen feature on or off for the member."""
+        pool, guild_id = interaction.client.pool, interaction.guild.id
+        column, _, label = SETTINGS[self.select.values[0]]
+        own = await get_user_minigame_settings(pool, guild_id, self.member.id)
+        off = not own[column]
+        await upsert_user_minigame_setting(pool, guild_id, self.member.id, column, off)
+        chests = interaction.client.get_cog("TheEventItself")
+        if chests and hasattr(chests, "chest_system"):
+            chests.chest_system.invalidate_flag_cache(guild_id, self.member.id)
 
-        setting_key = self.settings_select.values[0]
-        column = {
-            "toggle_chest_spawn": "chest_disabled",
-            "toggle_minigame_spawn": "minigame_disabled",
-            "toggle_sigils_spawn": "sigils_disabled",
-        }[setting_key]
-        label = {
-            "toggle_chest_spawn": "Daily chest spawning",
-            "toggle_minigame_spawn": "Minigame spawning",
-            "toggle_sigils_spawn": f"{SIGIL_CURRENCY_NAME} chat earning",
-        }[setting_key]
-
-        user_settings = await get_user_minigame_settings(
-            interaction.client.pool, interaction.guild.id, self.user_id
+        embed = await settings_embed(
+            pool, self.member, interaction.channel, self.custom_color
         )
-        new_status = not user_settings[column]
-        await upsert_user_minigame_setting(
-            interaction.client.pool,
-            interaction.guild.id,
-            self.user_id,
-            column,
-            new_status,
-        )
-
-        chest_cog = interaction.client.get_cog("TheEventItself")
-        if chest_cog and hasattr(chest_cog, "chest_system"):
-            chest_cog.chest_system.invalidate_flag_cache(
-                interaction.guild.id, self.user_id
-            )
-
-        embed = await self.build_settings_embed(
-            interaction.client.pool,
-            interaction.guild,
-            self.user_id,
-            interaction.channel.id if interaction.channel else None,
-        )
-        await self.update_buttons(interaction.client.pool)
-        await interaction.response.edit_message(embed=embed, view=self)
+        await self.show(interaction, "settings", embed)
         await interaction.followup.send(
-            f"{YES_EMOTE} {label} is now **{'disabled' if new_status else 'enabled'}**!",
+            f"{YES_EMOTE} {label} is now **{'disabled' if off else 'enabled'}**!",
             ephemeral=True,
         )
 
-    async def update_buttons(self, pool=None):
-        for child in self.children:
-            if child.custom_id in [
-                "home",
-                "graph",
-                "track",
-                "quests",
-                "domain",
-                "sigils",
-                "settings",
-            ]:
-                child.disabled = False
-                child.style = discord.ButtonStyle.grey
-            if self.state == child.custom_id:
-                child.disabled = True
-                child.style = discord.ButtonStyle.blurple
-
-        show_profile_promo = True  # (self.state != "domain" and self.state != "sigils" and self.state != "settings")
-
-        items_to_remove = []
-
-        if self.profile_button in self.children and not show_profile_promo:
-            items_to_remove.append(self.profile_button)
-
-        if self.purchase_button in self.children and not show_profile_promo:
-            items_to_remove.append(self.purchase_button)
-
-        for child in self.children:
-            cid = getattr(child, "custom_id", "")
-            if cid:
-                if cid.startswith("upgrade_") or cid in [
-                    "kingdom_upgrade_select",
-                    "kingdom_upgrade_select_disabled",
-                    "settings_select",
-                    "settings_select_disabled",
-                ]:
-                    items_to_remove.append(child)
-
-        for item in items_to_remove:
-            self.remove_item(item)
-
-        if show_profile_promo:
-            if self.profile_button not in self.children:
-                self.add_item(self.profile_button)
-            if self.purchase_button not in self.children:
-                self.add_item(self.purchase_button)
-
-        if self.state == "domain":
-            is_viewer = self.user_id != self.command_user_id
-
-            if is_viewer:
-                self.upgrade_select = Select(
-                    placeholder=f"Viewing {KINGDOM_NAME} (Read Only)",
-                    options=[
-                        discord.SelectOption(
-                            label="Only the owner can upgrade", value="dummy"
-                        )
-                    ],
-                    disabled=True,
-                    custom_id="kingdom_upgrade_select_disabled",
-                    row=2,
+    async def upgrade_options(self, pool) -> list:
+        """Gives one choice per building with its next level and price."""
+        guild_id = self.member.guild.id
+        levels = await get_kingdom_buildings(pool, guild_id, self.command_user_id)
+        discount = await get_domain_discount(pool, guild_id, self.command_user_id)
+        options = []
+        for key, info in BUILDINGS.items():
+            level = levels.get(key, 0)
+            cost = calculate_cost(level)
+            lower = apply_discount(cost, discount)
+            price = f"{cost:,}"
+            if discount > 0 and lower < cost:
+                price = f"{lower:,} (discounted)"
+            options.append(
+                discord.SelectOption(
+                    label=f"{info['emoji']} {info['name']}",
+                    description=f"Lv. {level} ➜ Lv. {level+1} | Cost: {price}",
+                    value=f"upgrade_{key}",
+                    emoji=info["emoji"],
                 )
-                self.add_item(self.upgrade_select)
-            else:
-                from commands.Events.helperFunctions import (
-                    get_domain_discount,
-                    get_kingdom_buildings,
-                )
-
-                kb_data = {}
-                if pool:
-                    kb_data = await get_kingdom_buildings(
-                        pool, self.guild_id, self.command_user_id
-                    )
-                    domain_discount = await get_domain_discount(
-                        pool, self.guild_id, self.command_user_id
-                    )
-                else:
-                    domain_discount = 0
-
-                options = []
-                for key, info in BUILDINGS.items():
-                    lvl = kb_data.get(key, 0)
-                    cost = calculate_cost(lvl)
-                    discounted_cost = apply_discount(cost, domain_discount)
-
-                    label = f"{info['emoji']} {info['name']}"
-                    if domain_discount > 0 and discounted_cost < cost:
-                        desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {discounted_cost:,} (discounted)"
-                    else:
-                        desc = f"Lv. {lvl} ➜ Lv. {lvl+1} | Cost: {cost:,}"
-
-                    options.append(
-                        discord.SelectOption(
-                            label=label,
-                            description=desc,
-                            value=f"upgrade_{key}",
-                            emoji=info["emoji"],
-                        )
-                    )
-
-                self.upgrade_select = Select(
-                    placeholder="Choose a building to upgrade...",
-                    options=options,
-                    custom_id="kingdom_upgrade_select",
-                    row=2,
-                )
-                self.upgrade_select.callback = self.upgrade_select_callback
-                self.add_item(self.upgrade_select)
-
-        if self.state == "settings":
-            # Get current chest and minigame spawn status for display
-            user_settings = await get_user_minigame_settings(
-                pool, self.guild_id, self.user_id
             )
-            chest_disabled = user_settings["chest_disabled"]
-            chest_status = "Disabled" if chest_disabled else "Enabled"
-            minigame_disabled = user_settings["minigame_disabled"]
-            minigame_status = "Disabled" if minigame_disabled else "Enabled"
+        return options
 
-            is_viewer = self.user_id != self.command_user_id
+    def locked_select(self, placeholder: str, reason: str, custom_id: str) -> Select:
+        """Gives the greyed-out menu shown to someone looking at another member."""
+        return Select(
+            placeholder=placeholder,
+            options=[discord.SelectOption(label=reason, value="dummy")],
+            disabled=True,
+            custom_id=custom_id,
+            row=2,
+        )
 
-            if is_viewer:
-                self.settings_select = Select(
-                    placeholder=f"Viewing Settings (Read Only)",
-                    options=[
-                        discord.SelectOption(
-                            label="Only the owner can edit", value="dummy"
-                        )
-                    ],
-                    disabled=True,
-                    custom_id="settings_select_disabled",
-                    row=2,
+    async def update_buttons(self, pool):
+        """Marks the open tab and puts that tab's menu under the buttons."""
+        for child in self.children:
+            if child.custom_id in TABS:
+                opened = child.custom_id == self.state
+                child.disabled = opened
+                child.style = (
+                    discord.ButtonStyle.blurple if opened else discord.ButtonStyle.grey
                 )
-                self.add_item(self.settings_select)
-            else:
-                self.settings_select = Select(
-                    placeholder="Select a setting to modify...",
-                    options=[
-                        discord.SelectOption(
-                            label="Daily Chest Spawning",
-                            value="toggle_chest_spawn",
-                        ),
-                        discord.SelectOption(
-                            label="Minigame Spawning",
-                            value="toggle_minigame_spawn",
-                        ),
-                        discord.SelectOption(
-                            label=f"{SIGIL_CURRENCY_NAME} Chat Earning",
-                            value="toggle_sigils_spawn",
-                        ),
-                    ],
-                    custom_id="settings_select",
-                    row=2,
-                )
-                self.settings_select.callback = self.settings_select_callback
-                self.add_item(self.settings_select)
+        if self.select:
+            self.remove_item(self.select)
+            self.select = None
+
+        own = self.member.id == self.command_user_id
+        if self.state == "domain" and not own:
+            self.select = self.locked_select(
+                f"Viewing {KINGDOM_NAME} (Read Only)",
+                "Only the owner can upgrade",
+                "kingdom_upgrade_select_disabled",
+            )
+        elif self.state == "domain":
+            self.select = Select(
+                placeholder="Choose a building to upgrade...",
+                options=await self.upgrade_options(pool),
+                custom_id="kingdom_upgrade_select",
+                row=2,
+            )
+            self.select.callback = self.upgrade_select_callback
+        elif self.state == "settings" and not own:
+            self.select = self.locked_select(
+                "Viewing Settings (Read Only)",
+                "Only the owner can edit",
+                "settings_select_disabled",
+            )
+        elif self.state == "settings":
+            self.select = Select(
+                placeholder="Select a setting to modify...",
+                options=[
+                    discord.SelectOption(label=name, value=key)
+                    for key, (_, name, _) in SETTINGS.items()
+                ],
+                custom_id="settings_select",
+                row=2,
+            )
+            self.select.callback = self.settings_select_callback
+        if self.select:
+            self.add_item(self.select)
+
+
+def owned_line(name, count: int, since: int, pinned: bool) -> str:
+    """Gives the inventory line of one item or role a member bought."""
+    prefix = "📌 **Pinned:** " if pinned else "- "
+    shown = f"<@&{name}>" if is_role(name) else name
+    if count > 1:
+        return f"{prefix}{shown} **(x{count})** - *First acquired <t:{since}:R>*"
+    return f"{prefix}{shown} - *Acquired <t:{since}:R>*"
+
+
+def inventory_text(items: list) -> str:
+    """Lists what a member bought, pinned first, cut to fit one embed field."""
+    groups = {True: {}, False: {}}
+    for name, _, cost, _, timestamp, pinned, *_ in items:
+        if cost == 0:
+            continue
+        count, since = groups[bool(pinned)].get(name, (0, timestamp))
+        groups[bool(pinned)][name] = (count + 1, min(since, timestamp))
+    lines = [
+        owned_line(name, count, since, pinned)
+        for pinned in (True, False)
+        for name, (count, since) in groups[pinned].items()
+    ]
+    if not lines:
+        return f"No {SlashCommand('shop')} items purchased yet"
+
+    text, shown = "", 0
+    for line in lines:
+        if len(text) + len(line) + MORE_LINE_ROOM > FIELD_LIMIT:
+            break
+        text += line + "\n"
+        shown += 1
+    if shown < len(lines):
+        text += f"*({len(lines) - shown} more...)*"
+    return text.strip()
+
+
+def milestones_text(milestones: list, items: list) -> str:
+    """Lists the milestones a member earned, lowest first."""
+    earned = {name: timestamp for name, _, cost, _, timestamp, *_ in items if cost == 0}
+    reached = sorted(
+        (milestone for milestone in milestones if milestone[1] in earned),
+        key=lambda milestone: milestone[2],
+    )
+    if not reached:
+        return f"No {SlashCommand('milestones')} earned yet"
+    return "".join(
+        f"- {f'<@&{reward}>' if is_role(reward) else reward} - *Earned at {MORA_EMOTE} `{threshold:,}` <t:{earned[reward]}:R>*\n"
+        for _, reward, threshold, *_ in reached
+    )
+
+
+def title_line(cosmetics: dict):
+    """Gives the heading showing the title a member picked, or None."""
+    if cosmetics.get("selected_custom_title"):
+        return f"### {cosmetics['selected_custom_title']}"
+    key = cosmetics.get("selected_title")
+    if not key:
+        return None
+    for entry in cosmetics.get("titles") or []:
+        if len(entry) >= 2 and entry[0] == key:
+            pin = "<:rank:1364439165189488854>" if "<a:" not in entry[1] else ""
+            return f"### {pin}{entry[1]}"
+    return None
 
 
 class Mora(commands.Cog):
@@ -1218,165 +969,42 @@ class Mora(commands.Cog):
     )
     @app_commands.describe(user="Specify any user other than yourself if needed")
     async def mora(self, interaction: discord.Interaction, user: discord.Member = None):
-        start_time = time.perf_counter()
         await interaction.response.defer(thinking=True)
         user = user or interaction.user
+        pool, guild = interaction.client.pool, interaction.guild
 
-        # Get global ranking
-        global_ranking = await get_global_leaderboard(
-            interaction.client.pool, limit=10000
+        global_total, global_rank = await standing(
+            pool, "minigame_mora", "count", user.id
         )
-        global_total = next((mora for uid, mora in global_ranking if uid == user.id), 0)
-        global_rank = next(
-            (i + 1 for i, (uid, _) in enumerate(global_ranking) if uid == user.id),
-            "N/A",
+        global_sigils, global_sigils_rank = await standing(
+            pool, "minigame_sigils", "earnings", user.id
         )
-        global_sigils = await get_global_sigils_balance(
-            interaction.client.pool, user.id
+        guild_total, guild_rank = await standing(
+            pool, "minigame_mora", "count", user.id, guild.id
         )
-        global_sigils_leaderboard = await get_global_sigils_leaderboard(
-            interaction.client.pool, limit=10000
-        )
-        global_sigils_rank = next(
-            (
-                i + 1
-                for i, (uid, _) in enumerate(global_sigils_leaderboard)
-                if uid == user.id
-            ),
-            "N/A",
+        guild_sigils, guild_sigils_rank = await standing(
+            pool, "minigame_sigils", "earnings", user.id, guild.id
         )
 
-        # Get guild ranking
-        guild_leaderboard = await get_guild_leaderboard(
-            interaction.client.pool, interaction.guild.id, limit=10000
-        )
-        guild_total = next(
-            (mora for uid, mora in guild_leaderboard if uid == user.id), 0
-        )
-        guild_rank = next(
-            (i + 1 for i, (uid, _) in enumerate(guild_leaderboard) if uid == user.id),
-            "N/A",
-        )
-        guild_sigils = await get_sigils_balance(
-            interaction.client.pool, user.id, interaction.guild.id
-        )
-        guild_sigils_leaderboard = await get_guild_sigils_leaderboard(
-            interaction.client.pool, interaction.guild.id, limit=10000
-        )
-        guild_sigils_rank = next(
-            (
-                i + 1
-                for i, (uid, _) in enumerate(guild_sigils_leaderboard)
-                if uid == user.id
-            ),
-            "N/A",
-        )
-
-        inventory_items = await get_user_inventory(
-            interaction.client.pool, user.id, interaction.guild.id
-        )
-        inv = f"No {SlashCommand('shop')} items purchased yet"
-
-        MAX_INV_LENGTH = 1024
-        EXTRA_LENGTH = 15
-
-        if inventory_items:
-            try:
-                item_dict = {}
-                pinned_items = {}
-
-                for item in inventory_items:
-                    # item = (title, description, cost, gid, timestamp, pinned)
-                    if item[2] == 0:  # Skip free items (cost = 0)
-                        continue
-                    role_id = item[0]
-                    timestamp = item[4]
-                    is_pinned = item[5]  # Boolean from PostgreSQL
-
-                    target_dict = pinned_items if is_pinned else item_dict
-
-                    if role_id in target_dict:
-                        target_dict[role_id]["count"] += 1
-                        target_dict[role_id]["timestamp"] = min(
-                            target_dict[role_id]["timestamp"], timestamp
-                        )
-                    else:
-                        target_dict[role_id] = {
-                            "count": 1,
-                            "timestamp": timestamp,
-                        }
-
-                def format_item(role, data, pinned=False):
-                    prefix = "📌 **Pinned:** " if pinned else "- "
-                    if isinstance(role, int) or str(role).isdigit():  # Role
-                        return (
-                            f"{prefix}<@&{role}> **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
-                            if data["count"] > 1
-                            else f"{prefix}<@&{role}> - *Acquired <t:{data['timestamp']}:R>*"
-                        )
-                    else:  # Item
-                        return (
-                            f"{prefix}{role} **(x{data['count']})** - *First acquired <t:{data['timestamp']}:R>*"
-                            if data["count"] > 1
-                            else f"{prefix}{role} - *Acquired <t:{data['timestamp']}:R>*"
-                        )
-
-                pinned_list = [
-                    format_item(role, data, True) for role, data in pinned_items.items()
-                ]
-                items_list = [
-                    format_item(role, data) for role, data in item_dict.items()
-                ]
-                combined_list = pinned_list + items_list
-
-                if combined_list:
-                    inv = ""
-                    remaining_count = 0
-
-                    for item in combined_list:
-                        if len(inv) + len(item) + EXTRA_LENGTH > MAX_INV_LENGTH:
-                            break
-                        inv += item + "\n"
-
-                    remaining_count = len(combined_list) - inv.count("\n")
-                    if remaining_count > 0:
-                        inv += f"*({remaining_count} more...)*"
-
-                    inv = inv.strip()
-
-            except Exception as e:
-                print(e)
-
-        cosmetics = await get_cosmetics(
-            interaction.client.pool, interaction.guild.id, user.id
-        )
-        selected = dict(cosmetics) if cosmetics else {}
-        elite_active = await is_elite_active(
-            interaction.client.pool, user.id, interaction.guild.id
-        )
-        custom_color_hex = (
-            selected.get("selected_embed_color_hex") if elite_active else None
-        )
-        custom_color = (
-            discord.Color(int(custom_color_hex, 16)) if custom_color_hex else None
-        )
+        cosmetics = await get_cosmetics(pool, guild.id, user.id) or {}
+        elite = await is_elite_active(pool, user.id, guild.id)
+        color_hex = cosmetics.get("selected_embed_color_hex") if elite else None
+        custom_color = discord.Color(int(color_hex, 16)) if color_hex else None
 
         embed = discord.Embed(
-            title=f"{user.display_name}'s Inventory in {interaction.guild.name}",
+            title=f"{user.display_name}'s Inventory in {guild.name}",
             description="",
             color=custom_color or discord.Color.gold(),
         )
-
         if guild_rank != "N/A":
             embed.add_field(
-                name=interaction.guild.name,
+                name=guild.name,
                 value=(
                     f"{GUILD_MORA_EMOTE} {CURRENCY_NAME}: **`{int(guild_total):,}`**\n"
                     f"{GUILD_SIGIL_EMOTE} {SIGIL_CURRENCY_NAME}: **`{int(guild_sigils):,}`**"
                 ),
                 inline=True,
             )
-
         if global_rank != "N/A":
             embed.add_field(
                 name="Global",
@@ -1387,169 +1015,69 @@ class Mora(commands.Cog):
                 inline=True,
             )
 
-        embed.add_field(name="Guild Inventory", value=inv, inline=False)
-
-        milestones = await get_milestones_list(
-            interaction.client.pool, interaction.guild.id
+        items = await get_user_inventory(pool, user.id, guild.id)
+        embed.add_field(
+            name="Guild Inventory", value=inventory_text(items), inline=False
         )
-
-        user_milestones = []
-        try:
-            async with interaction.client.pool.acquire() as conn:
-                milestone_titles = await conn.fetch(
-                    "SELECT title, timestamp FROM minigame_inventory WHERE uid = $1 AND gid = $2 AND cost = 0",
-                    user.id,
-                    interaction.guild.id,
-                )
-
-            user_milestone_titles = {
-                row["title"]: row["timestamp"] for row in milestone_titles
-            }
-
-            for milestone in milestones:
-                if isinstance(milestone, list) and len(milestone) >= 3:
-                    milestone_reward = milestone[1]  # milestone[1] is reward
-                    if milestone_reward in user_milestone_titles:
-                        user_milestones.append(
-                            {
-                                "threshold": milestone[2],
-                                "reward": milestone_reward,
-                                "description": milestone[0],
-                                "timestamp": user_milestone_titles[milestone_reward],
-                            }
-                        )
-        except Exception as e:
-            print(f"Error fetching milestones from PostgreSQL: {e}")
-
-        milestones_text = ""
-        if user_milestones:
-            user_milestones.sort(key=lambda x: x["threshold"])
-            for ms in user_milestones:
-                is_role = isinstance(ms["reward"], int) or str(ms["reward"]).isdigit()
-                reward_display = f"<@&{ms['reward']}>" if is_role else ms["reward"]
-                milestones_text += f"- {reward_display} - *Earned at {MORA_EMOTE} `{ms['threshold']:,}` <t:{ms['timestamp']}:R>*\n"
-        else:
-            milestones_text = f"No {SlashCommand('milestones')} earned yet"
-
-        embed.add_field(name="Guild Milestones", value=milestones_text, inline=False)
-
-        animated_background = (
-            selected.get("selected_animated_background") if elite_active else None
+        milestones = await get_milestones_list(pool, guild.id)
+        embed.add_field(
+            name="Guild Milestones",
+            value=milestones_text(milestones, items),
+            inline=False,
         )
-        profile_frame = selected.get("selected_profile_frame")
+        title = title_line(cosmetics)
+        if title:
+            embed.description = f"{title}\n{embed.description}"
 
+        animated = cosmetics.get("selected_animated_background") if elite else None
+        frame = cosmetics.get("selected_profile_frame")
         customized = (
             os.path.isfile(f"{INVENTORY_BG_PATH}/{user.id}.png")
-            or bool(profile_frame)
-            or bool(animated_background)
+            or bool(frame)
+            or bool(animated)
         )
-
-        custom_title = selected.get("selected_custom_title")
-        title_key = selected.get("selected_title")
-        title_display = None
-        if custom_title:
-            title_display = f"### {custom_title}"
-        elif title_key:
-            titles = cosmetics["titles"] if cosmetics else []
-
-            title_entry = next(
-                (e for e in titles if len(e) >= 2 and e[0] == title_key), None
-            )
-            if title_entry:
-                title_name = title_entry[1]
-
-                pin = "<:rank:1364439165189488854>" if "<a:" not in title_name else ""
-                title_display = f"### {pin}{title_name}"
-
-        if title_display:
-            embed.description = f"{title_display}\n{embed.description}"
-
+        look = {}
         if customized:
-            if animated_background:
-                bg_path = f"{ANIMATED_INVENTORY_BG_PATH}/{animated_background}"
-                if not os.path.exists(
-                    bg_path
-                ) and not animated_background.lower().endswith(".gif"):
-                    bg_path = f"{bg_path}.gif"
-            else:
-                bg_path = f"{INVENTORY_BG_PATH}/{user.id}.png"
-
-            filename = await createProfileCard(
-                user,
-                f"{int(guild_total):,}",
-                guild_rank,
-                f"{int(guild_sigils):,}",
-                guild_sigils_rank,
-                f"{int(global_total):,}",
-                global_rank,
-                f"{int(global_sigils):,}",
-                global_sigils_rank,
-                bg=bg_path,
-                profile_frame=profile_frame if profile_frame else None,
-                accent_color_hex=custom_color_hex,
-                font_name=selected.get("font") if elite_active else None,
-            )
-            followup = False
-        else:
-            filename = await createProfileCard(
-                user,
-                f"{int(guild_total):,}",
-                guild_rank,
-                f"{int(guild_sigils):,}",
-                guild_sigils_rank,
-                f"{int(global_total):,}",
-                global_rank,
-                f"{int(global_sigils):,}",
-                global_sigils_rank,
-                accent_color_hex=custom_color_hex,
-                font_name=selected.get("font") if elite_active else None,
-            )
-            followup = True
-
-        chn = interaction.client.get_channel(1026968305208131645)
-
-        from commands.Events.helperFunctions import get_kingdom_buildings
-
-        kb_data = await get_kingdom_buildings(
-            interaction.client.pool, interaction.guild.id, user.id
+            background = f"{INVENTORY_BG_PATH}/{user.id}.png"
+            if animated:
+                background = f"{ANIMATED_INVENTORY_BG_PATH}/{animated}"
+                if not os.path.exists(background) and not animated.lower().endswith(
+                    ".gif"
+                ):
+                    background = f"{background}.gif"
+            look = {"bg": background, "profile_frame": frame or None}
+        card = await createProfileCard(
+            user,
+            f"{int(guild_total):,}",
+            guild_rank,
+            f"{int(guild_sigils):,}",
+            guild_sigils_rank,
+            f"{int(global_total):,}",
+            global_rank,
+            f"{int(global_sigils):,}",
+            global_sigils_rank,
+            accent_color_hex=color_hex,
+            font_name=cosmetics.get("selected_font") if elite else None,
+            **look,
         )
-        k_data = kb_data
-        k_level = sum(k_data.values())
-        if k_level > 0:
-            rank_title = get_rank_title(k_level)
 
-            current_footer = f"| {embed.footer.text}" if embed.footer else ""
+        levels = await get_kingdom_buildings(pool, guild.id, user.id)
+        kingdom_level = sum(levels.values())
+        if kingdom_level > 0:
             embed.set_footer(
-                text=f"{KINGDOM_NAME} Rank: {rank_title} (Lv. {k_level}) {current_footer}"
+                text=f"{KINGDOM_NAME} Rank: {get_rank_title(kingdom_level)} (Lv. {kingdom_level}) "
             )
+        embed.set_image(url=await image_link(interaction.client, discord.File(card)))
 
-        msg_obj = await chn.send(file=discord.File(filename))
-        url = msg_obj.attachments[0].proxy_url
-        embed.set_image(url=url)
-
-        elite = await is_elite_active(
-            interaction.client.pool, user.id, interaction.guild.id
-        )
         view = ToggleView(
-            embed,
-            user.id,
-            interaction.user.id,
-            message=None,
-            guild_id=interaction.guild.id,
-            custom_color=custom_color,
-            is_elite=elite,
+            embed, user, interaction.user.id, custom_color=custom_color, is_elite=elite
         )
-        message = await interaction.followup.send(embed=embed, view=view)
-        view.message = message
-        if followup:
+        view.message = await interaction.followup.send(embed=embed, view=view)
+        if not customized:
             await interaction.followup.send(
                 f"💡 Tip: Customize your inventory however you like (custom background, profile frame, titles) with {SlashCommand('customize')}!",
                 ephemeral=True,
             )
-        end_time = time.perf_counter()
-        print(
-            f"Total /{BALANCE_COMMAND} execution time: {end_time - start_time} seconds"
-        )
 
     @app_commands.command(
         name="gift", description=f"Gift {CURRENCY_NAME} to another user"
@@ -1562,87 +1090,49 @@ class Mora(commands.Cog):
         self, interaction: discord.Interaction, user: discord.Member, amount: int
     ):
         await interaction.response.defer()
+        client, pool = interaction.client, interaction.client.pool
+        guild_id, channel_id = interaction.guild.id, interaction.channel.id
+        donor = interaction.user
 
-        from commands.Events.helperFunctions import get_user_stats
-
-        stats = await get_user_stats(
-            interaction.client.pool, interaction.guild.id, interaction.user.id
-        )
-
-        if "gift_tax" not in stats or stats["gift_tax"] is None:
-            return await interaction.followup.send(
-                f"⏳ You haven't unlocked gifting for this season yet. Unlock it at Tier `5` in the free track!"
-            )
-
-        if amount <= 0:
-            return await interaction.followup.send(
-                f"{NO_EMOTE} Amount must be positive and non-zero!"
-            )
-
-        if amount < 100:
-            return await interaction.followup.send(
-                f"{NO_EMOTE} The minimum amount to gift is {MORA_EMOTE} `100`!"
-            )
-
-        if interaction.user == user:
-            return await interaction.followup.send(
-                f"{NO_EMOTE} You can't gift {MORA_EMOTE} to yourself!"
-            )
-
-        if user.bot:
-            return await interaction.followup.send(
-                f"{NO_EMOTE} Why would you waste your {MORA_EMOTE} on a non-human being?"
-            )
+        stats = await get_user_stats(pool, guild_id, donor.id)
+        problem = None
+        if stats.get("gift_tax") is None:
+            problem = "⏳ You haven't unlocked gifting for this season yet. Unlock it at Tier `5` in the free track!"
+        elif amount <= 0:
+            problem = f"{NO_EMOTE} Amount must be positive and non-zero!"
+        elif amount < 100:
+            problem = f"{NO_EMOTE} The minimum amount to gift is {MORA_EMOTE} `100`!"
+        elif donor == user:
+            problem = f"{NO_EMOTE} You can't gift {MORA_EMOTE} to yourself!"
+        elif user.bot:
+            problem = f"{NO_EMOTE} Why would you waste your {MORA_EMOTE} on a non-human being?"
+        if problem:
+            return await interaction.followup.send(problem)
 
         tax_rate = stats["gift_tax"]
-        tax_amount = int(amount * tax_rate / 100)
-        total_cost = amount + tax_amount
-
-        donor_mora = await get_guild_mora(
-            interaction.client.pool, interaction.user.id, interaction.guild.id
-        )
-        recipient_mora = await get_guild_mora(
-            interaction.client.pool, user.id, interaction.guild.id
-        )
-
+        tax = int(amount * tax_rate / 100)
+        total_cost = amount + tax
+        donor_mora = await get_guild_mora(pool, donor.id, guild_id)
+        recipient_mora = await get_guild_mora(pool, user.id, guild_id)
         if donor_mora < total_cost:
             return await interaction.followup.send(
                 f"You need {MORA_EMOTE} `{total_cost}` ({amount} + {tax_rate}% tax) to make this gift! \n-# You currently only have {MORA_EMOTE} `{donor_mora}`."
             )
 
+        await addMora(pool, donor.id, -total_cost, channel_id, guild_id, client)
         await addMora(
-            interaction.client.pool,
-            interaction.user.id,
-            -total_cost,
-            interaction.channel.id,
-            interaction.guild.id,
-            interaction.client,
-        )  # Donor
+            pool, user.id, amount, channel_id, guild_id, client, bypass_boost=True
+        )
         await addMora(
-            interaction.client.pool,
-            user.id,
-            amount,
-            interaction.channel.id,
-            interaction.guild.id,
-            interaction.client,
-            bypass_boost=True,
-        )  # Recipient
-        await addMora(
-            interaction.client.pool,
-            interaction.client.user.id,
-            tax_amount,
-            interaction.channel.id,
-            interaction.guild.id,
-            interaction.client,
-            bypass_boost=True,
-        )  # Tax
+            pool, client.user.id, tax, channel_id, guild_id, client, bypass_boost=True
+        )
 
         embed = discord.Embed(
             title="<a:2_star:1366158196213022800> Gift Sent",
             description=(
-                f"**Sender:** {interaction.user.mention}\n"
+                f"**Sender:** {donor.mention}\n"
                 f"**Total Deducted:** {MORA_EMOTE} `{total_cost:,}`\n"
-                f"-# Fischl also collected {MORA_EMOTE} `{tax_amount:,}` ({tax_rate}%) in taxes\n\n"
+                f"-# Fischl also collected {MORA_EMOTE} `{tax:,}` ({tax_rate}%) in taxes\n\n"
                 f"**Recipient:** {user.mention}\n"
                 f"**Total Received:** {MORA_EMOTE} `{amount:,}`"
             ),
@@ -1652,98 +1142,62 @@ class Mora(commands.Cog):
             text="Sharing is caring! You just made your friend's day a little brighter!"
         )
         await interaction.followup.send(
-            content=f"{user.mention} has been blessed by {interaction.user.mention}! <a:2_star:1366158196213022800>",
+            content=f"{user.mention} has been blessed by {donor.mention}! <a:2_star:1366158196213022800>",
             embed=embed,
         )
 
-        quest_dict = {"gift_mora": amount, "gift_mora_unique": user.id}
+        quests = {"gift_mora": amount, "gift_mora_unique": user.id}
         if recipient_mora < donor_mora:
-            quest_dict["gift_mora_poorer"] = 1
-
-        await update_quest(
-            interaction.user.id,
-            interaction.guild.id,
-            interaction.channel.id,
-            quest_dict,
-            interaction.client,
-        )
+            quests["gift_mora_poorer"] = 1
+        await update_quest(donor.id, guild_id, channel_id, quests, client)
 
     @app_commands.command(
         name="streak", description=f"Check your {MORA_CHEST_NAME} streak"
     )
     async def streak(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
-        user = interaction.user
-
-        streak_data = await get_chest_streaks(
-            interaction.client.pool, interaction.guild.id, user.id
+        pool, guild_id, user = (
+            interaction.client.pool,
+            interaction.guild.id,
+            interaction.user,
         )
-        live_current_streak, max_streak, _, is_broken = _parse_streak_data(streak_data)
-
-        counts = await get_chest_counts(
-            interaction.client.pool, interaction.guild.id, user.id
+        current, longest, broken = streak_state(
+            await get_chest_streaks(pool, guild_id, user.id)
         )
-        total_chests = sum(counts)
-
-        gc = await get_guild_settings(interaction.client.pool, interaction.guild.id)
-        tier_names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
-        tier_emotes_list = gc.get("chests_emotes", [])
-        tier_emotes = (
-            dict(zip(tier_names, tier_emotes_list)) if tier_emotes_list else {}
-        )
-
-        chest_info = ""
-        for i, name in enumerate(tier_names):
-            emote = tier_emotes.get(name, EMOTE_BLANK)
-            count = counts[i] if i < len(counts) else 0
-            chest_info += f"{emote} `{count}` {EMOTE_BLANK}"
-        chest_info += f"\n**Total:** `{total_chests}`"
+        chests, total_chests = await chest_counts_text(pool, guild_id, user.id)
 
         embed = discord.Embed(
             title=f"{user.display_name}'s {MORA_CHEST_NAME} Streak",
             description="",
             color=discord.Color.gold(),
         )
-        embed.add_field(name=f"`📦` {MORA_CHEST_NAME}s", value=chest_info, inline=False)
         embed.add_field(
-            name="Current Streak",
-            value=f"{EMOTE_STREAK} `{live_current_streak}` day{'s' if live_current_streak != 1 else ''}",
-            inline=True,
+            name=f"`📦` {MORA_CHEST_NAME}s",
+            value=f"{chests}\n**Total:** `{total_chests}`",
+            inline=False,
         )
         embed.add_field(
-            name="Max Streak",
-            value=f"{EMOTE_MAX_STREAK} `{max_streak}` day{'s' if max_streak != 1 else ''}",
-            inline=True,
+            name="Current Streak", value=f"{EMOTE_STREAK} {days(current)}", inline=True
         )
-
-        max_restorable = max(0, max_streak - live_current_streak)
-
-        view = None
-        if is_broken and max_restorable > 0:
-            embed.add_field(
-                name="💔 Streak Broken!",
-                value=(
-                    f"You can restore up to `{max_restorable}` day{'s' if max_restorable != 1 else ''} "
-                    f"back towards your max streak.\n"
-                    f"-# Costs {MORA_EMOTE} `{STREAK_RESTORE_COST_PER_DAY:,}` per day restored."
-                ),
-                inline=False,
-            )
-            view = RestoreStreakView(
-                interaction.guild.id,
-                user.id,
-                max_restorable,
-                max_streak,
-                live_current_streak,
-            )
-
-        embed.set_footer(
-            text="Tip: Claim your chest at the same time each day to keep your streak!"
+        embed.add_field(
+            name="Max Streak", value=f"{EMOTE_MAX_STREAK} {days(longest)}", inline=True
         )
-        if view is not None:
-            await interaction.followup.send(embed=embed, view=view)
-        else:
-            await interaction.followup.send(embed=embed)
+        embed.set_footer(text=STREAK_TIP)
+
+        restorable = max(0, longest - current)
+        if not broken or restorable == 0:
+            return await interaction.followup.send(embed=embed)
+        embed.add_field(
+            name="💔 Streak Broken!",
+            value=(
+                f"You can restore up to {days(restorable)} "
+                f"back towards your max streak.\n"
+                f"-# Costs {MORA_EMOTE} `{STREAK_RESTORE_COST_PER_DAY:,}` per day restored."
+            ),
+            inline=False,
+        )
+        view = RestoreStreakView(guild_id, user.id, restorable)
+        view.message = await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(
         name="fixstreak", description="[Owner Only] Manually fix a user's chest streak"
@@ -1764,61 +1218,49 @@ class Mora(commands.Cog):
     ):
         if interaction.user.id != FIXSTREAK_OWNER_ID:
             return
-
         await interaction.response.defer(ephemeral=True)
+        pool, guild_id = interaction.client.pool, interaction.guild.id
 
         if new_streak < 0 or new_max_streak < 0:
             return await interaction.followup.send(
                 f"{NO_EMOTE} Streak values can't be negative!", ephemeral=True
             )
-
-        if mora_to_deduct is not None:
-            if mora_to_deduct < 0:
+        if mora_to_deduct is not None and mora_to_deduct < 0:
+            return await interaction.followup.send(
+                f"{NO_EMOTE} Mora to deduct can't be negative!", ephemeral=True
+            )
+        if mora_to_deduct:
+            balance = await get_guild_mora(pool, user.id, guild_id)
+            if balance < mora_to_deduct:
                 return await interaction.followup.send(
-                    f"{NO_EMOTE} Mora to deduct can't be negative!", ephemeral=True
+                    f"{NO_EMOTE} {user.mention} only has {MORA_EMOTE} `{int(balance):,}`, "
+                    f"can't deduct {MORA_EMOTE} `{mora_to_deduct:,}`!",
+                    ephemeral=True,
                 )
+            await addMora(
+                pool,
+                user.id,
+                -mora_to_deduct,
+                interaction.channel.id,
+                guild_id,
+                interaction.client,
+                bypass_boost=True,
+            )
 
-            if mora_to_deduct > 0:
-                current_balance = await get_guild_mora(
-                    interaction.client.pool, user.id, interaction.guild.id
-                )
-                if current_balance < mora_to_deduct:
-                    return await interaction.followup.send(
-                        f"{NO_EMOTE} {user.mention} only has {MORA_EMOTE} `{int(current_balance):,}`, "
-                        f"can't deduct {MORA_EMOTE} `{mora_to_deduct:,}`!",
-                        ephemeral=True,
-                    )
-                await addMora(
-                    interaction.client.pool,
-                    user.id,
-                    -mora_to_deduct,
-                    interaction.channel.id,
-                    interaction.guild.id,
-                    interaction.client,
-                    bypass_boost=True,
-                )
-
-        today_iso = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         await upsert_chest_streaks(
-            interaction.client.pool,
-            interaction.guild.id,
-            user.id,
-            new_streak,
-            new_max_streak,
-            today_iso,
+            pool, guild_id, user.id, new_streak, new_max_streak, today
         )
 
+        deducted = ""
+        if mora_to_deduct:
+            deducted = f"\n{MORA_EMOTE} **Mora Deducted:** `{mora_to_deduct:,}`"
         embed = discord.Embed(
             title=f"{YES_EMOTE} Streak Fixed",
             description=(
                 f"**User:** {user.mention}\n"
-                f"{EMOTE_STREAK} **New Streak:** `{new_streak}` day{'s' if new_streak != 1 else ''}\n"
-                f"{EMOTE_MAX_STREAK} **New Max Streak:** `{new_max_streak}` day{'s' if new_max_streak != 1 else ''}"
-                + (
-                    f"\n{MORA_EMOTE} **Mora Deducted:** `{mora_to_deduct:,}`"
-                    if mora_to_deduct
-                    else ""
-                )
+                f"{EMOTE_STREAK} **New Streak:** {days(new_streak)}\n"
+                f"{EMOTE_MAX_STREAK} **New Max Streak:** {days(new_max_streak)}{deducted}"
             ),
             color=discord.Color.green(),
         )

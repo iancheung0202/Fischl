@@ -41,7 +41,6 @@ from commands.Events.config import (
     MORA_CHEST_UPGRADE_CHANCES,
     MORA_EMOTE,
     NO_EMOTE,
-    PROFILE_LINK_BUTTON,
     SIGIL_CURRENCY_NAME,
     SIGIL_EMOTE,
     SIGILS_MESSAGE_EMOTE,
@@ -53,6 +52,7 @@ from commands.Events.config import (
     WORDS,
     YES_EMOTE,
     build_chest_description,
+    profile_link_button,
 )
 from commands.Events.helperFunctions import (
     add_sigils,
@@ -5293,9 +5293,7 @@ class MoraChestView(discord.ui.View):
 class PersistentChestInfoView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        import copy
-
-        btn = copy.copy(PROFILE_LINK_BUTTON)
+        btn = profile_link_button()
         btn.row = 0
         self.add_item(btn)
 
@@ -5920,9 +5918,7 @@ class TheEventItself(commands.Cog):
         )
 
         view = View()
-        btn = PROFILE_LINK_BUTTON
-        btn.disabled = False
-        view.add_item(btn)
+        view.add_item(profile_link_button())
 
         await message.channel.send(embed=embed, view=view)
 
