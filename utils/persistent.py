@@ -10,7 +10,6 @@ from commands.Events.games.double import UserSelectView
 from commands.Events.helperFunctions import TierRewardsView
 from commands.Partnership.partnershipSystem import PartnerRequestButtonView
 from commands.Utility.topic import TopicAcceptRejectView
-from shared.Boosters.booster import AutoResponseApprovalView, RoleApprovalView
 from shared.Tickets.tickets import (
     CloseTicketButton,
     ConfirmCloseTicketButtons,
@@ -32,8 +31,6 @@ views = [
     ShowPerksBulletin,
     PartnerRequestButtonView,
     PersistentChestInfoView,
-    AutoResponseApprovalView,
-    RoleApprovalView,
     TierRewardsView,
     CloseTicketButton,
     TicketAdminButtons,
