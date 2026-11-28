@@ -42,7 +42,7 @@ AMY = 7
 @pytest.fixture(autouse=True)
 def fresh(monkeypatch, tmp_path):
     """Empties the caches and keeps backgrounds in a folder of the test."""
-    module.legacy_cache.update(at=0.0, settings=None)
+    module.legacy_cache.update(at=None, settings=None)
     module.api_colors.clear()
     module.saving.clear()
     monkeypatch.setattr(module, "BACKGROUNDS", str(tmp_path))
@@ -315,6 +315,15 @@ async def test_legacy_card_without_an_embed_is_attached(firebase, fresh):
     await greet(bot, member())
     sent = bot.channel.send.call_args.kwargs
     assert sent["embed"] is None and sent["files"][0].filename == "welcome.png"
+
+
+async def test_legacy_settings_are_read_on_a_machine_that_just_started(
+    firebase, monkeypatch
+):
+    old_records()
+    monkeypatch.setattr(module.time, "monotonic", lambda: 5.0)
+    bot = client()
+    assert await greet(bot, member()) is bot.channel
 
 
 async def test_legacy_settings_are_read_once_for_many_joins(firebase, monkeypatch):

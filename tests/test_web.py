@@ -1,6 +1,7 @@
 """The website: host rules, ticket history, transcript links, profile API and payment pages."""
 
 import hashlib
+import os
 import sys
 import types
 from pathlib import Path
@@ -482,7 +483,7 @@ def paid(web, monkeypatch, used=False, checked=True, real=True):
         "activate_elite_subscription",
         lambda *args: done.append(args) or (True, "ok"),
     )
-    monkeypatch.setattr(web.profile, "order_used_elsewhere", lambda *args: used)
+    monkeypatch.setattr(web.profile, "order_spent", lambda *args: used)
     monkeypatch.setattr(web.paypal, "can_check_orders", lambda: checked)
     monkeypatch.setattr(web.paypal, "order_paid_for", lambda *args: real)
     monkeypatch.setattr(web.paypal, "notification_is_real", lambda *args: real)
@@ -706,12 +707,55 @@ def test_half_finished_login_leaves_no_session(client, web, monkeypatch):
         assert not session
 
 
-def test_order_used_elsewhere(web, monkeypatch):
+def test_order_spent(web, monkeypatch):
+    monkeypatch.setattr(web.minigames.time, "time", lambda: 1000.0)
     for rows, used in (([(1,)], True), ([], False)):
         conn = Connection(rows)
         monkeypatch.setattr(web.minigames, "get_db_connection", lambda: conn)
-        assert web.minigames.order_used_elsewhere("o", "5", "1") is used
-        assert conn.closed and conn.kept.ran[0][1] == ("o", 5, 1)
+        assert web.minigames.order_spent("o", "5", "1") is used
+        assert conn.closed and conn.kept.ran[0][1] == ("o", 5, 1, 1000.0)
+
+
+def test_an_order_serves_its_buyer_for_one_season_only(web, monkeypatch):
+    """Runs the real statements on Postgres; needs TEST_DATABASE_URL."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL is not set")
+    import psycopg2
+
+    from commands.Events.helperFunctions import SCHEMA
+
+    with psycopg2.connect(url) as conn, conn.cursor() as cursor:
+        cursor.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        cursor.execute(SCHEMA)
+    monkeypatch.setattr(
+        web.minigames, "get_db_connection", lambda: psycopg2.connect(url)
+    )
+    wire(monkeypatch, web, {"/users/@me/channels": Answer(403, {})})
+    spent, activate = (
+        web.minigames.order_spent,
+        web.minigames.activate_elite_subscription,
+    )
+    refused = (False, "This order has already been used.")
+    assert not spent("o", 5, 1)
+    assert activate(5, 1, "o")[0] is True and activate(5, 1, "o")[0] is True
+    assert not spent("o", 5, 1) and not spent("p", 6, 1)
+    assert spent("o", 6, 1) and spent("o", 5, 2)
+    assert activate(6, 1, "o") == refused and activate(5, 2, "o") == refused
+    assert not web.minigames.is_elite_active(6, 1)
+    end = web.minigames.get_current_season()["end_ts"]
+    monkeypatch.setattr(web.minigames.time, "time", lambda: end + 1)
+    assert spent("o", 5, 1) and activate(5, 1, "o") == refused
+    assert activate(5, 1)[0] is True
+    with psycopg2.connect(url) as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM minigame_elite_orders")
+        assert cursor.fetchall() == [("o", 5, 1, end)]
+        cursor.execute("UPDATE minigame_elite SET order_id = 'old' WHERE user_id = 5")
+        cursor.execute(SCHEMA)
+        cursor.execute(
+            "SELECT user_id FROM minigame_elite_orders WHERE order_id = 'old'"
+        )
+        assert cursor.fetchall() == [(5,)]
 
 
 class Cursor:
@@ -782,7 +826,7 @@ def test_events_enabled_matches_channels_and_threads(web, monkeypatch):
 
 
 def test_activating_elite_saves_and_dms(web, monkeypatch):
-    conn = Connection([])
+    conn = Connection([(1,)])
     monkeypatch.setattr(web.minigames, "get_db_connection", lambda: conn)
     discord = wire(
         monkeypatch,
@@ -799,7 +843,9 @@ def test_activating_elite_saves_and_dms(web, monkeypatch):
         "Elite subscription activated successfully",
     )
     assert conn.committed and conn.closed
-    assert conn.kept.ran[0][1] == (5, 1, "Realm", end, "order")
+    assert conn.kept.ran[0][1][:4] == ("order", 5, 1, end)
+    assert conn.kept.ran[1][1] == (5, 1, "Realm", end, "order")
+    assert len(conn.kept.ran) == 2
     embed = discord.calls[-1][2]["json"]["embed"]
     assert (
         "**Realm**" in embed["description"]
@@ -820,6 +866,7 @@ def test_activating_elite_survives_a_closed_dm_and_reports_a_database_error(
         web.minigames.get_current_season()["end_ts"],
         "",
     )
+    assert len(conn.kept.ran) == 1
 
     def broken():
         raise RuntimeError("down")

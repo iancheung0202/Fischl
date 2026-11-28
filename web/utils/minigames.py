@@ -27,7 +27,16 @@ ENABLED = "SELECT channel_id FROM minigame_settings WHERE minigames_enabled = TR
 ELITE_UNTIL = (
     "SELECT expires_at FROM minigame_elite WHERE user_id = %s AND guild_id = %s"
 )
-ORDER_USED = "SELECT 1 FROM minigame_elite WHERE order_id = %s AND NOT (user_id = %s AND guild_id = %s)"
+# A payment stays usable by its buyer until the season it paid for ends, so a repeated request is harmless.
+ORDER_SPENT = """SELECT 1 FROM minigame_elite_orders
+                  WHERE order_id = %s AND NOT (user_id = %s AND guild_id = %s AND expires_at > %s)"""
+# Records a payment; gives a row unless the payment is already spent, so two requests at once cannot share one.
+KEEP_ORDER = """INSERT INTO minigame_elite_orders AS kept (order_id, user_id, guild_id, expires_at)
+                 VALUES (%s, %s, %s, %s)
+                 ON CONFLICT (order_id) DO UPDATE SET order_id = kept.order_id
+                 WHERE kept.user_id = EXCLUDED.user_id AND kept.guild_id = EXCLUDED.guild_id
+                   AND kept.expires_at > %s
+                 RETURNING 1"""
 ACTIVATE = """INSERT INTO minigame_elite (user_id, guild_id, server_name, expires_at, order_id, pending_processed)
                VALUES (%s, %s, %s, %s, %s, FALSE)
                ON CONFLICT (user_id, guild_id)
@@ -168,6 +177,13 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
         expires_at = get_current_season()["end_ts"]
         server_name = guild_name(guild_id)
         with closing(get_db_connection()) as conn, conn.cursor() as cursor:
+            if order_id:
+                cursor.execute(
+                    KEEP_ORDER,
+                    (order_id, int(user_id), int(guild_id), expires_at, time.time()),
+                )
+                if cursor.fetchone() is None:
+                    return False, "This order has already been used."
             cursor.execute(
                 ACTIVATE,
                 (int(user_id), int(guild_id), server_name, expires_at, order_id or ""),
@@ -183,10 +199,12 @@ def activate_elite_subscription(user_id, guild_id, order_id=None):
         return False, f"Error activating subscription: {str(error)}"
 
 
-def order_used_elsewhere(order_id, user_id, guild_id):
-    """Says whether a payment already turned the Elite Track on for someone else."""
+def order_spent(order_id, user_id, guild_id):
+    """Says whether a payment already turned the Elite Track on for someone else or in a season that is over."""
     with closing(get_db_connection()) as conn, conn.cursor() as cursor:
-        cursor.execute(ORDER_USED, (order_id, int(user_id), int(guild_id)))
+        cursor.execute(
+            ORDER_SPENT, (order_id, int(user_id), int(guild_id), time.time())
+        )
         return cursor.fetchone() is not None
 
 

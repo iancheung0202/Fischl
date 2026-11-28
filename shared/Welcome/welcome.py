@@ -41,7 +41,7 @@ NOT_ENABLED = (
 # Why a welcome message was not sent: half set up, turned off, or its channel is gone.
 UNSET, OFF, GONE = "unset", "off", "gone"
 # The old `/Welcome` list and when it was read; joins in servers without a welcome ask for it.
-legacy_cache = {"at": 0.0, "settings": None}
+legacy_cache = {"at": None, "settings": None}
 saving = collections.defaultdict(asyncio.Lock)
 # What The Color API made of each odd colour text.
 api_colors = {}
@@ -72,7 +72,8 @@ def of_server(records, guild_id: int):
 
 async def legacy_settings(guild_id: int):
     """Gives a server's key and record in the old `/Welcome` list, read at most every few minutes."""
-    if time.monotonic() - legacy_cache["at"] > LEGACY_CACHE_SECONDS:
+    at = legacy_cache["at"]
+    if at is None or time.monotonic() - at > LEGACY_CACHE_SECONDS:
         legacy_cache["settings"] = await read("/Welcome")
         legacy_cache["at"] = time.monotonic()
     return of_server(legacy_cache["settings"], guild_id)
@@ -402,7 +403,7 @@ class WelcomeEditor:
         """Writes the three records; `save` keeps two of these from running at once for a server."""
         guild_id, color = self.guild_id, self.embed_data["color"]
         await write(f"/WelcomeV2/{guild_id}", self.to_dict())
-        legacy_cache["at"] = 0.0
+        legacy_cache["at"] = None
         key, _ = await legacy_settings(guild_id)
         settings = {
             "Server ID": guild_id,
@@ -419,7 +420,7 @@ class WelcomeEditor:
             "Color": f"#{color:06x}",
         }
         await mirror("/Welcome Content", key, content)
-        legacy_cache["at"] = 0.0
+        legacy_cache["at"] = None
 
 
 async def saved_editor(guild_id: int):
@@ -975,7 +976,7 @@ class WelcomeSettingsView(EditorView):
                 keys = keys_of_server(await read(path), guild_id)
                 paths += [f"{path}/{key}" for key in keys]
             await asyncio.gather(*map(remove, paths))
-            legacy_cache["at"] = 0.0
+            legacy_cache["at"] = None
         embed = discord.Embed(
             title="Welcome System Disabled",
             description="The welcome system has been disabled for this server.",

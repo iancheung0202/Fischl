@@ -39,7 +39,7 @@ from utils.minigames import (
     get_current_track,
     get_db_connection,
     is_elite_active,
-    order_used_elsewhere,
+    order_spent,
 )
 from utils.request import requests_session
 
@@ -347,7 +347,7 @@ def payment_refused(user_id, guild_id, order_id):
     """Gives why an order may not turn the Elite Track on, or None when it may."""
     if not isinstance(order_id, str) or not ORDER_ID.fullmatch(order_id):
         return "Missing order"
-    if order_used_elsewhere(order_id, user_id, guild_id):
+    if order_spent(order_id, user_id, guild_id):
         return "This order has already been used."
     if paypal.can_check_orders() and not paypal.order_paid_for(
         order_id, user_id, guild_id, active_season().start_ts
@@ -424,9 +424,7 @@ def paypal_webhook():
         if not found or not txn_id:
             print("PayPal webhook without a buyer or transaction")
             return "OK", 200
-        if order_used_elsewhere(txn_id, *found) or not paypal.notification_is_real(
-            body, form
-        ):
+        if order_spent(txn_id, *found) or not paypal.notification_is_real(body, form):
             print(f"PayPal webhook not verified: transaction {txn_id}")
             return "OK", 200
         worked, message = activate_elite_subscription(*found, txn_id)

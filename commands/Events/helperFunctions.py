@@ -95,6 +95,16 @@ CREATE TABLE IF NOT EXISTS minigame_elite (
     claimed_tiers INTEGER[] DEFAULT '{}',
     PRIMARY KEY (user_id, guild_id)
 );
+CREATE TABLE IF NOT EXISTS minigame_elite_orders (
+    order_id TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    guild_id BIGINT NOT NULL,
+    expires_at BIGINT NOT NULL
+);
+INSERT INTO minigame_elite_orders (order_id, user_id, guild_id, expires_at)
+    SELECT DISTINCT ON (order_id) order_id, user_id, guild_id, expires_at
+    FROM minigame_elite WHERE order_id <> '' ORDER BY order_id, expires_at DESC
+    ON CONFLICT (order_id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS minigame_chests (
     gid BIGINT NOT NULL,
     uid BIGINT NOT NULL,
