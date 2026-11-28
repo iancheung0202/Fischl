@@ -1,5 +1,6 @@
 """Profile card looks: /customize with its preview and confirm step, and /preview for frames."""
 
+import asyncio
 import os
 import re
 
@@ -18,7 +19,7 @@ from commands.Events.config import (
     NO_EMOTE,
     YES_EMOTE,
 )
-from commands.Events.createProfileCard import createProfileCard
+from commands.Events.createProfileCard import DRAW_LOCK, createProfileCard
 from commands.Events.helperFunctions import (
     get_cosmetics,
     get_pinned_item,
@@ -58,6 +59,15 @@ async def process_animated_background_upload(
     """Saves an uploaded GIF at `output_path`, each frame cut to the card's size and dimmed."""
     temp_path = f"{output_path}.upload"
     await attachment.save(temp_path)
+    try:
+        async with DRAW_LOCK:
+            await asyncio.to_thread(dim_animation, temp_path, output_path)
+    finally:
+        remove(temp_path)
+
+
+def dim_animation(temp_path: str, output_path: str):
+    """Writes the GIF at `temp_path` to `output_path` with each frame cut to the card's size and dimmed."""
     frames, durations, disposals = [], [], []
     with Image.open(temp_path) as image:
         for frame in ImageSequence.Iterator(image):
@@ -81,7 +91,6 @@ async def process_animated_background_upload(
         disposal=disposals,
         optimize=False,
     )
-    remove(temp_path)
 
 
 def save_static_background(path):
@@ -598,7 +607,8 @@ class Customize(commands.Cog):
             static = f"{INVENTORY_BG_PATH}/{uid}-temp.png"
             try:
                 await background.save(static)
-                save_static_background(static)
+                async with DRAW_LOCK:
+                    await asyncio.to_thread(save_static_background, static)
             except Exception as e:
                 return await interaction.followup.send(
                     f"{NO_EMOTE} Background processing failed: {e}"
@@ -692,7 +702,6 @@ class Customize(commands.Cog):
                     f"{NO_EMOTE} Preview of **{name}** frame:",
                     file=discord.File(filename),
                 )
-            remove(filename)
         except Exception as e:
             await interaction.followup.send(
                 f"{NO_EMOTE} Failed to generate preview: {e}"

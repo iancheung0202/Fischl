@@ -79,9 +79,9 @@ class World:
 
     async def createProfileCard(self, user, *numbers, **looks):
         self.cards.append((numbers, looks))
-        path = f"{self.root}/card.png"
-        open(path, "wb").write(b"card")
-        return path
+        card = io.BytesIO(b"card")
+        card.name = "card.png"
+        return card
 
 
 @pytest.fixture
@@ -826,7 +826,6 @@ async def test_previewing_a_frame(world, frame, shown):
         "type": "rich",
         "flags": 0,
     }
-    assert not os.path.exists(f"{world.root}/card.png")
 
 
 async def test_a_frame_preview_picks_the_members_background(world):

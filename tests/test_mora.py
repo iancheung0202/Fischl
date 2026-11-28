@@ -89,12 +89,12 @@ async def game(pool, monkeypatch, tmp_path):
     bot.get_channel = lambda id: SimpleNamespace(send=send)
     bot.get_cog = lambda name: None
     bot.cards = []
-    card = tmp_path / "card.png"
-    card.write_bytes(b"card")
 
     async def draw(user, *numbers, **look):
         bot.cards.append((numbers, look))
-        return str(card)
+        card = io.BytesIO(b"card")
+        card.name = "card.png"
+        return card
 
     monkeypatch.setattr(mora, "createProfileCard", draw)
     monkeypatch.setattr(
