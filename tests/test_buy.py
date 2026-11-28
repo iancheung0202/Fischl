@@ -688,7 +688,7 @@ async def test_a_purchase_is_written_to_the_console(shop, capsys):
 async def test_two_items_in_one_second_are_both_kept(pool):
     from commands.Events import helperFunctions
 
-    await helperFunctions.ensure_minigame_inventory_table(pool)
+    await helperFunctions.create_tables(pool)
     for title in ("first", "second", "third"):
         await helperFunctions.add_inventory_item(pool, 1, 2, title, "", 0, 100)
     rows = await pool.fetch(
@@ -706,7 +706,7 @@ async def test_two_items_in_one_second_are_both_kept(pool):
 async def test_item_is_refused_after_ten_in_one_second(pool, monkeypatch):
     from commands.Events import helperFunctions
 
-    await helperFunctions.ensure_minigame_inventory_table(pool)
+    await helperFunctions.create_tables(pool)
     monkeypatch.setattr(helperFunctions, "SAME_SECOND_ITEMS", 2)
     for title in ("first", "second"):
         await helperFunctions.add_inventory_item(pool, 1, 2, title, "", 0, 100)

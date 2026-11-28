@@ -31,7 +31,7 @@ from commands.Events.config import (
     YES_EMOTE,
 )
 from commands.Events.helperFunctions import (
-    _GUILD_SETTINGS_FALLBACK,
+    GUILD_SETTINGS_FALLBACK,
     get_channel_settings,
     get_guild_settings,
     parse_boosted_roles,
@@ -88,7 +88,7 @@ def multiplier(text: str) -> float:
         value = float(text)
     except ValueError:
         raise Refused("Invalid number.")
-    if value < 0.01 or value > 99.99:
+    if not 0.01 <= value <= 99.99:
         raise Refused("Multiplier must be between 0.01 and 99.99.")
     return value
 
@@ -102,7 +102,7 @@ def rewards(text: str) -> list:
 
 def chances(text: str) -> list:
     values = numbers(text, float, "Invalid decimal list.")
-    if any(value < 0 or value > 1 for value in values):
+    if not all(0 <= value <= 1 for value in values):
         raise Refused("Each chance must be between 0 and 1.")
     return values
 
@@ -293,7 +293,7 @@ SETTINGS = [
         tab="chests",
         column="chests_emotes",
         per_server=True,
-        fallback=_GUILD_SETTINGS_FALLBACK["chests_emotes"],
+        fallback=GUILD_SETTINGS_FALLBACK["chests_emotes"],
         button="Tier Emotes",
         emoji="🎨",
         row=2,
@@ -307,7 +307,7 @@ SETTINGS = [
         tab="chests",
         column="chests_icons",
         per_server=True,
-        fallback=_GUILD_SETTINGS_FALLBACK["chests_icons"],
+        fallback=GUILD_SETTINGS_FALLBACK["chests_icons"],
         button="Tier Icons",
         emoji="🖼️",
         row=2,
@@ -421,7 +421,7 @@ def build_chests_embed(
         names = gc.get("chests_tier_names", MORA_CHEST_TIERS)
         tier_rewards = gc.get("chests_tier_rewards", MORA_CHEST_REWARDS)
         upgrades = gc.get("chests_upgrade_chances", MORA_CHEST_UPGRADE_CHANCES)
-        emotes = gc.get("chests_emotes", _GUILD_SETTINGS_FALLBACK["chests_emotes"])
+        emotes = gc.get("chests_emotes", GUILD_SETTINGS_FALLBACK["chests_emotes"])
         desc += (
             "\n\n> The following settings apply **server-wide** across all enabled channels.\n\n"
             f"**Base Upgrade Chances:** `{gc.get('chests_base_upgrade_chances', MORA_CHEST_UPGRADE_TIMES)}`\n"

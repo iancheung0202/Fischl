@@ -6,7 +6,7 @@ import pytest
 
 from commands.Birthday import birthdayStore
 from commands.CoOp import coOpStore
-from commands.Events.helperFunctions import ensure_minigame_settings_table
+from commands.Events.helperFunctions import create_tables
 from commands.Help import help as help_page
 from commands.Sticky import stickyStore
 
@@ -455,7 +455,7 @@ async def test_server_configuration_cuts_a_long_minigame_list(pool, firebase):
 async def stores(pool):
     for store in (coOpStore, birthdayStore, stickyStore):
         await store.create(pool)
-    await ensure_minigame_settings_table(pool)
+    await create_tables(pool)
     found = interaction()
     found.client.pool = pool
     found.guild.text_channels = [MagicMock(id=number) for number in (1, 2, 3)]

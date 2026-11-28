@@ -18,11 +18,11 @@ class Store:
         self.channel, self.guild, self.saves = {}, {}, []
 
     async def get_channel_settings(self, pool, channel_id):
-        fallback = copy.deepcopy(helperFunctions._SETTINGS_FALLBACK)
+        fallback = copy.deepcopy(helperFunctions.SETTINGS_FALLBACK)
         return {**fallback, "channel_id": channel_id, **copy.deepcopy(self.channel)}
 
     async def get_guild_settings(self, pool, guild_id):
-        fallback = copy.deepcopy(helperFunctions._GUILD_SETTINGS_FALLBACK)
+        fallback = copy.deepcopy(helperFunctions.GUILD_SETTINGS_FALLBACK)
         return {**fallback, **copy.deepcopy(self.guild)}
 
     async def upsert_channel_settings(self, pool, channel_id, **values):
@@ -298,7 +298,7 @@ async def test_chests_tab_lists_the_servers_tiers(admin, store):
     assert admin.embed.description == f"**Channel:** <#{CHANNEL}>\n**Status:** Disabled"
     assert admin.labels()[3:] == ["Enable Chests"]
     await admin.press("Enable Chests")
-    emotes = helperFunctions._GUILD_SETTINGS_FALLBACK["chests_emotes"]
+    emotes = helperFunctions.GUILD_SETTINGS_FALLBACK["chests_emotes"]
     assert admin.embed.title == "📦 Chest Configuration"
     assert admin.embed.description == (
         f"**Channel:** <#{CHANNEL}>\n**Status:** Enabled"
@@ -408,3 +408,12 @@ async def test_the_command_is_for_managers_and_reports_its_error(admin):
     await cog.events_settings_error(interaction, Exception("no"))
     assert sent == [("```no```", True)]
     assert command.checks and command.name == "settings"
+
+
+def test_a_number_that_is_not_one_is_refused():
+    with pytest.raises(eventSystem.Refused, match="between 0.01 and 99.99"):
+        eventSystem.multiplier("nan")
+    with pytest.raises(eventSystem.Refused, match="between 0 and 1"):
+        eventSystem.chances("0.5, nan")
+    with pytest.raises(eventSystem.Refused, match="between 0 and 1"):
+        eventSystem.chances("-0.1")

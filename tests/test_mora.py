@@ -721,3 +721,70 @@ async def test_sigils_are_spent_here_first_and_never_twice(game):
     assert await everywhere(game.pool, USER, GUILD, 15) is True
     assert await helperFunctions.get_sigils_balance(game.pool, USER, GUILD) == 0
     assert await helperFunctions.get_sigils_balance(game.pool, USER, 11) == 10
+
+
+async def test_a_spend_waits_for_the_member_and_only_for_them(game):
+    await earn(game.pool, USER, 100)
+    await earn(game.pool, OTHER, 100)
+    spend = helperFunctions.subtractGuildMora
+    async with game.pool.acquire() as held, held.transaction():
+        await held.execute("SELECT pg_advisory_xact_lock($1)", USER)
+        waiting = asyncio.create_task(spend(game.pool, USER, 60, CHANNEL, GUILD))
+        assert await spend(game.pool, OTHER, 60, CHANNEL, GUILD) == 40
+        await asyncio.sleep(0.2)
+        assert not waiting.done()
+    assert await waiting == 40
+
+
+def test_a_scheduled_stock_change_adds_takes_or_sets():
+    changed = helperFunctions.changed_stock
+    assert [changed(5, "+3"), changed(5, "-9"), changed(5, "- 2")] == [8, 0, 3]
+    assert [changed(-1, "+3"), changed(-1, "7"), changed(5, "+")] == [3, 7, 5]
+    assert changed(5, "soon") is None
+
+
+async def test_members_with_the_same_amount_are_ranked_by_id(game):
+    for member in (30, 10, 20):
+        await earn(game.pool, member, 500)
+    await earn(game.pool, 40, 900)
+    assert await helperFunctions.get_guild_leaderboard(game.pool, GUILD, 3) == [
+        (40, 900),
+        (10, 500),
+        (20, 500),
+    ]
+    assert [uid for uid, _ in await helperFunctions.get_global_leaderboard(game.pool)] == [40, 10, 20, 30]  # fmt: skip
+    over = await helperFunctions.get_users_by_currency_threshold(game.pool, GUILD, 600, "guild_mora")  # fmt: skip
+    assert over == [(40, 900)]
+
+
+async def test_mora_numbers_come_from_the_days_played(game):
+    assert (await helperFunctions.get_mora_stats(game.pool, USER, GUILD))["days_active"] == 0  # fmt: skip
+    day = 86400
+    for when, amount in ((10 * day, 100), (10 * day + 5, 300), (12 * day, -50), (12 * day + 1, 250)):  # fmt: skip
+        await game.pool.execute("INSERT INTO minigame_mora VALUES ($1, $2, $3, $4, $5)", USER, GUILD, CHANNEL, when, amount)  # fmt: skip
+    numbers = await helperFunctions.get_mora_stats(game.pool, USER, GUILD)
+    assert (numbers["first_played"], numbers["days_active"]) == (10 * day, 2)
+    assert (numbers["largest_daily"], numbers["largest_single"]) == (400, 300)
+    assert numbers["entry_count"] == 3
+    assert numbers["average_daily"] == 600 // numbers["total_days"]
+
+
+async def test_a_milestone_is_still_announced_when_the_member_left(game, monkeypatch):
+    from commands.Events import event
+
+    monkeypatch.setattr(event, "userAndTitle", AsyncMock(return_value="<@1>"))
+    await helperFunctions.add_milestone(game.pool, GUILD, "501", "Rich", 100)
+    await earn(game.pool, USER, 150)
+    gone = discord.NotFound(MagicMock(status=404), "Unknown Member")
+    game.guild.fetch_member = AsyncMock(side_effect=gone)
+    game.get_guild = lambda id: game.guild
+    channel = SimpleNamespace(send=AsyncMock())
+    game.get_channel = lambda id: channel
+    await helperFunctions.check_milestones(game.pool, USER, GUILD, CHANNEL, game)
+    held = await helperFunctions.get_user_inventory(game.pool, USER, GUILD)
+    assert [item[0] for item in held] == ["501"]
+    embed = channel.send.call_args.kwargs["embed"]
+    assert embed.title == "🏆 Milestone Achieved!"
+    assert embed.description.endswith("`100` and earned **<@&501>**\n")
+    await helperFunctions.check_milestones(game.pool, USER, GUILD, CHANNEL, game)
+    assert channel.send.call_count == 1
