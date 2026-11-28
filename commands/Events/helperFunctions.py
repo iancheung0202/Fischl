@@ -480,7 +480,7 @@ async def get_user_mora_history(
 
 
 MORA_DAYS = """
-    SELECT DATE(TO_TIMESTAMP(timestamp)) AS date, SUM(count) AS total, MIN(timestamp) AS first,
+    SELECT DATE(TO_TIMESTAMP(timestamp)) AS date, COALESCE(SUM(count), 0) AS total, MIN(timestamp) AS first,
            COUNT(*) FILTER (WHERE count > 0) AS earnings, MAX(count) FILTER (WHERE count > 0) AS largest
     FROM minigame_mora WHERE uid = $1 AND gid = $2
     GROUP BY date ORDER BY total DESC, date

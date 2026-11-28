@@ -6,7 +6,7 @@ import discord
 from discord.ext import commands
 
 from commands.Events.config import MONEYDANCE_EMOTE, NO_EMOTE, YES_EMOTE
-from commands.Events.helperFunctions import create_tables, get_user_xp
+from commands.Events.helperFunctions import get_user_xp
 from commands.Events.trackData import grant_elite_rewards_up_to_tier
 
 IAN = 692254240290242601
@@ -63,12 +63,7 @@ def activated(server, server_id, timestamp, rewards):
 class EliteTrack(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.bot.loop.create_task(self.init_elite())
         self.bot.loop.create_task(self.process_pending_activations())
-
-    async def init_elite(self):
-        await self.bot.wait_until_ready()
-        await create_tables(self.bot.pool)
 
     async def process_pending_activations(self):
         """Every minute, pays out subscriptions bought on the website."""
