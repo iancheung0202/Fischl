@@ -1,8 +1,13 @@
+"""The profile pages of fischl.app: expeditions, the season pass and Elite Track payments."""
+
+import hmac
 import os
+import re
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+import config.settings as settings
 import requests
 from app import expeditions
 from config.settings import (
@@ -25,30 +30,54 @@ from flask import (
     session,
 )
 
-from utils.firebase import save_user_to_firebase
+from utils import paypal
 from utils.minigames import (
     activate_elite_subscription,
+    active_season,
     check_events_enabled,
     get_current_season,
     get_current_track,
     get_db_connection,
     is_elite_active,
+    order_used_elsewhere,
 )
 from utils.request import requests_session
 
 profile = Blueprint("profile", __name__)
 
-# ---------- helpers ----------
-_cache = {}
+ORDER_ID = re.compile(r"[A-Za-z0-9]{1,64}")
+SUPPORT_TOKEN = getattr(settings, "SUPPORT_TOKEN", "")
+
+ASSETS = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets")
+)
+CACHE_LIMIT = 5000
+cache = {}
 
 
-def cached(key, ttl, fn):
-    hit = _cache.get(key)
-    if hit and time.time() - hit[0] < ttl:
+def cached(key, ttl, fetch):
+    """Gives the kept value under a key, fetching it again once it is older than ttl seconds."""
+    now = time.time()
+    hit = cache.get(key)
+    if hit and now < hit[0]:
         return hit[1]
-    value = fn()
-    _cache[key] = (time.time(), value)
+    if len(cache) >= CACHE_LIMIT:
+        for old, (until, _) in list(cache.items()):
+            if until <= now:
+                cache.pop(old, None)
+        while len(cache) >= CACHE_LIMIT:
+            cache.pop(next(iter(cache)), None)
+    value = fetch()
+    cache[key] = (now + ttl, value)
     return value
+
+
+def whole(value):
+    """Gives a request value as a whole number, or 0 when it is not one."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def bearer():
@@ -62,9 +91,11 @@ def bot():
 def user_guilds():
     def fetch():
         r = requests_session.get(f"{API_BASE}/users/@me/guilds", headers=bearer())
+        if r.status_code >= 500:
+            raise RuntimeError(f"Discord answered {r.status_code}")
         return r.json() if r.status_code == 200 else []
 
-    return cached(f"ug:{session['discord_token']}", 60, fetch)
+    return cached(f"ug:{session['user_id']}", 60, fetch)
 
 
 def bot_guild_ids():
@@ -76,6 +107,8 @@ def bot_guild_ids():
                 headers=bot(),
                 params={"limit": 200, **({"after": after} if after else {})},
             )
+            if r.status_code >= 500:
+                raise RuntimeError(f"Discord answered {r.status_code}")
             data = r.json() if r.status_code == 200 else []
             ids |= {g["id"] for g in data}
             if len(data) < 200:
@@ -127,7 +160,6 @@ def guard(guild_id):
     return guild, None
 
 
-# ---------- pages (shells only: zero network calls, so they paint instantly) ----------
 @profile.route("/profile")
 def view_profile():
     code = request.args.get("code")
@@ -150,14 +182,12 @@ def view_profile():
         user = requests.get(
             f"{API_BASE}/users/@me", headers={"Authorization": f"Bearer {token}"}
         ).json()
-        save_user_to_firebase(user, token)
-        session["discord_token"] = token
-        session["user_id"] = str(user["id"])
-        session["user"] = {
+        member = {
             "id": str(user["id"]),
             "username": user["username"],
             "avatar": avatar_url(user),
         }
+        session.update(discord_token=token, user_id=member["id"], user=member)
         return redirect("/profile")
     return shell(None)
 
@@ -182,13 +212,9 @@ def shell(guild_id):
 @profile.route("/world/ja-jp.ttf")
 def world_font():
     """The game font lives in the bot's assets/ folder; serve it from there instead of copying it."""
-    root = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets"
-    )
-    return send_from_directory(os.path.normpath(root), "ja-jp.ttf", max_age=31536000)
+    return send_from_directory(ASSETS, "ja-jp.ttf", max_age=31536000)
 
 
-# ---------- JSON API ----------
 @profile.route("/api/profile/data")
 def api_profile_data():
     if "discord_token" not in session:
@@ -275,7 +301,7 @@ def api_dispatch(guild_id):
         session["user_id"],
         guild_id,
         d.get("character"),
-        int(d.get("hours") or 0),
+        whole(d.get("hours")),
         is_elite_active(session["user_id"], guild_id),
     )
     return jsonify(ok=True) if ok else (jsonify(error=msg), 400)
@@ -287,12 +313,11 @@ def api_claim(guild_id):
     if err:
         return err
     res = expeditions.claim(
-        session["user_id"], guild_id, (request.get_json(silent=True) or {}).get("id", 0)
+        session["user_id"],
+        guild_id,
+        whole((request.get_json(silent=True) or {}).get("id")),
     )
     return jsonify(res) if res else (jsonify(error="Not ready yet."), 400)
-
-
-# PayPal Payment Routes
 
 
 @profile.route("/payment/success")
@@ -301,63 +326,34 @@ def payment_success():
     if "discord_token" not in session or "user_id" not in session:
         return redirect("/login")
 
-    # Get guild_id from query params
     guild_id = request.args.get("guild_id")
     if not guild_id:
         return "Invalid request - missing guild_id", 400
+    if not (guild_id.isascii() and guild_id.isdigit()):
+        return "Invalid request - bad guild_id", 400
+    return render_template("payment_success.html", guild_id=guild_id)
 
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment Successful - Fischl Dashboard</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <script>
-            tailwind.config = {{
-                theme: {{
-                    extend: {{
-                        colors: {{
-                            primary: '#6366f1',
-                            secondary: '#ec4899'
-                        }}
-                    }}
-                }}
-            }}
-        </script>
-    </head>
-    <body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 min-h-screen flex items-center justify-center">
-        <div class="bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl p-8 max-w-md w-full mx-4 text-center">
-            <div class="text-6xl mb-4">🎉</div>
-            <h1 class="text-3xl font-bold text-white mb-4">Elite Track Activated!</h1>
-            <p class="text-indigo-100 mb-6">Thank you for your purchase! Your Elite Track has been activated and you should receive a Discord notification shortly.</p>
-            <p class="text-sm text-indigo-200 mb-6">Elite rewards from previous tiers will be automatically granted in the next 30 seconds.</p>
-            <div class="space-y-3">
-                <a href="/profile/{guild_id}" class="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition">
-                    Back to Track
-                </a>
-                <p style="color: #a1a1aa;">You will be redirected automatically in <span id="redirect-timer">30</span> seconds...</p>
-            </div>
-        </div>
-        <script>
-            // Auto redirect after 30 seconds
-            setTimeout(function() {{
-                window.location.href = '/profile/{guild_id}';
-            }}, 30000);
-            // Countdown timer
-            let countdown = 30;
-            const timerElement = document.getElementById('redirect-timer');
-            setInterval(function() {{
-                if (countdown > 0) {{
-                    countdown--;
-                    timerElement.textContent = countdown;
-                }}
-            }}, 1000);
-        </script>
-    </body>
-    </html>
-    """
+
+def activation(user_id, guild_id, order_id, done=None):
+    """Turns the Elite Track on and gives the JSON answer of an activation request."""
+    worked, message = activate_elite_subscription(int(user_id), int(guild_id), order_id)
+    if not worked:
+        print(f"Failed to activate elite subscription: {message}")
+        return jsonify({"error": message}), 500
+    return jsonify({"success": True, "message": done or message})
+
+
+def payment_refused(user_id, guild_id, order_id):
+    """Gives why an order may not turn the Elite Track on, or None when it may."""
+    if not isinstance(order_id, str) or not ORDER_ID.fullmatch(order_id):
+        return "Missing order"
+    if order_used_elsewhere(order_id, user_id, guild_id):
+        return "This order has already been used."
+    if paypal.can_check_orders() and not paypal.order_paid_for(
+        order_id, user_id, guild_id, active_season().start_ts
+    ):
+        return "Payment could not be verified."
+    return None
 
 
 @profile.route("/payment/activate", methods=["POST"])
@@ -365,161 +361,78 @@ def activate_payment():
     """Activate elite subscription after successful PayPal payment"""
     if "discord_token" not in session or "user_id" not in session:
         return jsonify({"error": "Not authenticated"}), 401
-
     try:
         data = request.get_json()
-        user_id = str(
-            data.get("user_id")
-        )  # Ensure string type to avoid precision issues
-        guild_id = str(data.get("guild_id"))
+        user_id, guild_id = str(data.get("user_id")), str(data.get("guild_id"))
         order_id = data.get("order_id")
-        session_user_id = str(session["user_id"])  # Ensure string type
-
-        print(
-            f"Payment activation request: user_id={user_id}, guild_id={guild_id}, order_id={order_id}"
-        )
-        print(f"Session user_id: {session_user_id}")
-        print(f"User ID comparison: request='{user_id}' vs session='{session_user_id}'")
-
-        # Verify the user_id matches the session
-        if user_id != session_user_id:
-            print(
-                f"User ID mismatch: request_id={user_id} != session_id={session_user_id}"
-            )
-            print(
-                f"Request ID length: {len(user_id)}, Session ID length: {len(session_user_id)}"
-            )
-            return (
-                jsonify(
-                    {
-                        "error": "User ID mismatch",
-                        "details": f"Request: {user_id}, Session: {session_user_id}",
-                    }
-                ),
-                403,
-            )
-
-        # Convert to integers for the activation function
-        user_id_int = int(user_id)
-        guild_id_int = int(guild_id)
-
-        # Activate elite subscription
-        print(
-            f"Activating elite subscription for user {user_id_int} in guild {guild_id_int}"
-        )
-        success, message = activate_elite_subscription(
-            user_id_int, guild_id_int, order_id
-        )
-
-        if success:
-            print(
-                f"Elite subscription activated successfully for user {user_id_int} in guild {guild_id_int}, order: {order_id}"
-            )
-            return jsonify({"success": True, "message": message})
-        else:
-            print(f"Failed to activate elite subscription: {message}")
-            return jsonify({"error": message}), 500
-
-    except Exception as e:
-        print(f"Error in payment activation: {e}")
+        mine = str(session["user_id"])
+        if user_id != mine:
+            details = f"Request: {user_id}, Session: {mine}"
+            return jsonify({"error": "User ID mismatch", "details": details}), 403
+        refused = payment_refused(int(user_id), int(guild_id), order_id)
+        if refused:
+            print(f"Payment refused for user {user_id}, order {order_id}: {refused}")
+            return jsonify({"error": refused}), 400
+        return activation(user_id, guild_id, order_id)
+    except Exception as error:
+        print(f"Error in payment activation: {error}")
         traceback.print_exc()
         return jsonify({"error": "Internal server error"}), 500
 
 
 @profile.route("/payment/manual-activate", methods=["POST"])
 def manual_activate_payment():
-    """Manual activation for support purposes - requires special token"""
+    """Manual activation for support purposes - requires the support token from the settings"""
     try:
         data = request.get_json()
-        support_token = data.get("support_token")
-        user_id = str(data.get("user_id"))
-        guild_id = str(data.get("guild_id"))
-        order_id = data.get("order_id")
-
-        # Simple security check - in production, use a proper secret
-        if support_token != "support_manual_activation_2024":
+        given = str(data.get("support_token") or "")
+        if not SUPPORT_TOKEN or not hmac.compare_digest(
+            given.encode(), SUPPORT_TOKEN.encode()
+        ):
             return jsonify({"error": "Invalid support token"}), 403
-
-        print(
-            f"Manual activation request: user_id={user_id}, guild_id={guild_id}, order_id={order_id}"
+        order_id = data.get("order_id")
+        return activation(
+            data.get("user_id"),
+            data.get("guild_id"),
+            order_id,
+            f"Manually activated subscription for order {order_id}",
         )
-
-        # Convert to integers for the activation function
-        user_id_int = int(user_id)
-        guild_id_int = int(guild_id)
-
-        # Activate elite subscription
-        success, message = activate_elite_subscription(
-            user_id_int, guild_id_int, order_id
-        )
-
-        if success:
-            print(
-                f"Manual elite subscription activated for user {user_id_int} in guild {guild_id_int}, order: {order_id}"
-            )
-            return jsonify(
-                {
-                    "success": True,
-                    "message": f"Manually activated subscription for order {order_id}",
-                }
-            )
-        else:
-            print(f"Manual activation failed: {message}")
-            return jsonify({"error": message}), 500
-
-    except Exception as e:
-        print(f"Error in manual payment activation: {e}")
+    except Exception as error:
+        print(f"Error in manual payment activation: {error}")
         traceback.print_exc()
         return jsonify({"error": "Internal server error"}), 500
+
+
+def buyer(custom):
+    """Gives the (user id, server id) a PayPal notification names, or None."""
+    try:
+        user_id, guild_id = custom.split("-", 1)
+        return int(user_id), int(guild_id)
+    except ValueError:
+        return None
 
 
 @profile.route("/payment/webhook", methods=["POST"])
 def paypal_webhook():
     """Handle PayPal IPN (Instant Payment Notification) webhook"""
     try:
-        # Parse form data
-        form_data = request.form.to_dict()
-
-        # Verify payment status
-        payment_status = form_data.get("payment_status", "").lower()
-
-        # Only process completed payments
-        if payment_status != "completed":
-            print(f"Payment not completed: {payment_status}")
+        body, form = request.get_data(), request.form.to_dict()
+        if form.get("payment_status", "").lower() != "completed":
             return "OK", 200
-
-        custom_data = form_data.get(
-            "custom", ""
-        )  # This should contain user_id-guild_id
-        txn_id = form_data.get("txn_id", "")  # PayPal transaction ID
-
-        print(f"PayPal webhook received: {form_data}")
-
-        # Parse custom data (should be in format: user_id-guild_id)
-        if not custom_data:
-            print("No custom data found in PayPal webhook")
+        found = buyer(form.get("custom", ""))
+        txn_id = form.get("txn_id", "")
+        if not found or not txn_id:
+            print("PayPal webhook without a buyer or transaction")
             return "OK", 200
-
-        try:
-            user_id, guild_id = custom_data.split("-", 1)
-            user_id = int(user_id)
-            guild_id = int(guild_id)
-        except (ValueError, IndexError):
-            print(f"Invalid custom data format: {custom_data}")
+        if order_used_elsewhere(txn_id, *found) or not paypal.notification_is_real(
+            body, form
+        ):
+            print(f"PayPal webhook not verified: transaction {txn_id}")
             return "OK", 200
-
-        # Activate elite subscription with transaction ID
-        success, message = activate_elite_subscription(user_id, guild_id, txn_id)
-
-        if success:
-            print(
-                f"Elite subscription activated for user {user_id} in guild {guild_id}"
-            )
-        else:
+        worked, message = activate_elite_subscription(*found, txn_id)
+        if not worked:
             print(f"Failed to activate elite subscription: {message}")
-
         return "OK", 200
-
-    except Exception as e:
-        print(f"Error processing PayPal webhook: {e}")
+    except Exception as error:
+        print(f"Error processing PayPal webhook: {error}")
         return "Error", 500

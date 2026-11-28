@@ -1,8 +1,8 @@
-import json
-import os
+"""The ticket history site: a member logs in and sees their closed tickets."""
+
+import re
 from datetime import datetime
 
-import requests
 from config.settings import (
     API_BASE,
     MYSTICRAFT_CLIENT_ID,
@@ -10,229 +10,180 @@ from config.settings import (
     MYSTICRAFT_REDIRECT_URI,
     MYSTICRAFT_TOKEN,
 )
-from flask import Blueprint, abort, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, redirect, render_template, request, session
 
-ticket_history = Blueprint("ticket_history", __name__, url_prefix="/")
+from utils.request import requests_session
+
+ticket_history = Blueprint("ticket_history", __name__)
+
+HOST = "ticket.mysticraft.xyz"
+BOT = {"Authorization": f"Bot {MYSTICRAFT_TOKEN}"}
+LOGIN_URL = (
+    f"{API_BASE}/oauth2/authorize?client_id={MYSTICRAFT_CLIENT_ID}"
+    f"&redirect_uri={MYSTICRAFT_REDIRECT_URI}"
+    f"&response_type=code&scope=identify"
+    f"&prompt=none"
+)
+ACTION_ROW = 1
+BUTTON = 2
 
 
-def get_dm_channel_with_user(user_id, bot_token):
-    """Fetch DM channel between bot and user using bot token"""
-    headers = {"Authorization": f"Bot {bot_token}"}
+def page():
+    """Gives the history page, or the login page to a visitor who is not logged in."""
+    user = session.get("user_data")
+    if not user:
+        return render_template("ticket_history_login.html")
+    return render_template("ticket_history.html", user=user)
 
-    response = requests.post(
-        f"{API_BASE}/users/@me/channels",
-        headers=headers,
-        json={"recipient_id": user_id},
+
+def login_failed(reason):
+    """Gives the login page with the reason the login did not work."""
+    return render_template("ticket_history_login.html", error=reason)
+
+
+def dm_channel(user_id):
+    """Gives the bot's DM channel with a member, or None."""
+    answer = requests_session.post(
+        f"{API_BASE}/users/@me/channels", headers=BOT, json={"recipient_id": user_id}
     )
+    if answer.status_code not in (200, 201):
+        print(f"Failed to get DM channel with user {user_id}: {answer.status_code}")
+        return None
+    return answer.json()
 
-    if response.status_code not in [200, 201]:
+
+def dm_messages(channel_id):
+    """Gives every message of a DM channel, newest first."""
+    messages, before = [], None
+    while True:
+        answer = requests_session.get(
+            f"{API_BASE}/channels/{channel_id}/messages",
+            headers=BOT,
+            params={"limit": 100, **({"before": before} if before else {})},
+        )
+        if answer.status_code != 200:
+            print(f"Error fetching messages: {answer.status_code}")
+            return messages
+        batch = answer.json()
+        if not batch:
+            return messages
+        messages.extend(batch)
+        before = batch[-1]["id"]
+
+
+def server_name(description):
+    """Gives the server named in bold in a closed-ticket embed, or None."""
+    match = re.search(r"\*\*(.+?)\*\*", description or "")
+    return match.group(1).replace("🎫", "").strip() if match else None
+
+
+def closed_at(timestamp):
+    """Gives an embed timestamp as a datetime, or None when it cannot be read."""
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
         return None
 
-    channel = response.json()
-    return channel
+
+def transcript_link(message):
+    """Gives the address of the first link button under a message, or None."""
+    for row in message.get("components", []):
+        if row.get("type") != ACTION_ROW:
+            continue
+        for button in row.get("components", []):
+            if button.get("type") == BUTTON and button.get("url"):
+                return button["url"]
+    return None
 
 
-def fetch_dm_messages(channel_id, bot_token):
-    """Fetch all messages from a DM channel using bot token"""
-    headers = {"Authorization": f"Bot {bot_token}"}
-    messages = []
-    after = None
-
-    while True:
-        params = {"limit": 100}
-        if after:
-            params["after"] = after
-
-        response = requests.get(
-            f"{API_BASE}/channels/{channel_id}/messages",
-            headers=headers,
-            params=params,
-        )
-
-        if response.status_code != 200:
-            break
-
-        batch = response.json()
-        if not batch:
-            break
-
-        messages.extend(batch)
-        after = batch[-1]["id"]
-
-    return messages
+def closed_ticket(embed, link):
+    """Gives what the history page shows for one closed-ticket embed."""
+    fields = embed.get("fields", [])
+    closed = closed_at(embed.get("timestamp", ""))
+    return {
+        "category": fields[0].get("value", "Others") if fields else "Tickets",
+        "guild_name": server_name(embed.get("description", "")),
+        "timestamp": closed,
+        "date_str": closed.isoformat() if closed else "Unknown",
+        "transcript_link": link,
+        "closing_reason": fields[1].get("value") if len(fields) > 1 else None,
+    }
 
 
-def extract_closed_tickets(messages):
-    """Extract closed ticket info from messages with 'Ticket closed' embeds"""
-    tickets = []
-
+def closed_tickets(messages):
+    """Gives the closed tickets found in a member's DMs, newest first, one per transcript."""
+    tickets, seen = [], set()
     for message in messages:
-        embeds = message.get("embeds", [])
-        for embed in embeds:
-            title = embed.get("title", "")
-            if "closed" in title.lower() and "ticket" in title.lower():
-                category = "Tickets"
-                fields = embed.get("fields", [])
-                if fields and len(fields) > 0:
-                    category = fields[0].get("value", "Tickets")
-
-                timestamp = embed.get("timestamp", "")
-                timestamp_obj = None
-                if timestamp:
-                    try:
-                        timestamp_obj = datetime.fromisoformat(
-                            timestamp.replace("Z", "+00:00")
-                        )
-                    except:
-                        pass
-
-                transcript_link = None
-                components = message.get("components", [])
-                for component in components:
-                    if component.get("type") == 1:
-                        buttons = component.get("components", [])
-                        for button in buttons:
-                            if button.get("type") == 2:
-                                if button.get("url"):
-                                    transcript_link = button["url"]
-                                    break
-                    if transcript_link:
-                        break
-
-                if transcript_link:
-                    tickets.append(
-                        {
-                            "category": category,
-                            "timestamp": timestamp_obj,
-                            "date_str": (
-                                timestamp_obj.strftime("%B %d, %Y")
-                                if timestamp_obj
-                                else "Unknown"
-                            ),
-                            "transcript_link": transcript_link,
-                        }
-                    )
-
-    tickets.sort(key=lambda x: x["timestamp"] or datetime.min, reverse=True)
+        link = transcript_link(message)
+        for embed in message.get("embeds", []):
+            if not embed.get("title", "").startswith("Ticket closed"):
+                continue
+            if link and link not in seen:
+                seen.add(link)
+                tickets.append(closed_ticket(embed, link))
+    undated = datetime.min
+    tickets.sort(
+        key=lambda t: (
+            t["timestamp"].replace(tzinfo=None) if t["timestamp"] else undated
+        ),
+        reverse=True,
+    )
     return tickets
 
 
-@ticket_history.route("/")
-def index():
-    if request.host.split(":")[0] != "ticket.mysticraft.xyz":
+@ticket_history.before_request
+def only_this_site():
+    if request.host != HOST:
         abort(404)
 
-    user_data = session.get("user_data")
 
-    if not user_data:
-        return render_template("ticket_history_login.html")
-
+@ticket_history.route("/api/tickets")
+def tickets():
+    user = session.get("user_data")
+    if not user:
+        return {"error": "Not authenticated"}, 401
     try:
-        user_id = user_data.get("id")
-
-        # Fetch DM channel with user using bot token
-        dm_channel = get_dm_channel_with_user(user_id, MYSTICRAFT_TOKEN)
-
-        if not dm_channel:
-            return render_template("ticket_history.html", tickets=[], user=user_data)
-
-        # Fetch messages from DM channel using bot token
-        messages = fetch_dm_messages(dm_channel["id"], MYSTICRAFT_TOKEN)
-
-        # Extract closed tickets
-        tickets = extract_closed_tickets(messages)
-
-        return render_template("ticket_history.html", tickets=tickets, user=user_data)
-
-    except Exception as e:
-        return render_template(
-            "ticket_history.html",
-            tickets=[],
-            user=user_data,
-            error=f"Error loading ticket history: {str(e)}",
-        )
-
-
-@ticket_history.route("/login")
-def login():
-    if request.host.split(":")[0] != "ticket.mysticraft.xyz":
-        abort(404)
-
-    scope = "identify"
-    return redirect(
-        f"{API_BASE}/oauth2/authorize?client_id={MYSTICRAFT_CLIENT_ID}"
-        f"&redirect_uri={MYSTICRAFT_REDIRECT_URI}"
-        f"&response_type=code&scope={scope}"
-    )
+        channel = dm_channel(user.get("id"))
+        found = closed_tickets(dm_messages(channel["id"])) if channel else []
+        return {"tickets": found, "error": None}
+    except Exception as error:
+        return {"tickets": [], "error": f"Error loading ticket history: {str(error)}"}
 
 
 @ticket_history.route("/callback")
 def callback():
-    if request.host.split(":")[0] != "ticket.mysticraft.xyz":
-        abort(404)
-
+    if request.args.get("error"):
+        return login_failed("Authentication cancelled.")
     code = request.args.get("code")
-    error = request.args.get("error")
-
-    if error:
-        return render_template(
-            "ticket_history_login.html", error="Authentication cancelled."
-        )
-
     if not code:
-        return render_template(
-            "ticket_history_login.html", error="No authorization code received."
-        )
-
-    data = {
-        "client_id": MYSTICRAFT_CLIENT_ID,
-        "client_secret": MYSTICRAFT_CLIENT_SECRET,
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": MYSTICRAFT_REDIRECT_URI,
-    }
-
-    response = requests.post(f"{API_BASE}/oauth2/token", json=data)
-
-    if response.status_code != 200:
-        return render_template(
-            "ticket_history_login.html", error="Failed to authenticate with Discord."
-        )
-
-    token_data = response.json()
-    access_token = token_data.get("access_token")
-
+        return login_failed("No authorization code received.")
+    answer = requests_session.post(
+        f"{API_BASE}/oauth2/token",
+        data={
+            "client_id": MYSTICRAFT_CLIENT_ID,
+            "client_secret": MYSTICRAFT_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": MYSTICRAFT_REDIRECT_URI,
+        },
+    )
+    if answer.status_code != 200:
+        print("Token exchange failed:", answer.status_code)
+        return login_failed("Failed to authenticate with Discord.")
+    access_token = answer.json().get("access_token")
     if not access_token:
-        return render_template(
-            "ticket_history_login.html", error="Failed to retrieve access token."
-        )
-
-    # Fetch user info
-    headers = {"Authorization": f"Bearer {access_token}"}
-    user_response = requests.get(f"{API_BASE}/users/@me", headers=headers)
-
-    if user_response.status_code != 200:
-        return render_template(
-            "ticket_history_login.html", error="Failed to fetch user information."
-        )
-
-    user_info = user_response.json()
-
-    # Store in session
+        return login_failed("Failed to retrieve access token.")
+    user = requests_session.get(
+        f"{API_BASE}/users/@me", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    if user.status_code != 200:
+        print("Failed to fetch user information:", user.status_code)
+        return login_failed("Failed to fetch user information.")
+    user = user.json()
     session["user_data"] = {
-        "id": user_info.get("id"),
-        "username": user_info.get("username"),
-        "discriminator": user_info.get("discriminator"),
+        "id": user.get("id"),
+        "username": user.get("username"),
+        "discriminator": user.get("discriminator"),
         "access_token": access_token,
     }
-
-    return redirect(url_for("ticket_history.index"))
-
-
-@ticket_history.route("/logout")
-def logout():
-    if request.host.split(":")[0] != "ticket.mysticraft.xyz":
-        abort(404)
-
-    session.clear()
-    return redirect(url_for("ticket_history.index"))
+    return redirect("/")

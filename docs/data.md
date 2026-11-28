@@ -16,7 +16,6 @@ Fischl uses two databases.
 | Tickets (`shared/`) | `Tickets`, `Ticket Panels`, `Ticket Blacklist`, `Ticket Closing Messages`, `Ticket Instructions`, `Ticket Snippets`, `Tickets Cooldown` |
 | Welcome (`shared/`) | `Welcome`, `Welcome Content`, `WelcomeV2` |
 | Embeds (`shared/`) | `Embed Templates` |
-| Website | `Dashboard Users` |
 
 ## Moved to Postgres
 
