@@ -163,7 +163,7 @@ def categories():
         (
             "Welcomer",
             "👋",
-            f"The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use {SlashCommand('welcome setup')} to setup welcome messages.",
+            f"The following slash commands are for setting up welcome messages in a server. If enabled, the bot will automatically greet new server members in a designated text channel. You can customize your own greetings to tailor to your server's needs. Use {SlashCommand('welcome settings')} to setup welcome messages.",
             named("welcome"),
             full,
         ),

@@ -1,90 +1,272 @@
-import datetime
+"""Welcome: the message new members are greeted with, its editor and /welcome."""
+
+import asyncio
+import collections
+import contextlib
+import copy
+import io
 import os
+import tempfile
+import time
 
 import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import Button, ChannelSelect, Modal, Select, View
 from firebase_admin import db
-from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
-### ------ WELCOME IMAGE CARD ------ ###
+from ..Utility.embed import link_emoji, now, text_input
+
+YES = "<:yes:1036811164891480194>"
+NO = "<:no:1036810470860013639>"
+# Fischl's own channel that hosts the drawn cards; other bots cannot see it.
+CARD_LOG = 1026904121237831700
+# Servers whose new members also get the welcome message in a DM.
+DM_COPY_SERVERS = {791534106919305226, 1363145981235036360}
+BACKGROUNDS = "./assets/Welcome Image Background"
+DEFAULT_ICON = "./assets/DefaultIcon.png"
+CARD_SIZE = (1024, 576)
+CARD_NAME = "welcome.png"
+CARD_DIMMING = 0.6
+EDITOR_TIMEOUT = 3600
+ENABLE_TIMEOUT = 1800
+LEGACY_CACHE_SECONDS = 300
+COLOR_API = "https://www.thecolorapi.com/id"
+HEX_DIGITS = set("0123456789abcdefABCDEF")
+NOT_ENABLED = (
+    "This server does not have welcome message enabled! Use `/welcome settings` to"
+    " enable first."
+)
+# Why a welcome message was not sent: half set up, turned off, or its channel is gone.
+UNSET, OFF, GONE = "unset", "off", "gone"
+# The old `/Welcome` list and when it was read; joins in servers without a welcome ask for it.
+legacy_cache = {"at": 0.0, "settings": None}
+saving = collections.defaultdict(asyncio.Lock)
+# What The Color API made of each odd colour text.
+api_colors = {}
 
 
-async def createWelcomeMsg(user, bg="./assets/bg.png", filename="./assets/welcome.png"):
+async def read(path: str):
+    """Gives what Firebase holds at a path, without pausing the bot."""
+    return await asyncio.to_thread(db.reference(path).get)
+
+
+async def write(path: str, value) -> None:
+    """Saves a value at a Firebase path, without pausing the bot."""
+    await asyncio.to_thread(db.reference(path).set, value)
+
+
+async def remove(path: str) -> None:
+    """Deletes a Firebase path, without pausing the bot."""
+    await asyncio.to_thread(db.reference(path).delete)
+
+
+def of_server(records, guild_id: int):
+    """Gives the key and record of a server in an old list, or (None, None)."""
+    for key, value in (records or {}).items():
+        if value.get("Server ID") == guild_id:
+            return key, value
+    return None, None
+
+
+async def legacy_settings(guild_id: int):
+    """Gives a server's key and record in the old `/Welcome` list, read at most every few minutes."""
+    if time.monotonic() - legacy_cache["at"] > LEGACY_CACHE_SECONDS:
+        legacy_cache["settings"] = await read("/Welcome")
+        legacy_cache["at"] = time.monotonic()
+    return of_server(legacy_cache["settings"], guild_id)
+
+
+async def legacy_content(guild_id: int):
+    """Gives a server's key and record in the old `/Welcome Content` list."""
+    return of_server(await read("/Welcome Content"), guild_id)
+
+
+def keys_of_server(records, guild_id: int) -> list:
+    """Gives the key of every record a server has in an old list."""
+    return [
+        key
+        for key, value in (records or {}).items()
+        if value.get("Server ID") == guild_id
+    ]
+
+
+async def mirror(path: str, key, record: dict) -> None:
+    """Saves a server's record in an old list, in place when it has one."""
+    if key:
+        return await write(f"{path}/{key}", record)
+    await asyncio.to_thread(lambda: db.reference(path).push().set(record))
+
+
+def background(guild_id: int) -> str:
+    """Gives where a server's card background is kept."""
+    return f"{BACKGROUNDS}/{guild_id}.png"
+
+
+def font(size: int, fallback_size: int):
+    """Gives the card font and whether it is the fallback one."""
+    from PIL import ImageFont
+
     try:
-        await user.avatar.with_static_format("png").with_size(256).save(filename)
-        im1 = Image.open(bg)
-        im2 = Image.open(filename)
+        return ImageFont.truetype("./assets/ja-jp.ttf", size), False
     except Exception:
-        im1 = Image.open(bg)
-        im2 = Image.open("./assets/DefaultIcon.png")
+        return ImageFont.truetype("./assets/LilitaOne-Regular.ttf", fallback_size), True
 
-    bigsize = (im2.size[0] * 3, im2.size[1] * 3)
+
+def draw_card(avatar, name: str, bg: str) -> bytes:
+    """Draws the welcome card: the round avatar, "Welcome" and the name on the background."""
+    from PIL import Image, ImageDraw
+
+    card = Image.open(bg)
+    try:
+        face = Image.open(io.BytesIO(avatar))
+    except Exception:
+        face = Image.open(DEFAULT_ICON)
+    bigsize = (face.size[0] * 3, face.size[1] * 3)
     mask = Image.new("L", bigsize, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.ellipse((0, 0) + bigsize, fill=255)
-    mask = mask.resize(im2.size, Image.LANCZOS)
-    im2.putalpha(mask)
+    ImageDraw.Draw(mask).ellipse((0, 0) + bigsize, fill=255)
+    face.putalpha(mask.resize(face.size, Image.LANCZOS))
+    card.paste(face, (384, 50), face.convert("RGBA"))
+    draw, white = ImageDraw.Draw(card), (255, 255, 255)
+    heading, fallback = font(75, 90)
+    draw.text(
+        (330, 330) if fallback else (325, 320), "Welcome", font=heading, fill=white
+    )
+    small, small_fallback = font(35, 50)
+    fallback = fallback or small_fallback
+    width, top = (24, 430) if fallback else (20, 410)
+    draw.text((1024 / 2 - width * (len(name) / 2), top), name, font=small, fill=white)
+    out = io.BytesIO()
+    card.save(out, "PNG")
+    return out.getvalue()
 
-    im1.paste(im2, (384, 50), im2.convert("RGBA"))
-    color = (255, 255, 255)
-    lilita_font = False
+
+async def welcome_card(user, guild_id: int):
+    """Gives a member's card as a file, or None when it cannot be drawn, as with no background."""
+    if not os.path.exists(background(guild_id)):
+        return None
     try:
-        font = ImageFont.truetype("./assets/ja-jp.ttf", 75)
+        avatar = await user.avatar.with_static_format("png").with_size(256).read()
     except Exception:
-        lilita_font = True
-        font = ImageFont.truetype("./assets/LilitaOne-Regular.ttf", 90)
-    d1 = ImageDraw.Draw(im1)
-    d1.text(
-        (325, 320) if not lilita_font else (330, 330), "Welcome", font=font, fill=color
-    )
-    im1.save(filename)
+        avatar = None
     try:
-        font = ImageFont.truetype("./assets/ja-jp.ttf", 35)
+        card = await asyncio.to_thread(
+            draw_card, avatar, f"{user.name}", background(guild_id)
+        )
     except Exception:
-        lilita_font = True
-        font = ImageFont.truetype("./assets/LilitaOne-Regular.ttf", 50)
-    text = f"{user.name}"
-    textLen = len(text)
-    d2 = ImageDraw.Draw(im1)
-    d2.text(
-        (
-            (((1024 / 2) - (20 * (textLen / 2))), 410)
-            if not lilita_font
-            else ((1024 / 2) - (24 * (textLen / 2)), 430)
-        ),
-        text,
-        font=font,
-        fill=color,
-    )
-    im1.save(filename)
-    return filename
+        return None
+    return discord.File(io.BytesIO(card), filename=CARD_NAME)
 
 
-def word(n):
-    return str(n) + (
-        "th" if 4 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    )
+async def hosted(client, card: discord.File, guild):
+    """Posts a card in Fischl's card channel and gives its link, or None when the channel is out of reach."""
+    channel = client.get_channel(CARD_LOG)
+    if not channel:
+        return None
+    message = await channel.send(f"**Guild Name:** {guild}", file=card)
+    return message.attachments[0].proxy_url
 
 
-def script(string, user, guild):
-    if "{mention}" in string:
-        string = string.replace("{mention}", f"{user.mention}")
-    if "{server}" in string:
-        string = string.replace("{server}", f"{guild.name}")
-    if "{user}" in string:
-        string = string.replace("{user}", f"{user.name}")
-    if "{count}" in string:
-        string = string.replace("{count}", f"{guild.member_count}")
-    if "{count-th}" in string:
-        string = string.replace("{count-th}", f"{word(guild.member_count)}")
+def save_background(image: bytes, path: str) -> None:
+    """Crops an uploaded image to the card's shape, dims it and saves it."""
+    from PIL import Image, ImageEnhance
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    picture = Image.open(io.BytesIO(image))
+    if picture.mode not in ("RGB", "RGBA", "L", "LA"):
+        picture = picture.convert("RGB")
+    width, height = picture.size
+    ideal = CARD_SIZE[0] / float(CARD_SIZE[1])
+    if width / float(height) > ideal:
+        offset = (width - int(ideal * height)) / 2
+        box = (offset, 0, width - offset, height)
+    else:
+        offset = (height - int(width / ideal)) / 2
+        box = (0, offset, width, height - offset)
+    picture = picture.crop(box).resize(CARD_SIZE, Image.LANCZOS)
+    stored = io.BytesIO()
+    picture.save(stored, "PNG")
+    dimmed = ImageEnhance.Brightness(Image.open(stored)).enhance(CARD_DIMMING)
+    handle, draft = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    with os.fdopen(handle, "wb") as file:
+        dimmed.save(file, "PNG")
+    os.chmod(draft, 0o644)
+    os.replace(draft, path)
+
+
+def ordinal(n: int) -> str:
+    """Gives a number with its ending, as in 1st, 2nd, 3rd, 11th."""
+    if 4 <= n % 100 <= 20:
+        return f"{n}th"
+    return f"{n}" + {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+
+
+def script(string: str, user, guild) -> str:
+    """Fills the variables of a welcome text in for a member."""
+    values = {
+        "{mention}": lambda: user.mention,
+        "{server}": lambda: guild.name,
+        "{user}": lambda: user.name,
+        "{count}": lambda: guild.member_count,
+        "{count-th}": lambda: ordinal(guild.member_count),
+    }
+    for variable, value in values.items():
+        if variable in string:
+            string = string.replace(variable, f"{value()}")
     return string
 
 
+def plain_color(text: str):
+    """Reads a colour written as six hex digits, with or without `#`; None for anything else."""
+    digits = text[1:] if text.startswith("#") else text
+    if len(digits) == 6 and set(digits) <= HEX_DIGITS:
+        return int(digits, 16)
+    return None
+
+
+async def legacy_color(text: str) -> discord.Color:
+    """Gives the colour of an old record; odd spellings are read by The Color API, blurple when it cannot."""
+    color = plain_color(text)
+    if color is not None:
+        return discord.Color(color)
+    if text not in api_colors:
+        digits = text[1:] if text.startswith("#") else text
+        try:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(COLOR_API, params={"hex": digits}) as answer:
+                    found = await answer.json()
+        except Exception:
+            return discord.Color.blurple()
+        try:
+            api_colors[text] = discord.Color(int(found["hex"]["clean"], 16))
+        except Exception:
+            api_colors[text] = discord.Color.blurple()
+    return api_colors[text]
+
+
+def links_view(links, user, guild):
+    """Gives a view of the link buttons filled in for a member, or None without links."""
+    if not links:
+        return None
+    view = View()
+    for link in links:
+        view.add_item(
+            Button(
+                label=script(link["label"], user, guild),
+                url=script(link["url"], user, guild),
+                emoji=link_emoji(link["emoji"]),
+                style=discord.ButtonStyle.link,
+            )
+        )
+    return view
+
+
 class WelcomeEditor:
-    def __init__(self, user_id, guild_id, existing_data=None):
-        self.user_id = user_id
+    """One server's welcome message: its channel, text, embed, link buttons and card switch."""
+
+    def __init__(self, guild_id: int, data=None):
         self.guild_id = guild_id
         self.channel_id = None
         self.welcome_image_enabled = False
@@ -101,811 +283,635 @@ class WelcomeEditor:
             "timestamp": False,
         }
         self.button_links = []
+        if data:
+            self.channel_id = data.get("channel_id")
+            self.welcome_image_enabled = data.get("welcome_image_enabled", False)
+            self.message_content = data.get("message_content", "")
+            for key, value in (data.get("embed") or {}).items():
+                if isinstance(value, dict) and isinstance(
+                    self.embed_data.get(key), dict
+                ):
+                    self.embed_data[key].update(value)
+                elif not isinstance(value, dict):
+                    self.embed_data[key] = value
+            self.button_links = data.get("button_links") or []
 
-        if existing_data:
-            self.load_from_dict(existing_data)
+    @classmethod
+    def from_legacy(cls, guild_id: int, settings: dict, content, color=None):
+        """Gives an editor filled from a server's records in the two old lists."""
+        editor = cls(guild_id)
+        editor.channel_id = settings.get("Welcome Channel ID")
+        editor.welcome_image_enabled = settings.get("Welcome Image Enabled", False)
+        if content:
+            editor.message_content = content.get("Message Content", "")
+            editor.embed_data["title"] = content.get("Title", "")
+            editor.embed_data["description"] = content.get("Description", "")
+            if color is not None:
+                editor.embed_data["color"] = color
+        return editor
 
-    def load_from_dict(self, data):
-        self.channel_id = data.get("channel_id")
-        self.welcome_image_enabled = data.get("welcome_image_enabled", False)
-        self.message_content = data.get("message_content", "")
-
-        if "embed" in data:
-            self.embed_data = {**self.embed_data, **data["embed"]}
-        else:
-            # Legacy welcome content structure
-            self.embed_data["title"] = data.get("title", "")
-            self.embed_data["description"] = data.get("description", "")
-            color = data.get("color", "")
-            if color and color.startswith("#"):
-                try:
-                    self.embed_data["color"] = int(color[1:], 16)
-                except:
-                    pass
-
-        self.button_links = data.get("button_links", [])
-
-    def to_dict(self):
-        return {
-            "channel_id": self.channel_id,
-            "welcome_image_enabled": self.welcome_image_enabled,
-            "message_content": self.message_content,
-            "embed": self.embed_data,
-            "button_links": self.button_links,
-        }
-
-    def to_legacy_dict(self):
-        return {
-            "Server ID": self.guild_id,
-            "Message Content": self.message_content,
-            "Title": self.embed_data["title"],
-            "Description": self.embed_data["description"],
-            "Color": f"#{self.embed_data['color']:06x}",
-        }
-
-    def to_embed(self, user=None, guild=None):
-        if self.is_embed_empty():
-            return None
-
-        embed = discord.Embed(
-            title=(
-                script(self.embed_data["title"], user, guild)
-                if self.embed_data["title"]
-                else None
-            ),
-            description=(
-                script(self.embed_data["description"], user, guild)
-                if self.embed_data["description"]
-                else None
-            ),
-            color=self.embed_data["color"],
+    def to_dict(self) -> dict:
+        """Gives the record kept at `/WelcomeV2/<server>`."""
+        return copy.deepcopy(
+            {
+                "channel_id": self.channel_id,
+                "welcome_image_enabled": self.welcome_image_enabled,
+                "message_content": self.message_content,
+                "embed": self.embed_data,
+                "button_links": self.button_links,
+            }
         )
 
-        if self.embed_data["footer"]["text"]:
-            footer_text = (
-                script(self.embed_data["footer"]["text"], user, guild)
-                if user and guild
-                else self.embed_data["footer"]["text"]
-            )
+    def is_embed_empty(self) -> bool:
+        """Says whether the embed has nothing Discord would show."""
+        data = self.embed_data
+        return not (
+            data["title"]
+            or data["description"]
+            or data["image"]
+            or data["thumbnail"]
+            or data["fields"]
+            or data["author"]["name"]
+            or data["footer"]["text"]
+        )
+
+    def to_embed(self, user, guild) -> discord.Embed:
+        """Gives the embed filled in for a member."""
+        data = self.embed_data
+        embed = discord.Embed(
+            title=script(data["title"], user, guild) if data["title"] else None,
+            description=(
+                script(data["description"], user, guild)
+                if data["description"]
+                else None
+            ),
+            color=data["color"],
+        )
+        if data["footer"]["text"]:
             embed.set_footer(
-                text=footer_text, icon_url=self.embed_data["footer"]["icon_url"] or None
+                text=script(data["footer"]["text"], user, guild),
+                icon_url=data["footer"]["icon_url"] or None,
             )
-
-        if self.embed_data["author"]["name"]:
-            author_name = (
-                script(self.embed_data["author"]["name"], user, guild)
-                if user and guild
-                else self.embed_data["author"]["name"]
-            )
+        if data["author"]["name"]:
             embed.set_author(
-                name=author_name, icon_url=self.embed_data["author"]["icon_url"] or None
+                name=script(data["author"]["name"], user, guild),
+                icon_url=data["author"]["icon_url"] or None,
             )
-
-        if self.embed_data["thumbnail"]:
-            embed.set_thumbnail(url=self.embed_data["thumbnail"])
-
-        if self.embed_data["image"]:
-            embed.set_image(url=self.embed_data["image"])
-
-        for field in self.embed_data["fields"]:
-            field_name = (
-                script(field["name"], user, guild) if user and guild else field["name"]
+        if data["thumbnail"]:
+            embed.set_thumbnail(url=data["thumbnail"])
+        if data["image"]:
+            embed.set_image(url=data["image"])
+        for field in data["fields"]:
+            embed.add_field(
+                name=script(field["name"], user, guild),
+                value=script(field["value"], user, guild),
+                inline=field["inline"],
             )
-            field_value = (
-                script(field["value"], user, guild)
-                if user and guild
-                else field["value"]
-            )
-            embed.add_field(name=field_name, value=field_value, inline=field["inline"])
-
-        if self.embed_data["timestamp"]:
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
+        if data["timestamp"]:
+            embed.timestamp = now()
         return embed
 
-    def is_empty(self):
-        return (
-            not self.embed_data["title"]
-            and not self.embed_data["description"]
-            and not self.message_content
-            and not self.embed_data["image"]
-            and not self.embed_data["thumbnail"]
-            and not self.embed_data["fields"]
-            and not self.embed_data["author"]["name"]
-            and not self.embed_data["footer"]["text"]
-        )
+    def preview(self, user, guild):
+        """Gives the embed to show in the editor, or None when it has no content."""
+        return None if self.is_embed_empty() else self.to_embed(user, guild)
 
-    def is_embed_empty(self):
-        return (
-            not self.embed_data["title"]
-            and not self.embed_data["description"]
-            and not self.embed_data["image"]
-            and not self.embed_data["thumbnail"]
-            and not self.embed_data["fields"]
-            and not self.embed_data["author"]["name"]
-            and not self.embed_data["footer"]["text"]
-        )
+    async def greeting(self, client, member) -> dict:
+        """Gives what to send for a member: text, embed with the card or image, and link buttons."""
+        guild = member.guild
+        embed, files = self.preview(member, guild), []
+        card = self.welcome_image_enabled and await welcome_card(member, guild.id)
+        if card:
+            embed = embed or self.to_embed(member, guild)
+            url = await hosted(client, card, guild)
+            if not url:
+                files, url = [card], f"attachment://{CARD_NAME}"
+            embed.set_image(url=url)
+        return {
+            "content": script(self.message_content, member, guild) or None,
+            "embed": embed,
+            "view": links_view(self.button_links, member, guild),
+            "files": files,
+        }
 
-    async def save(self, guild_id):
-        ref = db.reference(f"/WelcomeV2/{guild_id}")
-        ref.set(self.to_dict())
+    async def save(self) -> None:
+        """Saves the message, and the server's records in the two old lists `/help` and older code read."""
+        async with saving[self.guild_id]:
+            await self.store()
 
-        # Also save to legacy structure for backward compatibility
-        legacy_ref = db.reference("/Welcome")
-        welcome_data = legacy_ref.get() or {}
-
-        for key, val in welcome_data.items():
-            if val.get("Server ID") == guild_id:
-                legacy_ref.child(key).delete()
-                break
-
-        legacy_data = {
+    async def store(self) -> None:
+        """Writes the three records; `save` keeps two of these from running at once for a server."""
+        guild_id, color = self.guild_id, self.embed_data["color"]
+        await write(f"/WelcomeV2/{guild_id}", self.to_dict())
+        legacy_cache["at"] = 0.0
+        key, _ = await legacy_settings(guild_id)
+        settings = {
             "Server ID": guild_id,
             "Welcome Channel ID": self.channel_id,
             "Welcome Image Enabled": self.welcome_image_enabled,
         }
-        legacy_ref.push().set(legacy_data)
+        await mirror("/Welcome", key, settings)
+        key, _ = await legacy_content(guild_id)
+        content = {
+            "Server ID": guild_id,
+            "Message Content": self.message_content,
+            "Title": self.embed_data["title"],
+            "Description": self.embed_data["description"],
+            "Color": f"#{color:06x}",
+        }
+        await mirror("/Welcome Content", key, content)
+        legacy_cache["at"] = 0.0
 
-        content_ref = db.reference("/Welcome Content")
-        welcome_content = content_ref.get() or {}
 
-        for key, val in welcome_content.items():
-            if val.get("Server ID") == guild_id:
-                content_ref.child(key).delete()
-                break
+async def saved_editor(guild_id: int):
+    """Gives a server's welcome message, from the old lists when it was never edited since; None with welcomes off."""
+    data = await read(f"/WelcomeV2/{guild_id}")
+    if data:
+        return WelcomeEditor(guild_id, data)
+    _, settings = await legacy_settings(guild_id)
+    if not settings:
+        return None
+    _, content = await legacy_content(guild_id)
+    color = content and (await legacy_color(content.get("Color", ""))).value
+    return WelcomeEditor.from_legacy(guild_id, settings, content, color)
 
-        legacy_content = self.to_legacy_dict()
-        content_ref.push().set(legacy_content)
 
-
-class WelcomeEmbedModal(discord.ui.Modal, title="Edit Welcome Embed"):
-    def __init__(self, editor: WelcomeEditor):
-        super().__init__()
-        self.editor = editor
-
-        self.add_item(
-            discord.ui.TextInput(
-                label="Title",
-                placeholder="Welcome embed title",
-                default=editor.embed_data["title"],
-                max_length=256,
-                required=False,
-            )
+async def legacy_greeting(client, member, settings: dict, content: dict) -> dict:
+    """Gives what to send for a member in a server still on the old records."""
+    guild = member.guild
+    embed, files = None, []
+    card = settings["Welcome Image Enabled"] and await welcome_card(member, guild.id)
+    if content["Title"] != "" or content["Description"] != "":
+        embed = discord.Embed(
+            title=script(content["Title"], member, guild),
+            description=script(content["Description"], member, guild),
+            color=await legacy_color(content["Color"]),
         )
+        if card:
+            url = await hosted(client, card, guild)
+            if not url:
+                files, url = [card], f"attachment://{CARD_NAME}"
+            embed.set_image(url=url)
+    elif card:
+        files = [card]
+    return {
+        "content": script(content["Message Content"], member, guild),
+        "embed": embed,
+        "files": files,
+    }
 
+
+async def greet(client, member, dm=True):
+    """Sends a member their server's welcome message; gives the channel it went to, or UNSET, OFF or GONE."""
+    guild = member.guild
+    data = await read(f"/WelcomeV2/{guild.id}")
+    if data:
+        editor = WelcomeEditor(guild.id, data)
+        if not editor.channel_id:
+            return UNSET
+        channel = client.get_channel(editor.channel_id)
+        if not channel:
+            return GONE
+        message = await editor.greeting(client, member)
+        if not (message["content"] or message["embed"]):
+            return UNSET
+        await channel.send(**message)
+        if dm and guild.id in DM_COPY_SERVERS:
+            message["files"] = []
+            with contextlib.suppress(discord.Forbidden):
+                await member.send(**message)
+        return channel
+    _, settings = await legacy_settings(guild.id)
+    _, content = await legacy_content(guild.id) if settings else (None, None)
+    if not content:
+        return OFF
+    channel = client.get_channel(settings["Welcome Channel ID"])
+    if not channel:
+        return GONE
+    await channel.send(**await legacy_greeting(client, member, settings, content))
+    return channel
+
+
+class WelcomeModal(Modal):
+    """A modal of the editor; after it is filled in, the screen it came from saves and redraws."""
+
+    def __init__(self, title: str, view: "EditorView"):
+        super().__init__(title=title)
+        self.view = view
+        self.editor = view.editor
+
+    def keep(self) -> None:
+        """Puts what was typed into the editor."""
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.keep()
+        await self.editor.save()
+        await self.view.show(interaction, from_modal=True)
+
+
+class WelcomeMessageContentModal(WelcomeModal):
+    """Asks for the text above the embed."""
+
+    def __init__(self, view):
+        super().__init__("Edit Welcome Message Content", view)
         self.add_item(
-            discord.ui.TextInput(
-                label="Description",
-                placeholder="Welcome embed description",
-                default=editor.embed_data["description"],
-                max_length=4000,
-                required=False,
+            text_input(
+                "Message Content",
+                "Normal message content (appears above embed)",
+                self.editor.message_content,
+                max_length=2000,
                 style=discord.TextStyle.paragraph,
             )
         )
 
+    def keep(self) -> None:
+        self.editor.message_content = self.children[0].value
+
+
+class WelcomeEmbedModal(WelcomeModal):
+    """Asks for the embed's title, description, colour, footer text and author name."""
+
+    def __init__(self, view):
+        super().__init__("Edit Welcome Embed", view)
+        data = self.editor.embed_data
         self.add_item(
-            discord.ui.TextInput(
-                label="Color (Hex)",
-                placeholder="#FF0000",
-                default=f"#{editor.embed_data['color']:06x}",
-                max_length=7,
-                required=False,
+            text_input("Title", "Welcome embed title", data["title"], max_length=256)
+        )
+        self.add_item(
+            text_input(
+                "Description",
+                "Welcome embed description",
+                data["description"],
+                max_length=4000,
+                style=discord.TextStyle.paragraph,
+            )
+        )
+        self.add_item(
+            text_input("Color (Hex)", "#FF0000", f"#{data['color']:06x}", max_length=7)
+        )
+        self.add_item(
+            text_input(
+                "Footer Text", "Footer text", data["footer"]["text"], max_length=2048
+            )
+        )
+        self.add_item(
+            text_input(
+                "Author Name", "Author name", data["author"]["name"], max_length=256
             )
         )
 
+    def keep(self) -> None:
+        """Keeps what was typed; a colour that is not `#` and hex digits is ignored."""
+        data = self.editor.embed_data
+        title, description, color, footer, author = (c.value for c in self.children)
+        data["title"], data["description"] = title, description
+        color = color.strip()
+        if color.startswith("#"):
+            with contextlib.suppress(ValueError):
+                data["color"] = int(color[1:], 16)
+        data["footer"]["text"], data["author"]["name"] = footer, author
+
+
+class WelcomeMediaModal(WelcomeModal):
+    """Asks for the image, thumbnail, author icon and footer icon links."""
+
+    def __init__(self, view):
+        super().__init__("Edit Welcome Media", view)
+        data = self.editor.embed_data
+        self.add_item(text_input("Image URL", "Main image/banner URL", data["image"]))
         self.add_item(
-            discord.ui.TextInput(
-                label="Footer Text",
-                placeholder="Footer text",
-                default=editor.embed_data["footer"]["text"],
-                max_length=2048,
-                required=False,
-            )
+            text_input("Thumbnail URL", "Thumbnail image URL", data["thumbnail"])
+        )
+        self.add_item(
+            text_input("Author Icon URL", "Author icon URL", data["author"]["icon_url"])
+        )
+        self.add_item(
+            text_input("Footer Icon URL", "Footer icon URL", data["footer"]["icon_url"])
         )
 
+    def keep(self) -> None:
+        data = self.editor.embed_data
+        image, thumbnail, author_icon, footer_icon = (c.value for c in self.children)
+        data["image"], data["thumbnail"] = image, thumbnail
+        data["author"]["icon_url"] = author_icon
+        data["footer"]["icon_url"] = footer_icon
+
+
+class WelcomeFieldModal(WelcomeModal):
+    """Asks for a field's name, value and whether it is inline; adds a field when no index is given."""
+
+    def __init__(self, view, index=None):
+        super().__init__("Edit Welcome Field", view)
+        self.index = index
+        fields = self.editor.embed_data["fields"]
+        field = {"name": "", "value": "", "inline": True}
+        field = field if index is None else fields[index]
         self.add_item(
-            discord.ui.TextInput(
-                label="Author Name",
-                placeholder="Author name",
-                default=editor.embed_data["author"]["name"],
-                max_length=256,
-                required=False,
-            )
-        )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        self.editor.embed_data["title"] = self.children[0].value
-        self.editor.embed_data["description"] = self.children[1].value
-
-        color_str = self.children[2].value.strip()
-        if color_str and color_str.startswith("#"):
-            try:
-                self.editor.embed_data["color"] = int(color_str[1:], 16)
-            except ValueError:
-                pass
-
-        self.editor.embed_data["footer"]["text"] = self.children[3].value
-        self.editor.embed_data["author"]["name"] = self.children[4].value
-
-        await interaction.response.defer()
-
-
-class WelcomeMediaModal(discord.ui.Modal, title="Edit Welcome Media"):
-    def __init__(self, editor: WelcomeEditor):
-        super().__init__()
-        self.editor = editor
-
-        self.add_item(
-            discord.ui.TextInput(
-                label="Image URL",
-                placeholder="Main image/banner URL",
-                default=editor.embed_data["image"],
-                required=False,
-            )
-        )
-
-        self.add_item(
-            discord.ui.TextInput(
-                label="Thumbnail URL",
-                placeholder="Thumbnail image URL",
-                default=editor.embed_data["thumbnail"],
-                required=False,
-            )
-        )
-
-        self.add_item(
-            discord.ui.TextInput(
-                label="Author Icon URL",
-                placeholder="Author icon URL",
-                default=editor.embed_data["author"]["icon_url"],
-                required=False,
-            )
-        )
-
-        self.add_item(
-            discord.ui.TextInput(
-                label="Footer Icon URL",
-                placeholder="Footer icon URL",
-                default=editor.embed_data["footer"]["icon_url"],
-                required=False,
-            )
-        )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        self.editor.embed_data["image"] = self.children[0].value
-        self.editor.embed_data["thumbnail"] = self.children[1].value
-        self.editor.embed_data["author"]["icon_url"] = self.children[2].value
-        self.editor.embed_data["footer"]["icon_url"] = self.children[3].value
-        await interaction.response.defer()
-
-
-class WelcomeFieldModal(discord.ui.Modal, title="Edit Welcome Field"):
-    def __init__(self, editor: WelcomeEditor, field_index=None):
-        super().__init__()
-        self.editor = editor
-        self.field_index = field_index
-
-        field_data = (
-            editor.embed_data["fields"][field_index]
-            if field_index is not None
-            else {"name": "", "value": "", "inline": True}
-        )
-
-        self.add_item(
-            discord.ui.TextInput(
-                label="Field Name",
-                placeholder="Field title",
-                default=field_data["name"],
+            text_input(
+                "Field Name",
+                "Field title",
+                field["name"],
                 max_length=256,
                 required=True,
             )
         )
-
         self.add_item(
-            discord.ui.TextInput(
-                label="Field Value",
-                placeholder="Field content",
-                default=field_data["value"],
+            text_input(
+                "Field Value",
+                "Field content",
+                field["value"],
                 max_length=1024,
                 required=True,
                 style=discord.TextStyle.paragraph,
             )
         )
-
         self.add_item(
-            discord.ui.TextInput(
-                label="Inline (Y/N)",
-                placeholder="Y for inline, N for not inline",
-                default="Y" if field_data["inline"] else "N",
+            text_input(
+                "Inline (Y/N)",
+                "Y for inline, N for not inline",
+                "Y" if field["inline"] else "N",
                 max_length=1,
                 required=True,
             )
         )
 
-    async def on_submit(self, interaction: discord.Interaction):
-        inline = self.children[2].value.upper() == "Y"
-
-        field_data = {
-            "name": self.children[0].value,
-            "value": self.children[1].value,
-            "inline": inline,
-        }
-
-        if self.field_index is not None:
-            self.editor.embed_data["fields"][self.field_index] = field_data
+    def keep(self) -> None:
+        name, value, inline = (c.value for c in self.children)
+        field = {"name": name, "value": value, "inline": inline.upper() == "Y"}
+        fields = self.editor.embed_data["fields"]
+        if self.index is None:
+            fields.append(field)
         else:
-            self.editor.embed_data["fields"].append(field_data)
-
-        await interaction.response.defer()
+            fields[self.index] = field
 
 
-class WelcomeButtonLinkModal(discord.ui.Modal, title="Edit Welcome Button Link"):
-    def __init__(self, editor: WelcomeEditor, link_index=None):
-        super().__init__()
-        self.editor = editor
-        self.link_index = link_index
+class WelcomeButtonLinkModal(WelcomeModal):
+    """Asks for a link button's label, URL and emoji; adds a link when no index is given."""
 
-        link_data = (
-            editor.button_links[link_index]
-            if link_index is not None
-            else {"label": "", "url": "", "emoji": ""}
-        )
-
+    def __init__(self, view, index=None):
+        super().__init__("Edit Welcome Button Link", view)
+        self.index = index
+        link = {"label": "", "url": "", "emoji": ""}
+        link = link if index is None else self.editor.button_links[index]
         self.add_item(
-            discord.ui.TextInput(
-                label="Button Label",
-                placeholder="Text shown on button",
-                default=link_data["label"],
+            text_input(
+                "Button Label",
+                "Text shown on button",
+                link["label"],
                 max_length=80,
                 required=True,
             )
         )
-
         self.add_item(
-            discord.ui.TextInput(
-                label="URL",
-                placeholder="https://example.com",
-                default=link_data["url"],
-                required=True,
+            text_input("URL", "https://example.com", link["url"], required=True)
+        )
+        self.add_item(
+            text_input(
+                "Emoji (optional)", "Format: <:name:id> or unicode emoji", link["emoji"]
             )
         )
 
-        self.add_item(
-            discord.ui.TextInput(
-                label="Emoji (optional)",
-                placeholder="Format: <:name:id> or unicode emoji",
-                default=link_data["emoji"],
-                required=False,
-            )
-        )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        link_data = {
-            "label": self.children[0].value,
-            "url": self.children[1].value,
-            "emoji": self.children[2].value,
-        }
-
-        if self.link_index is not None:
-            self.editor.button_links[self.link_index] = link_data
+    def keep(self) -> None:
+        label, url, emoji = (c.value for c in self.children)
+        link = {"label": label, "url": url, "emoji": emoji}
+        if self.index is None:
+            self.editor.button_links.append(link)
         else:
-            self.editor.button_links.append(link_data)
-
-        await interaction.response.defer()
+            self.editor.button_links[self.index] = link
 
 
-class WelcomeMessageContentModal(
-    discord.ui.Modal, title="Edit Welcome Message Content"
-):
-    def __init__(self, editor: WelcomeEditor):
-        super().__init__()
+class EditorView(View):
+    """One screen of the welcome editor."""
+
+    def __init__(self, editor: WelcomeEditor, guild: discord.Guild):
+        super().__init__(timeout=EDITOR_TIMEOUT)
         self.editor = editor
+        self.guild = guild
 
-        self.add_item(
-            discord.ui.TextInput(
-                label="Message Content",
-                placeholder="Normal message content (appears above embed)",
-                default=editor.message_content,
-                max_length=2000,
-                required=False,
-                style=discord.TextStyle.paragraph,
-            )
-        )
+    def shown(self, interaction: discord.Interaction) -> dict:
+        """Gives what this screen shows."""
+        raise NotImplementedError
 
-    async def on_submit(self, interaction: discord.Interaction):
-        self.editor.message_content = self.children[0].value
-        await interaction.response.defer()
+    async def show(self, interaction: discord.Interaction, **_):
+        """Draws this screen over the message the press came from."""
+        shown = self.shown(interaction)
+        if interaction.response.is_done():
+            await interaction.edit_original_response(**shown)
+        else:
+            await interaction.response.edit_message(**shown)
+
+    async def refuse(self, interaction: discord.Interaction, reason: str):
+        """Answers a press that cannot be done."""
+        await interaction.response.send_message(reason, ephemeral=True)
 
 
-class WelcomeFieldsEditorView(discord.ui.View):
-    def __init__(
-        self, cog, editor: WelcomeEditor, original_interaction: discord.Interaction
-    ):
-        super().__init__(timeout=3600)
-        self.cog = cog
-        self.editor = editor
-        self.original_interaction = original_interaction
-        self.selected_index = 0 if editor.embed_data["fields"] else None
+class ListView(EditorView):
+    """A screen that adds, edits and removes the entries of one list: fields or link buttons."""
+
+    noun = ""
+    title = ""
+    hint = ""
+    modal = None
+
+    def __init__(self, editor: WelcomeEditor, guild: discord.Guild):
+        super().__init__(editor, guild)
+        self.selected_index = 0 if self.entries() else None
+        self.select = Select(placeholder=f"Select a {self.noun.lower()} to edit", row=0)
+        self.select.callback = self.pick
+        self.add.label = f"Add {self.noun}"
+        self.edit.label = f"Edit {self.noun}"
+        self.remove.label = f"Remove {self.noun}"
         self.update_select()
 
-    def update_select(self):
-        for item in self.children:
-            if isinstance(item, discord.ui.Select):
-                self.remove_item(item)
+    def entries(self) -> list:
+        """Gives the list this screen edits."""
+        raise NotImplementedError
 
-        if self.editor.embed_data["fields"]:
-            options = []
-            for i, field in enumerate(self.editor.embed_data["fields"]):
-                label = field["name"][:50] if field["name"] else f"Field {i+1}"
-                options.append(discord.SelectOption(label=label, value=str(i)))
+    def label(self, entry: dict) -> str:
+        """Gives the text an entry is listed under."""
+        raise NotImplementedError
 
-            select = discord.ui.Select(
-                placeholder="Select a field to edit", options=options
+    def update_select(self) -> None:
+        """Lists the entries in the dropdown, which is left out when there are none."""
+        self.remove_item(self.select)
+        if not self.entries():
+            return
+        self.select.options = [
+            discord.SelectOption(
+                label=self.label(entry)[:50] or f"{self.noun} {index + 1}",
+                value=str(index),
             )
-            select.callback = self.select_field
-            self.add_item(select)
+            for index, entry in enumerate(self.entries())
+        ]
+        self.add_item(self.select)
 
-    async def update_message(self, interaction: discord.Interaction = None):
+    def shown(self, interaction: discord.Interaction) -> dict:
         self.update_select()
-        embed = (
-            self.editor.to_embed(interaction.user, interaction.guild)
-            if interaction
-            else self.editor.to_embed()
+        embed = self.editor.preview(interaction.user, self.guild) or discord.Embed(
+            title=self.title, description=self.hint, color=discord.Color.light_gray()
         )
+        return {"embed": embed, "view": self}
 
-        if not embed:
-            embed = discord.Embed(
-                title="Fields Editor",
-                description="Add and manage embed fields for your welcome message.",
-                color=discord.Color.light_gray(),
-            )
-
-        if interaction:
-            await interaction.response.edit_message(embed=embed, view=self)
-        else:
-            await self.original_interaction.edit_original_response(
-                embed=embed, view=self
-            )
-
-    async def select_field(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+    async def pick(self, interaction: discord.Interaction):
+        """Remembers which entry Edit and Remove act on."""
         self.selected_index = int(interaction.data["values"][0])
-        await self.update_message(interaction)
+        await self.show(interaction)
 
-    @discord.ui.button(
-        label="Add Field", style=discord.ButtonStyle.success, emoji="➕", row=1
-    )
-    async def add_field(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        modal = WelcomeFieldModal(self.editor)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.editor.save(self.original_interaction.guild_id)
-        await self.update_message()
+    @discord.ui.button(style=discord.ButtonStyle.success, emoji="➕", row=1)
+    async def add(self, interaction: discord.Interaction, button: Button):
+        """Asks for a new entry."""
+        await interaction.response.send_modal(self.modal(self))
 
-    @discord.ui.button(
-        label="Edit Field", style=discord.ButtonStyle.primary, emoji="✏️", row=1
-    )
-    async def edit_field(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(style=discord.ButtonStyle.primary, emoji="✏️", row=1)
+    async def edit(self, interaction: discord.Interaction, button: Button):
+        """Asks for new values of the selected entry."""
         if self.selected_index is None:
-            await interaction.response.send_message(
-                "Please select a field first!", ephemeral=True
-            )
-            return
-        modal = WelcomeFieldModal(self.editor, self.selected_index)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.editor.save(self.original_interaction.guild_id)
-        await self.update_message()
+            noun = self.noun.lower()
+            return await self.refuse(interaction, f"Please select a {noun} first!")
+        await interaction.response.send_modal(self.modal(self, self.selected_index))
 
-    @discord.ui.button(
-        label="Remove Field", style=discord.ButtonStyle.danger, emoji="🗑️", row=1
-    )
-    async def remove_field(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    @discord.ui.button(style=discord.ButtonStyle.danger, emoji="🗑️", row=1)
+    async def remove(self, interaction: discord.Interaction, button: Button):
+        """Removes the selected entry."""
         if self.selected_index is None:
-            await interaction.response.send_message(
-                "Please select a field first!", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        self.editor.embed_data["fields"].pop(self.selected_index)
+            noun = self.noun.lower()
+            return await self.refuse(interaction, f"Please select a {noun} first!")
+        await interaction.response.defer()
+        self.entries().pop(self.selected_index)
         self.selected_index = None
-        await self.editor.save(self.original_interaction.guild_id)
-        await self.update_message(interaction)
+        await self.editor.save()
+        await self.show(interaction)
 
     @discord.ui.button(label="Back", style=discord.ButtonStyle.gray, emoji="↩️", row=2)
-    async def go_back(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.defer()
-        view = WelcomeSettingsView(self.cog, self.editor, self.original_interaction)
-        await view.update_message()
+    async def go_back(self, interaction: discord.Interaction, button: Button):
+        """Returns to the first screen."""
+        await WelcomeSettingsView(self.editor, self.guild).show(interaction)
 
 
-class WelcomeButtonLinksEditorView(discord.ui.View):
-    def __init__(
-        self, cog, editor: WelcomeEditor, original_interaction: discord.Interaction
-    ):
-        super().__init__(timeout=3600)
-        self.cog = cog
-        self.editor = editor
-        self.original_interaction = original_interaction
-        self.selected_index = 0 if editor.button_links else None
-        self.update_select()
+class WelcomeFieldsEditorView(ListView):
+    """The screen that edits the embed's fields."""
 
-    def update_select(self):
-        for item in self.children:
-            if isinstance(item, discord.ui.Select):
-                self.remove_item(item)
+    noun = "Field"
+    title = "Fields Editor"
+    hint = "Add and manage embed fields for your welcome message."
+    modal = WelcomeFieldModal
 
-        if self.editor.button_links:
-            options = []
-            for i, link in enumerate(self.editor.button_links):
-                label = link["label"][:50] if link["label"] else f"Link {i+1}"
-                options.append(discord.SelectOption(label=label, value=str(i)))
+    def entries(self) -> list:
+        return self.editor.embed_data["fields"]
 
-            select = discord.ui.Select(
-                placeholder="Select a link to edit", options=options
-            )
-            select.callback = self.select_link
-            self.add_item(select)
+    def label(self, entry: dict) -> str:
+        return entry["name"]
 
-    async def update_message(self, interaction: discord.Interaction = None):
-        self.update_select()
-        embed = (
-            self.editor.to_embed(interaction.user, interaction.guild)
-            if interaction
-            else self.editor.to_embed()
-        )
 
-        if not embed:
-            embed = discord.Embed(
-                title="Button Links Editor",
-                description="Add and manage button links for your welcome message.",
-                color=discord.Color.light_gray(),
-            )
+class WelcomeButtonLinksEditorView(ListView):
+    """The screen that edits the link buttons; it also shows them as they will look."""
 
-        preview_view = discord.ui.View()
+    noun = "Link"
+    title = "Button Links Editor"
+    hint = "Add and manage button links for your welcome message."
+    modal = WelcomeButtonLinkModal
+
+    def entries(self) -> list:
+        return self.editor.button_links
+
+    def label(self, entry: dict) -> str:
+        return entry["label"]
+
+    async def show(self, interaction: discord.Interaction, *, from_modal=False, **_):
+        await super().show(interaction)
+        if from_modal or not self.editor.button_links:
+            return
+        preview = View()
         for link in self.editor.button_links:
-            try:
-                emoji = (
-                    discord.PartialEmoji.from_str(link["emoji"])
-                    if link["emoji"]
-                    else None
+            preview.add_item(
+                Button(
+                    label=link["label"],
+                    url=link["url"],
+                    emoji=link_emoji(link["emoji"]),
+                    style=discord.ButtonStyle.link,
                 )
-            except:
-                emoji = None
-            button = discord.ui.Button(
-                label=link["label"],
-                url=link["url"],
-                emoji=emoji,
-                style=discord.ButtonStyle.link,
             )
-            preview_view.add_item(button)
-
-        if interaction:
-            await interaction.response.edit_message(embed=embed, view=self)
-            if self.editor.button_links:
-                await interaction.followup.send(
-                    "**Button Preview:**", view=preview_view, ephemeral=True
-                )
-        else:
-            await self.original_interaction.edit_original_response(
-                embed=embed, view=self
+        with contextlib.suppress(discord.HTTPException):
+            await interaction.followup.send(
+                "**Button Preview:**", view=preview, ephemeral=True
             )
 
-    async def select_link(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        self.selected_index = int(interaction.data["values"][0])
-        await self.update_message(interaction)
 
-    @discord.ui.button(
-        label="Add Link", style=discord.ButtonStyle.success, emoji="➕", row=1
-    )
-    async def add_link(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        modal = WelcomeButtonLinkModal(self.editor)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.editor.save(self.original_interaction.guild_id)
-        await self.update_message()
+class WelcomeSettingsView(EditorView):
+    """The editor's first screen: the channel, each part of the message, the card and Disable."""
 
-    @discord.ui.button(
-        label="Edit Link", style=discord.ButtonStyle.primary, emoji="✏️", row=1
-    )
-    async def edit_link(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.selected_index is None:
-            await interaction.response.send_message(
-                "Please select a link first!", ephemeral=True
-            )
-            return
-        modal = WelcomeButtonLinkModal(self.editor, self.selected_index)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.editor.save(self.original_interaction.guild_id)
-        await self.update_message()
-
-    @discord.ui.button(
-        label="Remove Link", style=discord.ButtonStyle.danger, emoji="🗑️", row=1
-    )
-    async def remove_link(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        if self.selected_index is None:
-            await interaction.response.send_message(
-                "Please select a link first!", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        self.editor.button_links.pop(self.selected_index)
-        self.selected_index = None
-        await self.editor.save(self.original_interaction.guild_id)
-        await self.update_message(interaction)
-
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.gray, emoji="↩️", row=2)
-    async def go_back(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.defer()
-        view = WelcomeSettingsView(self.cog, self.editor, self.original_interaction)
-        await view.update_message()
-
-
-class WelcomeSettingsView(discord.ui.View):
-    def __init__(
-        self, cog, editor: WelcomeEditor, original_interaction: discord.Interaction
-    ):
-        super().__init__(timeout=3600)
-        self.cog = cog
-        self.editor = editor
-        self.original_interaction = original_interaction
-
-        default_channels = []
-        if self.editor.channel_id:
-            channel = self.original_interaction.guild.get_channel(
-                self.editor.channel_id
-            )
-            if channel:
-                default_channels = [channel]
-
-        self.channel_select = discord.ui.ChannelSelect(
+    def __init__(self, editor: WelcomeEditor, guild: discord.Guild):
+        super().__init__(editor, guild)
+        self.channel_select = ChannelSelect(
             placeholder="Select welcome channel...",
             channel_types=[discord.ChannelType.text],
-            default_values=default_channels,
         )
         self.channel_select.callback = self.select_channel
         self.add_item(self.channel_select)
 
-        for child in self.children:
-            if hasattr(child, "label"):
-                if child.label == "Toggle Custom Image":
-                    child.label = (
-                        "Disable Custom Image"
-                        if self.editor.welcome_image_enabled
-                        else "Enable Custom Image"
-                    )
-                    child.style = (
-                        discord.ButtonStyle.danger
-                        if self.editor.welcome_image_enabled
-                        else discord.ButtonStyle.success
-                    )
-
-    async def save_settings(self):
-        await self.editor.save(self.original_interaction.guild_id)
-
-    async def update_message(self, interaction: discord.Interaction = None):
-        default_channels = []
-        if self.editor.channel_id:
-            channel = self.original_interaction.guild.get_channel(
-                self.editor.channel_id
-            )
-            if channel:
-                default_channels = [channel]
-
-        self.channel_select.default_values = default_channels
-
-        content = self.editor.message_content if self.editor.message_content else None
-        embed = (
-            self.editor.to_embed(interaction.user, interaction.guild)
-            if interaction
-            else self.editor.to_embed(
-                self.original_interaction.user, self.original_interaction.guild
-            )
+    def shown(self, interaction: discord.Interaction) -> dict:
+        editor = self.editor
+        channel = editor.channel_id and self.guild.get_channel(editor.channel_id)
+        self.channel_select.default_values = [channel] if channel else []
+        enabled = editor.welcome_image_enabled
+        self.toggle_image.label = f"{'Disable' if enabled else 'Enable'} Custom Image"
+        self.toggle_image.style = (
+            discord.ButtonStyle.danger if enabled else discord.ButtonStyle.success
         )
-
+        content = editor.message_content or None
+        embed = editor.preview(interaction.user, self.guild)
         if not content and not embed:
-            content = None
             embed = discord.Embed(
                 title="Welcome Message Settings",
-                description="Configure your server's welcome message using the options below. Right now, no welcome message is set up.",
+                description=(
+                    "Configure your server's welcome message using the options below."
+                    " Right now, no welcome message is set up."
+                ),
                 color=discord.Color.blue(),
             )
-
-        if interaction:
-            if interaction.response.is_done():
-                await interaction.edit_original_response(
-                    content=content, embed=embed, view=self
-                )
-            else:
-                await interaction.response.send_message(
-                    content=content, embed=embed, view=self, ephemeral=True
-                )
-        else:
-            await self.original_interaction.edit_original_response(
-                content=content, embed=embed, view=self
-            )
+        return {"content": content, "embed": embed, "view": self}
 
     async def select_channel(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        channel_id = int(interaction.data["values"][0])
-        self.editor.channel_id = channel_id
-        await self.save_settings()
-        await self.update_message(interaction)
+        """Sets the channel new members are welcomed in."""
+        await interaction.response.defer()
+        self.editor.channel_id = int(interaction.data["values"][0])
+        await self.editor.save()
+        await self.show(interaction)
 
     @discord.ui.button(
         label="Message", style=discord.ButtonStyle.secondary, emoji="💬", row=0
     )
-    async def edit_message(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        modal = WelcomeMessageContentModal(self.editor)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.save_settings()
-        await self.update_message()
+    async def edit_message(self, interaction: discord.Interaction, button: Button):
+        """Asks for the text above the embed."""
+        await interaction.response.send_modal(WelcomeMessageContentModal(self))
 
     @discord.ui.button(
         label="Embed", style=discord.ButtonStyle.secondary, emoji="🖼️", row=0
     )
-    async def edit_embed(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        modal = WelcomeEmbedModal(self.editor)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.save_settings()
-        await self.update_message()
+    async def edit_embed(self, interaction: discord.Interaction, button: Button):
+        """Asks for the embed's texts and colour."""
+        await interaction.response.send_modal(WelcomeEmbedModal(self))
 
     @discord.ui.button(
         label="Media", style=discord.ButtonStyle.secondary, emoji="📷", row=0
     )
-    async def edit_media(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        modal = WelcomeMediaModal(self.editor)
-        await interaction.response.send_modal(modal)
-        await modal.wait()
-        await self.save_settings()
-        await self.update_message()
+    async def edit_media(self, interaction: discord.Interaction, button: Button):
+        """Asks for the embed's image and icon links."""
+        await interaction.response.send_modal(WelcomeMediaModal(self))
 
     @discord.ui.button(
         label="Fields", style=discord.ButtonStyle.secondary, emoji="📋", row=0
     )
-    async def edit_fields(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        view = WelcomeFieldsEditorView(self.cog, self.editor, self.original_interaction)
-        await view.update_message(interaction)
+    async def edit_fields(self, interaction: discord.Interaction, button: Button):
+        """Opens the fields screen."""
+        await WelcomeFieldsEditorView(self.editor, self.guild).show(interaction)
 
     @discord.ui.button(
         label="Link Buttons", style=discord.ButtonStyle.secondary, emoji="🔗", row=0
     )
-    async def edit_links(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        view = WelcomeButtonLinksEditorView(
-            self.cog, self.editor, self.original_interaction
-        )
-        await view.update_message(interaction)
+    async def edit_links(self, interaction: discord.Interaction, button: Button):
+        """Opens the link buttons screen."""
+        await WelcomeButtonLinksEditorView(self.editor, self.guild).show(interaction)
 
     @discord.ui.button(
         label="Toggle Custom Image",
@@ -913,45 +919,32 @@ class WelcomeSettingsView(discord.ui.View):
         emoji="🖼️",
         row=1,
     )
-    async def toggle_image(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        bg_path = f"./assets/Welcome Image Background/{interaction.guild_id}.png"
-
-        if not os.path.exists(bg_path):
-            await interaction.response.send_message(
-                "<:no:1036810470860013639> No custom background image found! Use `/welcome upload` to add one first.",
-                ephemeral=True,
+    async def toggle_image(self, interaction: discord.Interaction, button: Button):
+        """Turns the drawn card on or off; it needs an uploaded background."""
+        if not os.path.exists(background(interaction.guild_id)):
+            return await self.refuse(
+                interaction,
+                f"{NO} No custom background image found! Use `/welcome upload` to add"
+                " one first.",
             )
-            return
-
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
         self.editor.welcome_image_enabled = not self.editor.welcome_image_enabled
-        button.label = (
-            "Disable Custom Image"
-            if self.editor.welcome_image_enabled
-            else "Enable Custom Image"
-        )
-        button.style = (
-            discord.ButtonStyle.danger
-            if self.editor.welcome_image_enabled
-            else discord.ButtonStyle.success
-        )
-        await self.save_settings()
-        await self.update_message(interaction)
+        await self.editor.save()
+        await self.show(interaction)
 
     @discord.ui.button(
         label="Variable Guide", style=discord.ButtonStyle.blurple, emoji="❓", row=1
     )
-    async def show_guide(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
+    async def show_guide(self, interaction: discord.Interaction, button: Button):
+        """Lists the variables a welcome text can use."""
         embed = discord.Embed(
             title="Welcome Message Variables",
-            description="Use these variables in your welcome message to display dynamic content:",
+            description=(
+                "Use these variables in your welcome message to display dynamic"
+                " content:"
+            ),
             color=discord.Color.blue(),
         )
-
         embed.add_field(
             name="Available Variables",
             value=(
@@ -959,78 +952,73 @@ class WelcomeSettingsView(discord.ui.View):
                 "`{user}` - Displays the username\n"
                 "`{server}` - Displays the server name\n"
                 "`{count}` - Shows the member count\n"
-                "`{count-th}` - Shows the member count with ordinal (1st, 2nd, 3rd, etc.)"
+                "`{count-th}` - Shows the member count with ordinal (1st, 2nd, 3rd,"
+                " etc.)"
             ),
             inline=False,
         )
-
         embed.add_field(
             name="Example",
             value="Welcome {mention} to {server}! You are our {count-th} member!",
             inline=False,
         )
-
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Disable System", style=discord.ButtonStyle.danger, row=1)
-    async def disable_system(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        # Remove from new database structure
-        ref = db.reference(f"/WelcomeV2/{interaction.guild_id}")
-        ref.delete()
-
-        # Remove from legacy structure
-        legacy_ref = db.reference("/Welcome")
-        welcome_data = legacy_ref.get() or {}
-
-        for key, val in welcome_data.items():
-            if val.get("Server ID") == interaction.guild_id:
-                legacy_ref.child(key).delete()
-                break
-
-        # Remove legacy content
-        content_ref = db.reference("/Welcome Content")
-        welcome_content = content_ref.get() or {}
-
-        for key, val in welcome_content.items():
-            if val.get("Server ID") == interaction.guild_id:
-                content_ref.child(key).delete()
-                break
-
+    async def disable_system(self, interaction: discord.Interaction, button: Button):
+        """Deletes the server's welcome message, from the old lists too."""
+        await interaction.response.defer()
+        guild_id = interaction.guild_id
+        async with saving[guild_id]:
+            paths = [f"/WelcomeV2/{guild_id}"]
+            for path in ("/Welcome", "/Welcome Content"):
+                keys = keys_of_server(await read(path), guild_id)
+                paths += [f"{path}/{key}" for key in keys]
+            await asyncio.gather(*map(remove, paths))
+            legacy_cache["at"] = 0.0
         embed = discord.Embed(
             title="Welcome System Disabled",
             description="The welcome system has been disabled for this server.",
             color=discord.Color.red(),
+            timestamp=now(),
         )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.edit_original_response(content=None, embed=embed, view=None)
 
 
-class WelcomeEnableView(discord.ui.View):
-    def __init__(self, cog, interaction: discord.Interaction):
-        super().__init__(timeout=1800)
-        self.cog = cog
-        self.interaction = interaction
+class WelcomeEnableView(View):
+    """Offers to turn welcomes on in a server that has none."""
+
+    def __init__(self):
+        super().__init__(timeout=ENABLE_TIMEOUT)
 
     @discord.ui.button(
         label="Enable System", style=discord.ButtonStyle.green, emoji="✅"
     )
-    async def enable_system(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ):
-        await interaction.response.defer(ephemeral=True)
-        editor = WelcomeEditor(interaction.user.id, interaction.guild_id)
-        view = WelcomeSettingsView(self.cog, editor, interaction)
-        await view.update_message(interaction)
+    async def enable_system(self, interaction: discord.Interaction, button: Button):
+        """Opens an empty editor; nothing is saved until something is set."""
+        editor = WelcomeEditor(interaction.guild_id)
+        await WelcomeSettingsView(editor, interaction.guild).show(interaction)
+
+
+async def report(interaction: discord.Interaction, error: Exception) -> None:
+    """Shows a command's error to the member who ran it."""
+    text = f"```{error}```"
+    if interaction.response.is_done():
+        await interaction.followup.send(text, ephemeral=True)
+    else:
+        await interaction.response.send_message(text, ephemeral=True)
 
 
 @app_commands.guild_only()
 class Welcome(commands.GroupCog, name="welcome"):
+    """The /welcome commands."""
+
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         super().__init__()
+
+    async def cog_app_command_error(self, interaction, error) -> None:
+        await report(interaction, error)
 
     @app_commands.command(
         name="settings",
@@ -1038,137 +1026,57 @@ class Welcome(commands.GroupCog, name="welcome"):
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_settings(self, interaction: discord.Interaction) -> None:
-        try:
-            ref = db.reference(f"/WelcomeV2/{interaction.guild_id}")
-            welcome_data = ref.get()
-
-            if welcome_data:
-                editor = WelcomeEditor(
-                    interaction.user.id, interaction.guild_id, welcome_data
-                )
-                view = WelcomeSettingsView(self, editor, interaction)
-                await view.update_message(interaction)
-            else:
-                # Check legacy database structure
-                legacy_ref = db.reference("/Welcome")
-                legacy_data = legacy_ref.get() or {}
-
-                found = False
-                for key, val in legacy_data.items():
-                    if val.get("Server ID") == interaction.guild_id:
-                        # Convert legacy data to new format
-                        editor = WelcomeEditor(
-                            interaction.user.id, interaction.guild_id
-                        )
-                        editor.channel_id = val.get("Welcome Channel ID")
-                        editor.welcome_image_enabled = val.get(
-                            "Welcome Image Enabled", False
-                        )
-
-                        # Load legacy content if it exists
-                        content_ref = db.reference("/Welcome Content")
-                        content_data = content_ref.get() or {}
-                        for content_key, content_val in content_data.items():
-                            if content_val.get("Server ID") == interaction.guild_id:
-                                editor.load_from_dict(content_val)
-                                break
-
-                        # Show settings even if no content exists (use defaults)
-                        view = WelcomeSettingsView(self, editor, interaction)
-                        await view.update_message(interaction)
-                        found = True
-                        break
-
-                if not found:
-                    embed = discord.Embed(
-                        title="Welcome System",
-                        description="The welcome system is currently disabled. Enable it to welcome new members with custom messages!",
-                        color=discord.Color.orange(),
-                    )
-
-                    view = WelcomeEnableView(self, interaction)
-                    await interaction.response.send_message(
-                        embed=embed, view=view, ephemeral=True
-                    )
-        except Exception as e:
-            await interaction.response.send_message(
-                f"An error occurred: {str(e)}", ephemeral=True
-            )
-
-    @welcome_settings.error
-    async def welcome_settings_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+        """Opens the editor, or offers to enable welcomes."""
+        await interaction.response.defer(ephemeral=True)
+        editor = await saved_editor(interaction.guild_id)
+        if editor:
+            view = WelcomeSettingsView(editor, interaction.guild)
+            return await view.show(interaction)
+        embed = discord.Embed(
+            title="Welcome System",
+            description=(
+                "The welcome system is currently disabled. Enable it to welcome new"
+                " members with custom messages!"
+            ),
+            color=discord.Color.orange(),
+        )
+        await interaction.followup.send(embed=embed, view=WelcomeEnableView())
 
     @app_commands.command(
         name="upload",
         description="Upload a custom background image for welcome messages",
     )
     @app_commands.describe(
-        background_image="The background image for welcome messages (will be cropped to 1024x576)"
+        background_image=(
+            "The background image for welcome messages (will be cropped to 1024x576)"
+        )
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_upload(
         self, interaction: discord.Interaction, background_image: discord.Attachment
     ) -> None:
-        if not background_image.content_type.startswith("image/"):
-            await interaction.response.send_message(
-                "<:no:1036811164891480194> Please upload a valid image file!",
-                ephemeral=True,
+        """Saves the server's card background and turns the card on."""
+        if not (background_image.content_type or "").startswith("image/"):
+            return await interaction.response.send_message(
+                f"{NO} Please upload a valid image file!", ephemeral=True
             )
-            return
-
-        path = f"./assets/Welcome Image Background/{interaction.guild.id}.png"
-        await background_image.save(path)
-
-        image = Image.open(path)
-        width = image.size[0]
-        height = image.size[1]
-        aspect = width / float(height)
-
-        ideal_width = 1024
-        ideal_height = 576
-        ideal_aspect = ideal_width / float(ideal_height)
-
-        if aspect > ideal_aspect:
-            new_width = int(ideal_aspect * height)
-            offset = (width - new_width) / 2
-            resize = (offset, 0, width - offset, height)
-        else:
-            new_height = int(width / ideal_aspect)
-            offset = (height - new_height) / 2
-            resize = (0, offset, width, height - offset)
-
-        thumb = image.crop(resize).resize((ideal_width, ideal_height), Image.LANCZOS)
-        thumb.save(path)
-
-        image = Image.open(path)
-        enhancer = ImageEnhance.Brightness(image)
-        im_output = enhancer.enhance(0.6)
-        im_output.save(path)
-
-        ref = db.reference(f"/WelcomeV2/{interaction.guild_id}")
-        welcome_data = ref.get()
-
-        if welcome_data:
-            welcome_data["welcome_image_enabled"] = True
-            ref.set(welcome_data)
-
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        image = await background_image.read()
+        await asyncio.to_thread(save_background, image, background(guild_id))
+        async with saving[guild_id]:
+            data = await read(f"/WelcomeV2/{guild_id}")
+            if data and not data.get("welcome_image_enabled"):
+                await write(f"/WelcomeV2/{guild_id}/welcome_image_enabled", True)
         embed = discord.Embed(
-            title="<:yes:1036811164891480194> Background Uploaded!",
-            description="Custom background image has been uploaded and processed successfully.",
+            title=f"{YES} Background Uploaded!",
+            description=(
+                "Custom background image has been uploaded and processed successfully."
+            ),
             color=discord.Color.green(),
+            timestamp=now(),
         )
-        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @welcome_upload.error
-    async def welcome_upload_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        await interaction.response.send_message(f"```{str(error)}```", ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(
         name="sample",
@@ -1176,371 +1084,43 @@ class Welcome(commands.GroupCog, name="welcome"):
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_sample(self, interaction: discord.Interaction) -> None:
+        """Welcomes the member who ran it, the way a new member would be."""
         await interaction.response.defer(ephemeral=True)
-
-        ref = db.reference(f"/WelcomeV2/{interaction.guild_id}")
-        welcome_data = ref.get()
-
-        if welcome_data:
-            editor = WelcomeEditor(
-                interaction.user.id, interaction.guild_id, welcome_data
+        channel = await greet(self.bot, interaction.user, dm=False)
+        if channel == UNSET:
+            return await interaction.followup.send(
+                f"{NO} Welcome system is not properly configured! Use `/welcome"
+                " settings` first."
             )
-
-            if not editor.channel_id:
-                await interaction.followup.send(
-                    "<:no:1036810470860013639> Welcome system is not properly configured! Use `/welcome settings` first.",
-                    ephemeral=True,
-                )
-                return
-
-            channel = self.bot.get_channel(editor.channel_id)
-            if not channel:
-                await interaction.followup.send(
-                    "<:no:1036810470860013639> Welcome channel not found! It may have been deleted.",
-                    ephemeral=True,
-                )
-                return
-
-            embed = editor.to_embed(interaction.user, interaction.guild)
-            message_content = script(
-                editor.message_content, interaction.user, interaction.guild
+        if channel == GONE:
+            return await interaction.followup.send(
+                f"{NO} Welcome channel not found! It may have been deleted."
             )
-
-            view = discord.ui.View()
-            for link in editor.button_links:
-                try:
-                    emoji = (
-                        discord.PartialEmoji.from_str(link["emoji"])
-                        if link["emoji"]
-                        else None
-                    )
-                except:
-                    emoji = None
-                button = discord.ui.Button(
-                    label=script(link["label"], interaction.user, interaction.guild),
-                    url=script(link["url"], interaction.user, interaction.guild),
-                    emoji=emoji,
-                    style=discord.ButtonStyle.link,
-                )
-                view.add_item(button)
-
-            if editor.welcome_image_enabled:
-                filename = await createWelcomeMsg(
-                    interaction.user,
-                    bg=f"./assets/Welcome Image Background/{interaction.guild.id}.png",
-                )
-                chn = self.bot.get_channel(1026904121237831700)
-                msg = await chn.send(file=discord.File(filename))
-                url = msg.attachments[0].proxy_url
-                embed.set_image(url=url)
-
-            await channel.send(
-                content=message_content or None,
-                embed=embed,
-                view=view if editor.button_links else None,
-            )
-
-            embed = discord.Embed(
-                description=f"<:yes:1036811164891480194> Sample message sent to {channel.mention}",
-                colour=0x00FF00,
-            )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
-        else:
-            # Fall back to legacy system
-            ref = db.reference("/Welcome")
-            welcome = ref.get()
-
-            welcomeChannel = False
-            for key, val in welcome.items():
-                if val["Server ID"] == interaction.guild.id:
-                    welcomeChannel = val["Welcome Channel ID"]
-                    welcomeImageEnabled = val["Welcome Image Enabled"]
-                    break
-
-            if not welcomeChannel:
-                embed = discord.Embed(
-                    title="Welcome message not enabled!",
-                    description="This server does not have welcome message enabled! Use `/welcome settings` to enable first.",
-                    colour=0xFF0000,
-                )
-                embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-
-            ref2 = db.reference("/Welcome Content")
-            welcomecontent = ref2.get()
-
-            file = embed = None
-            for key, val in welcomecontent.items():
-                if val["Server ID"] == interaction.guild.id:
-                    if val["Title"] != "" or val["Description"] != "":
-                        hex = val["Color"]
-                        if hex.startswith("#"):
-                            hex = hex[1:]
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(
-                                "https://www.thecolorapi.com/id", params={"hex": hex}
-                            ) as server:
-                                if server.status == 200:
-                                    js = await server.json()
-                                    try:
-                                        color = discord.Color(
-                                            int(f"0x{js['hex']['clean']}", 16)
-                                        )
-                                    except:
-                                        color = discord.Color.blurple()
-
-                        embed = discord.Embed(
-                            title=script(
-                                val["Title"], interaction.user, interaction.guild
-                            ),
-                            description=script(
-                                val["Description"], interaction.user, interaction.guild
-                            ),
-                            color=color,
-                        )
-                        if welcomeImageEnabled:
-                            filename = await createWelcomeMsg(
-                                interaction.user,
-                                bg=f"./assets/Welcome Image Background/{interaction.guild.id}.png",
-                            )
-                            chn = self.bot.get_channel(1026904121237831700)
-                            msg = await chn.send(file=discord.File(filename))
-                            url = msg.attachments[0].proxy_url
-                            embed.set_image(url=url)
-                    elif val["Title"] == "" and val["Description"] == "":
-                        if welcomeImageEnabled:
-                            filename = await createWelcomeMsg(
-                                interaction.user,
-                                bg=f"./assets/Welcome Image Background/{interaction.guild.id}.png",
-                            )
-                            file = discord.File(filename)
-
-                    channel = self.bot.get_channel(welcomeChannel)
-                    await channel.send(
-                        script(
-                            val["Message Content"], interaction.user, interaction.guild
-                        ),
-                        embed=embed,
-                        file=file,
-                    )
-                    embed = discord.Embed(
-                        description=f"<:yes:1036811164891480194> Sample message sent to <#{welcomeChannel}>",
-                        colour=0x00FF00,
-                    )
-                    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                    return
-
+        if channel == OFF:
             embed = discord.Embed(
                 title="Welcome message not enabled!",
-                description="This server does not have welcome message enabled! Use `/welcome settings` to enable first.",
+                description=NOT_ENABLED,
                 colour=0xFF0000,
+                timestamp=now(),
             )
-            embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
-    @welcome_sample.error
-    async def welcome_sample_error(
-        self, interaction: discord.Interaction, error: Exception
-    ):
-        try:
-            await interaction.response.send_message(
-                f"```{str(error)}```", ephemeral=True
-            )
-        except:
-            await interaction.followup.send(f"```{str(error)}```", ephemeral=True)
+            return await interaction.followup.send(embed=embed)
+        embed = discord.Embed(
+            description=f"{YES} Sample message sent to {channel.mention}",
+            colour=0x00FF00,
+            timestamp=now(),
+        )
+        await interaction.followup.send(embed=embed)
 
 
 class OnWelcomeMemberJoin(commands.Cog):
+    """Welcomes each new member."""
+
     def __init__(self, bot):
         self.client = bot
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        ref = db.reference(f"/WelcomeV2/{member.guild.id}")
-        welcome_data = ref.get()
-
-        if welcome_data:
-            # New system
-            await self.handle_new_welcome(member, welcome_data)
-        else:
-            # Legacy system
-            await self.handle_legacy_welcome(member)
-
-    async def handle_new_welcome(self, member, welcome_data):
-        editor_data = welcome_data
-        channel_id = editor_data.get("channel_id")
-        welcome_image_enabled = editor_data.get("welcome_image_enabled", False)
-
-        if not channel_id:
-            return
-
-        channel = self.client.get_channel(channel_id)
-        if not channel:
-            return
-
-        embed = discord.Embed(
-            title=(
-                script(editor_data["embed"]["title"], member, member.guild)
-                if editor_data["embed"]["title"]
-                else None
-            ),
-            description=(
-                script(editor_data["embed"]["description"], member, member.guild)
-                if editor_data["embed"]["description"]
-                else None
-            ),
-            color=editor_data["embed"]["color"],
-        )
-
-        if editor_data["embed"]["footer"]["text"]:
-            embed.set_footer(
-                text=script(
-                    editor_data["embed"]["footer"]["text"], member, member.guild
-                ),
-                icon_url=editor_data["embed"]["footer"]["icon_url"] or None,
-            )
-
-        if editor_data["embed"]["author"]["name"]:
-            embed.set_author(
-                name=script(
-                    editor_data["embed"]["author"]["name"], member, member.guild
-                ),
-                icon_url=editor_data["embed"]["author"]["icon_url"] or None,
-            )
-
-        if editor_data["embed"]["thumbnail"]:
-            embed.set_thumbnail(url=editor_data["embed"]["thumbnail"])
-
-        if welcome_image_enabled:
-            filename = await createWelcomeMsg(
-                member, bg=f"./assets/Welcome Image Background/{member.guild.id}.png"
-            )
-            chn = self.client.get_channel(1026904121237831700)
-            msg = await chn.send(
-                f"**Guild Name:** {member.guild}", file=discord.File(filename)
-            )
-            url = msg.attachments[0].proxy_url
-            embed.set_image(url=url)
-        elif editor_data["embed"]["image"]:
-            embed.set_image(url=editor_data["embed"]["image"])
-
-        for field in editor_data["embed"].get("fields", []):
-            embed.add_field(
-                name=script(field["name"], member, member.guild),
-                value=script(field["value"], member, member.guild),
-                inline=field["inline"],
-            )
-
-        if editor_data["embed"]["timestamp"]:
-            embed.timestamp = discord.utils.utcnow()
-
-        view = discord.ui.View()
-        for link in editor_data.get("button_links", []):
-            try:
-                emoji = (
-                    discord.PartialEmoji.from_str(link["emoji"])
-                    if link["emoji"]
-                    else None
-                )
-            except:
-                emoji = None
-            button = discord.ui.Button(
-                label=script(link["label"], member, member.guild),
-                url=script(link["url"], member, member.guild),
-                emoji=emoji,
-                style=discord.ButtonStyle.link,
-            )
-            view.add_item(button)
-
-        message_content = script(
-            editor_data.get("message_content", ""), member, member.guild
-        )
-        await channel.send(
-            content=message_content or None,
-            embed=embed,
-            view=view if editor_data.get("button_links") else None,
-        )
-        if member.guild.id in [791534106919305226, 1363145981235036360]:
-            # Send exact same message in DM
-            await member.send(
-                content=message_content or None,
-                embed=embed,
-                view=view if editor_data.get("button_links") else None,
-            )
-
-    async def handle_legacy_welcome(self, member):
-        ref = db.reference("/Welcome")
-        welcome = ref.get()
-
-        welcomeChannel = found = False
-        file = embed = None
-
-        for key, val in welcome.items():
-            if val["Server ID"] == member.guild.id:
-                welcomeChannel = val["Welcome Channel ID"]
-                welcomeImageEnabled = val["Welcome Image Enabled"]
-                break
-
-        if welcomeChannel is not False:
-            ref2 = db.reference("/Welcome Content")
-            welcomecontent = ref2.get()
-
-            for key, val in welcomecontent.items():
-                if val["Server ID"] == member.guild.id:
-                    if val["Title"] != "" or val["Description"] != "":
-                        hex = val["Color"]
-                        if hex.startswith("#"):
-                            hex = hex[1:]
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(
-                                "https://www.thecolorapi.com/id", params={"hex": hex}
-                            ) as server:
-                                if server.status == 200:
-                                    js = await server.json()
-                                    try:
-                                        color = discord.Color(
-                                            int(f"0x{js['hex']['clean']}", 16)
-                                        )
-                                    except:
-                                        color = discord.Color.blurple()
-
-                        embed = discord.Embed(
-                            title=script(val["Title"], member, member.guild),
-                            description=script(
-                                val["Description"], member, member.guild
-                            ),
-                            color=color,
-                        )
-                        if welcomeImageEnabled:
-                            filename = await createWelcomeMsg(
-                                member,
-                                bg=f"./assets/Welcome Image Background/{member.guild.id}.png",
-                            )
-                            chn = self.client.get_channel(1026904121237831700)
-                            msg = await chn.send(
-                                f"**Guild Name:** {member.guild}",
-                                file=discord.File(filename),
-                            )
-                            url = msg.attachments[0].proxy_url
-                            embed.set_image(url=url)
-                    elif val["Title"] == "" and val["Description"] == "":
-                        if welcomeImageEnabled:
-                            filename = await createWelcomeMsg(
-                                member,
-                                bg=f"./assets/Welcome Image Background/{member.guild.id}.png",
-                            )
-                            file = discord.File(filename)
-
-                    channel = self.client.get_channel(welcomeChannel)
-                    await channel.send(
-                        script(val["Message Content"], member, member.guild),
-                        embed=embed,
-                        file=file,
-                    )
+        await greet(self.client, member)
 
 
 async def setup(bot: commands.Bot) -> None:
